@@ -2860,11 +2860,11 @@ export default function createOrderFlow({
         }),
     );
     document.querySelector("[data-download-print-format]")?.addEventListener("click", () => {
-      const example = { schema_version: 1, header: "Kffe’to POS", footer: "Gracias por tu compra", paper_width: 384, feed_px: 120, density: 3 };
+      const example = { schema_version: 1, header: "BLACK&WHITE POS", footer: "Gracias por tu compra", paper_width: 384, feed_px: 120, density: 3 };
       const url = URL.createObjectURL(new Blob([JSON.stringify(example, null, 2)], { type: "application/json" }));
       const link = document.createElement("a");
       link.href = url;
-      link.download = "formato-ticket-kffeto.json";
+      link.download = "formato-ticket-black-white.json";
       link.click();
       URL.revokeObjectURL(url);
     });

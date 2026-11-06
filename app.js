@@ -393,7 +393,7 @@ async function submitLogin() {
 }
 // Genera la vista del formulario de inicio de sesión.
 function login() {
-  return '<main class="login"><section class="login-card"><div class="logo"><img class="mark" src="/assets/kffeto-mark.svg" alt=""><div><div class="brand">Kffe\'to POS</div><div class="sub">Gestión de cafetería</div></div></div><h1>Qué bueno verte</h1><p>Inicia sesión con tu nombre de usuario.</p><form id="login-form"><div class="field"><label for="username">Nombre de usuario</label><input id="username" autocomplete="username" placeholder="Tu nombre de usuario" required></div><div class="field"><label for="password">Contraseña</label><input id="password" type="password" autocomplete="current-password" placeholder="Tu contraseña" required></div><button class="btn primary full" id="login" type="submit">Iniciar sesión</button><p id="login-error" class="login-error" role="alert"></p></form></section></main>';
+  return '<main class="login"><section class="login-card"><div class="login-brand"><img src="/assets/black-white-logo.svg" alt="Black&White POS"></div><h1>Qué bueno verte</h1><p>Inicia sesión con tu nombre de usuario.</p><form id="login-form"><div class="field"><label for="username">Nombre de usuario</label><input id="username" autocomplete="username" placeholder="Tu nombre de usuario" required></div><div class="field"><label for="password">Contraseña</label><input id="password" type="password" autocomplete="current-password" placeholder="Tu contraseña" required></div><button class="btn primary full" id="login" type="submit">Iniciar sesión</button><p id="login-error" class="login-error" role="alert"></p></form></section></main>';
 }
 // Inicializa la sesión, los datos iniciales y los listeners de autenticación.
 async function initializeApp() {
@@ -476,7 +476,7 @@ function shell() {
     shownLabel =
       s.page === "stats" ? statistics.headerLabel() : formatDateLong(shownDate);
   return (
-    '<div class="shell"><aside class="sidebar"><div><div class="nav-label">Espacio de trabajo</div><nav class="nav">' +
+    '<div class="shell"><aside class="sidebar"><div class="sidebar-brand"><img src="/assets/black-white-icon.svg" alt=""><div><div class="sidebar-brand-name">BLACK&WHITE POS</div><div class="sidebar-brand-sub">ESPACIO DE TRABAJO</div></div></div><div><div class="nav-label">Espacio de trabajo</div><nav class="nav">' +
     nav(false) +
     '</nav></div><div class="profile"><div class="avatar">' +
     esc(
@@ -493,7 +493,7 @@ function shell() {
     s.role +
     " · " +
     (s.role === "Administrador" ? "Todas las sedes" : s.site) +
-    '</div></div></div></aside><main class="work"><header class="topbar"><div><div class="top-title">' +
+    '</div></div></div></aside><main class="work"><header class="topbar"><div class="mobile-brand"><img src="/assets/black-white-icon.svg" alt=""><span>BLACK&WHITE POS</span></div><div><div class="top-title">' +
     title() +
     '</div><div class="top-sub"><span>' +
     shownLabel +

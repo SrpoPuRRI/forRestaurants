@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1040" viewBox="0 0 1440 1040">
+  <rect width="1440" height="1040" fill="#F4F3F0"/><rect width="1440" height="12" fill="#111111"/>
+  <text x="72" y="82" fill="#E87527" font-family="Arial,sans-serif" font-size="14" font-weight="700" letter-spacing="4">BLACK&amp;WHITE POS · COLOR</text>
+  <text x="72" y="142" fill="#111111" font-family="Arial,sans-serif" font-size="42" font-weight="800">Tres rutas de paleta</text>
+  <text x="74" y="178" fill="#737373" font-family="Arial,sans-serif" font-size="17">La ruta A es la recomendada: identidad neutral, acción visible, ambiente adaptable.</text>
+  <rect x="72" y="218" width="1256" height="235" rx="22" fill="#FFFFFF" stroke="#F28C28" stroke-width="3"/>
+  <rect x="72" y="218" width="115" height="235" rx="22" fill="#111111"/><text x="130" y="344" text-anchor="middle" fill="#FFFFFF" font-family="Arial,sans-serif" font-size="13" font-weight="700" letter-spacing="2" transform="rotate(-90 130 344)">RECOMENDADA</text>
+  <text x="220" y="260" fill="#111111" font-family="Arial,sans-serif" font-size="21" font-weight="800">A · Contraste cálido</text>
+  <g font-family="Arial,sans-serif" font-size="13" font-weight="700">
+    <rect x="220" y="283" width="170" height="105" rx="12" fill="#111111"/><text x="237" y="369" fill="#FFFFFF">Tinta · #111111</text>
+    <rect x="405" y="283" width="170" height="105" rx="12" fill="#F7F7F5" stroke="#E3E2DE"/><text x="422" y="369" fill="#111111">Blanco · #F7F7F5</text>
+    <rect x="590" y="283" width="170" height="105" rx="12" fill="#5D5D5D"/><text x="607" y="369" fill="#FFFFFF">Grafito · #5D5D5D</text>
+    <rect x="775" y="283" width="170" height="105" rx="12" fill="#E6E5E1"/><text x="792" y="369" fill="#111111">Niebla · #E6E5E1</text>
+    <rect x="960" y="283" width="170" height="105" rx="12" fill="#F28C28"/><text x="977" y="369" fill="#111111">Acción · #F28C28</text>
+  </g>
+  <rect x="1148" y="280" width="145" height="112" rx="13" fill="#FAFAF8" stroke="#E6E5E1"/>
+  <rect x="1160" y="294" width="121" height="20" rx="6" fill="#111111"/><rect x="1160" y="323" width="51" height="56" rx="7" fill="#E6E5E1"/><rect x="1219" y="323" width="62" height="56" rx="7" fill="#F7F7F5" stroke="#E6E5E1"/><rect x="1228" y="360" width="44" height="11" rx="5" fill="#F28C28"/>
+
+  <rect x="72" y="481" width="1256" height="220" rx="22" fill="#FFFFFF"/>
+  <text x="108" y="524" fill="#111111" font-family="Arial,sans-serif" font-size="21" font-weight="800">B · Hospitalidad</text>
+  <text x="108" y="552" fill="#777777" font-family="Arial,sans-serif" font-size="14">Más cálida; buena para locales con identidad de café o madera.</text>
+  <g font-family="Arial,sans-serif" font-size="13" font-weight="700">
+    <rect x="108" y="572" width="205" height="86" rx="12" fill="#1B1B1B"/><text x="126" y="637" fill="#FFFFFF">Carbón · #1B1B1B</text>
+    <rect x="329" y="572" width="205" height="86" rx="12" fill="#FBF8F2" stroke="#E5E0D8"/><text x="347" y="637" fill="#111111">Marfil · #FBF8F2</text>
+    <rect x="550" y="572" width="205" height="86" rx="12" fill="#8B6E54"/><text x="568" y="637" fill="#FFFFFF">Madera · #8B6E54</text>
+    <rect x="771" y="572" width="205" height="86" rx="12" fill="#D9D3C8"/><text x="789" y="637" fill="#111111">Piedra · #D9D3C8</text>
+    <rect x="992" y="572" width="205" height="86" rx="12" fill="#D77936"/><text x="1010" y="637" fill="#111111">Terracota · #D77936</text>
+  </g>
+
+  <rect x="72" y="729" width="1256" height="220" rx="22" fill="#FFFFFF"/>
+  <text x="108" y="772" fill="#111111" font-family="Arial,sans-serif" font-size="21" font-weight="800">C · Noche digital</text>
+  <text x="108" y="800" fill="#777777" font-family="Arial,sans-serif" font-size="14">Más tecnológica; pensada para pantallas oscuras y alto contraste.</text>
+  <g font-family="Arial,sans-serif" font-size="13" font-weight="700">
+    <rect x="108" y="820" width="205" height="86" rx="12" fill="#0C0D0F"/><text x="126" y="885" fill="#FFFFFF">Noche · #0C0D0F</text>
+    <rect x="329" y="820" width="205" height="86" rx="12" fill="#FFFFFF" stroke="#E5E5E5"/><text x="347" y="885" fill="#111111">Blanco · #FFFFFF</text>
+    <rect x="550" y="820" width="205" height="86" rx="12" fill="#313438"/><text x="568" y="885" fill="#FFFFFF">Pizarra · #313438</text>
+    <rect x="771" y="820" width="205" height="86" rx="12" fill="#C9CDD1"/><text x="789" y="885" fill="#111111">Humo · #C9CDD1</text>
+    <rect x="992" y="820" width="205" height="86" rx="12" fill="#F4A51C"/><text x="1010" y="885" fill="#111111">Ámbar · #F4A51C</text>
+  </g>
+  <text x="72" y="1000" fill="#777777" font-family="Arial,sans-serif" font-size="12" letter-spacing="1.2">COLORES DE ESTADO SE DEFINIRÁN APARTE PARA ÉXITO, ALERTA Y ERROR.</text>
+</svg>

@@ -1955,6 +1955,24 @@ body.device-tablet .mobile-nav{position:fixed;z-index:20;right:0;bottom:0;left:0
 body.device-tablet .mobile-nav.admin-nav{grid-template-columns:repeat(4,minmax(0,1fr))}
 body.device-tablet .mobile-nav button{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:3px;border:0;background:transparent;color:#7b756a;font-size:11px}
 body.device-tablet .mobile-nav button.active{color:var(--coffee);font-weight:700}
+
+/* Black&White · paleta carbón, marfil, brasa y latón */
+:root{color-scheme:light;--ink:#191a18;--muted:#77756f;--line:#e5e0d8;--white:#fffefa;--coffee:#20211f;--dark:#111210;--cream:#eee9df;--green:#56674e;--red:#a7473b;--accent:#b64b36;--gold:#c9a66b;--shadow:0 14px 34px #28221912}
+body{color:var(--ink);background:#f4f1ea}
+.login{background:radial-gradient(ellipse at 12% 8%,#e8ddc9,transparent 40%),#f4f1ea}
+.login-card,.panel,.metric,.open-card{border-color:var(--line)}
+.sidebar,.topbar{background:#f8f6f1}
+.pay{background:var(--accent)}
+.pay:hover:not(:disabled){background:#9f3e2c}
+.product:hover,.open-card:hover{border-color:var(--gold)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline-color:var(--gold)}
+.sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 8px 18px;border-bottom:1px solid var(--line)}
+.sidebar-brand img{width:39px;height:39px;flex:none}
+.sidebar-brand-name{font:800 13px Manrope,system-ui,sans-serif;letter-spacing:.075em;color:var(--ink)}
+.sidebar-brand-sub{margin-top:4px;font-size:8px;font-weight:700;letter-spacing:.16em;color:var(--muted)}
+.login-brand{margin-bottom:20px}.login-brand img{display:block;width:min(100%,285px);height:auto}
+.mobile-brand{display:none}
+@media(max-width:780px){.mobile-brand{display:flex;align-items:center;gap:8px;font:800 13px Manrope,system-ui,sans-serif;letter-spacing:.07em;color:var(--ink)}.mobile-brand img{width:35px;height:35px}.topbar{background:#f8f6f1}}
 body.device-tablet .mobile-nav .nav-icon{font-size:17px}
 body.device-tablet .orders-workspace>.open-section{margin-top:8px}
 body.device-tablet .open-heading{margin-bottom:6px}

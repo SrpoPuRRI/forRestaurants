@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="980" viewBox="0 0 1440 980">
+  <rect width="1440" height="980" fill="#F4F3F0"/><rect width="1440" height="12" fill="#111111"/>
+  <text x="72" y="82" fill="#E87527" font-family="Arial,sans-serif" font-size="14" font-weight="700" letter-spacing="4">BLACK&amp;WHITE POS · ICONOGRAFÍA</text>
+  <text x="72" y="140" fill="#111111" font-family="Arial,sans-serif" font-size="42" font-weight="800">Un lenguaje para muchos restaurantes</text>
+  <text x="74" y="176" fill="#737373" font-family="Arial,sans-serif" font-size="17">Trazos uniformes, formas claras y acento naranja solo en el estado activo.</text>
+  <defs><g id="stroke" fill="none" stroke="#171717" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></defs>
+  <g transform="translate(0 0)">
+    <!-- 1 dashboard -->
+    <g transform="translate(140 290)"><use href="#stroke"/><path d="M-25 10V-20h20v30h-20Zm30 0v-42h20v42H5Zm30 0v-17h20v17H35Z"/><path d="M-31 20h68" stroke="#F28C28"/></g>
+    <!-- 2 order -->
+    <g transform="translate(372 290)"><use href="#stroke"/><rect x="-26" y="-35" width="52" height="67" rx="7"/><path d="M-14-19h28M-14-4h28M-14 11h15"/><circle cx="18" cy="21" r="11" fill="#F28C28" stroke="none"/><path d="m13 21 4 4 7-9" stroke="#FFFFFF" stroke-width="3"/></g>
+    <!-- 3 open orders -->
+    <g transform="translate(604 290)"><use href="#stroke"/><rect x="-30" y="-30" width="43" height="52" rx="6"/><rect x="-8" y="-19" width="43" height="52" rx="6" fill="#F4F3F0"/><path d="M2-7h22M2 4h22M2 15h13"/></g>
+    <!-- 4 tables -->
+    <g transform="translate(836 290)"><use href="#stroke"/><rect x="-21" y="-22" width="42" height="42" rx="11"/><path d="M-32-22v42M32-22v42M-21-33h42M-21 31h42"/><circle cx="21" cy="-22" r="4" fill="#F28C28" stroke="none"/></g>
+    <!-- 5 menu -->
+    <g transform="translate(1068 290)"><use href="#stroke"/><path d="M-28-27h56v55h-56zM-16-12h32M-16 0h25M-16 12h30"/><circle cx="19" cy="17" r="7" fill="#F28C28" stroke="none"/></g>
+    <!-- 6 kitchen -->
+    <g transform="translate(1300 290)"><use href="#stroke"/><path d="M-28 17h56M-20 17v10h40V17M-22 5a10 10 0 0 1 0-20 13 13 0 0 1 25-5 12 12 0 0 1 18 10 10 10 0 0 1-1 15"/><path d="M-5-26v8M9-31v8" stroke="#F28C28"/></g>
+    <!-- 7 stock -->
+    <g transform="translate(256 550)"><use href="#stroke"/><path d="m-31-15 31-17 31 17-31 17-31-17Z M-31-15v34l31 16 31-16v-34M0 2v33"/><path d="m-17-22 31 17" stroke="#F28C28"/></g>
+    <!-- 8 cash -->
+    <g transform="translate(488 550)"><use href="#stroke"/><rect x="-34" y="-24" width="68" height="48" rx="8"/><circle cx="0" cy="0" r="15"/><path d="M-23-14h4M23 14h-4"/><path d="M-3-7h6M-3 0h6M-3 7h6" stroke="#F28C28"/></g>
+    <!-- 9 team -->
+    <g transform="translate(720 550)"><use href="#stroke"/><circle cx="0" cy="-18" r="13"/><path d="M-25 27c1-17 11-27 25-27s24 10 25 27H-25Z"/><circle cx="31" cy="-7" r="8" fill="#F4F3F0"/><path d="M26 12c8-1 13 5 14 15h-9" stroke="#F28C28"/></g>
+    <!-- 10 reports -->
+    <g transform="translate(952 550)"><use href="#stroke"/><path d="M-31 27V-24h62v51zM-20 14V1h9v13M-5 14v-25h9v25M10 14V-3h9v17"/><path d="M-31 27h62" stroke="#F28C28"/></g>
+    <!-- 11 customer -->
+    <g transform="translate(1184 550)"><use href="#stroke"/><circle cx="0" cy="-13" r="15"/><path d="M-30 29c2-19 13-29 30-29s28 10 30 29H-30Z"/><path d="M19-22c10 2 14 14 8 22" stroke="#F28C28"/></g>
+    <!-- 12 settings -->
+    <g transform="translate(720 808)"><use href="#stroke"/><circle cx="0" cy="0" r="24"/><circle cx="0" cy="0" r="9"/><path d="M0-37v8M0 29v8M-37 0h8M29 0h8M-26-26l6 6M20 20l6 6M26-26l-6 6M-20 20l-6 6"/><circle cx="0" cy="-37" r="4" fill="#F28C28" stroke="none"/></g>
+  </g>
+  <g fill="#202020" font-family="Arial,sans-serif" font-size="15" font-weight="700" text-anchor="middle">
+    <text x="140" y="365">Inicio</text><text x="372" y="365">Nuevo pedido</text><text x="604" y="365">Pedidos abiertos</text><text x="836" y="365">Mesas</text><text x="1068" y="365">Menú</text><text x="1300" y="365">Cocina</text>
+    <text x="256" y="625">Inventario</text><text x="488" y="625">Caja</text><text x="720" y="625">Equipo</text><text x="952" y="625">Reportes</text><text x="1184" y="625">Clientes</text><text x="720" y="883">Ajustes</text>
+  </g>
+  <text x="72" y="934" fill="#777777" font-family="Arial,sans-serif" font-size="12" letter-spacing="1.2">ICONOS DE CONCEPTO · ESTILO LINEAL · NEGRO + NARANJA DE ESTADO</text>
+</svg>
