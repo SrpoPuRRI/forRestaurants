@@ -4,6 +4,7 @@ Este directorio contiene las especificaciones del producto antes de pasar a impl
 
 ## Documentos
 
+- [Base de datos de Kffe’to en producción](Database/kffeto_production_reference_001.md): referencia de patrones probados para inspirar la base de Black&White, sin copiar el POS de cafetería.
 - [Diseño de la app](Dise%C3%B1o%20de%20la%20app/spec_001.md): decisiones visuales y estructura común del espacio de trabajo.
 - [Setter](Setter/spec_001.md): arquitectura propuesta para administrar restaurantes y activar módulos.
 - [Cuentas](Cuentas/spec_001.md)

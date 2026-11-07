@@ -22,6 +22,20 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return reply(400, { error: "invalid_json" }); }
   const action = String(body.action ?? "");
   const restaurantId = String(body.restaurant_id ?? "");
+  const catalogCalls: Record<string, { fn: string; args: Record<string, unknown> }> = {
+    save_need: { fn: "setter_save_need", args: { payload: body.need } },
+    delete_need: { fn: "setter_delete_need", args: { need_key: body.key } },
+    save_architecture_family: { fn: "setter_save_architecture_family", args: { payload: body.architecture } },
+    create_architecture_version: { fn: "setter_create_architecture_version", args: { payload: body.version } },
+    delete_architecture_family: { fn: "setter_delete_architecture_family", args: { architecture_key: body.key } },
+    save_configuration_definition: { fn: "setter_save_configuration", args: { payload: body.configuration } },
+    delete_configuration_definition: { fn: "setter_delete_configuration", args: { configuration_key: body.key } },
+  };
+  if (catalogCalls[action]) {
+    const { fn, args } = catalogCalls[action];
+    const { error } = await db.rpc(fn, args);
+    return error ? reply(400, { error: error.message }) : reply(200, { success: true });
+  }
   if (action === "set_status") {
     if (!restaurantId || !["active", "deactivated"].includes(String(body.status))) return reply(400, { error: "invalid_status_request" });
     const { error } = await db.from("restaurants").update({ status: body.status, updated_at: new Date().toISOString() }).eq("id", restaurantId);
@@ -29,7 +43,15 @@ Deno.serve(async (req) => {
   }
   if (action === "set_configuration") {
     if (!restaurantId || !body.configuration || typeof body.configuration !== "object") return reply(400, { error: "invalid_configuration" });
-    const { error } = await db.from("restaurants").update({ configuration: body.configuration, updated_at: new Date().toISOString() }).eq("id", restaurantId);
+    const { error } = await db.rpc("setter_update_restaurant_configuration", { target_restaurant: restaurantId, config_values: body.configuration });
+    return error ? reply(400, { error: error.message }) : reply(200, { success: true });
+  }
+  if (action === "set_restaurant_architecture") {
+    if (!restaurantId || !body.architecture_version_id) return reply(400, { error: "restaurant_and_architecture_version_required" });
+    const { error } = await db.rpc("setter_change_restaurant_architecture", {
+      target_restaurant: restaurantId,
+      target_version: body.architecture_version_id,
+    });
     return error ? reply(400, { error: error.message }) : reply(200, { success: true });
   }
   if (action === "save_location") {

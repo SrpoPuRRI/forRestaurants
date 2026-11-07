@@ -13,6 +13,10 @@
 
 - La interfaz se presenta como **Configurador de Black&White**. No muestra nombre, perfil ni cuenta de operador. El acceso se verifica con enlace de correo al Gmail del propietario antes de mostrar datos.
 - La vista inicial muestra restaurantes y la acción para crear uno. No usa navegación lateral ni una pantalla de actividad.
+- Junto a «Crear restaurante» hay una sección global «Necesidades y arquitectura» para administrar necesidades, familias de arquitectura y configuraciones.
+- Una familia de arquitectura tiene un identificador estable y un historial de versiones inmutables. Cada versión es una arquitectura completa: especifica las necesidades que soporta, los roles disponibles y las configuraciones con sus valores iniciales. Las mismas necesidades pueden corresponder a varias familias, con responsabilidades distintas.
+- Al crear un restaurante, Setter primero pide sus necesidades y luego muestra la versión más reciente de cada familia activa que las cubre. Guarda el UUID exacto de esa versión; nuevas versiones no alteran restaurantes existentes. Para cambiar un restaurante existente, el operador elige manualmente una versión compatible.
+- La ficha no solicita tipo de negocio ni ciudad. La versión seleccionada, no el identificador de familia, representa la arquitectura operativa exacta.
 - Crear un restaurante completa su configuración inicial y lo deja activo. No existe el estado «pendiente de configuración».
 - Cada restaurante puede estar activo o dado de baja. Los dados de baja se ocultan de la vista habitual; si existe al menos uno, aparece un control para mostrarlos u ocultarlos.
 - Setter guarda para cada restaurante las necesidades, la arquitectura seleccionada y la lista de roles resultante. Esos roles determinan las opciones al crear cuentas de restaurante.
@@ -26,26 +30,28 @@ La autenticación es una pantalla breve de correo y enlace; no crea un perfil vi
 ## Flujo de alta de restaurante
 
 1. Un operador autorizado entra a Setter.
-2. Crea el restaurante y registra nombre, identidad visual y estado.
-3. Selecciona qué pestañas y funciones quedan habilitadas.
-4. El sistema crea la cuenta inicial Administrador y la vincula al restaurante.
+2. Si hace falta, prepara necesidades, arquitecturas, roles y configuraciones en la sección de plataforma.
+3. Crea el restaurante, selecciona sus necesidades y elige una de las versiones más recientes compatibles que Setter presenta.
+4. El sistema guarda el UUID de esa versión, copia sus roles y valores iniciales de configuración, y crea la cuenta inicial Administrador vinculada al restaurante.
 5. La persona inicia sesión en Black&White POS. La app resuelve su restaurante y sus permisos sin pedirle que lo seleccione.
 
 La contraseña inicial debe tratarse como credencial temporal; nunca se almacena en texto plano en las tablas del producto. El método de entrega y el cambio obligatorio en el primer acceso quedan por definir.
 
-## Modelo de datos propuesto
+## Modelo de datos
 
-Estas entidades son una propuesta para especificar; sus columnas y relaciones se detallarán antes de implementar:
-
-- `restaurants`: identidad, estado y configuración general del restaurante.
-- `restaurant_members`: relación entre restaurante, usuario autenticado y rol.
+- `restaurants`: nombre, estado, `architecture_version_id` exacto, necesidades elegidas y valores actuales de configuración.
+- `needs`: catálogo administrable de necesidades.
+- `architectures`: familias estables de arquitectura con metadatos.
+- `architecture_versions`: cada versión completa e inmutable, con número, roles plantilla y descripción.
+- `architecture_needs`: necesidades soportadas por cada versión concreta.
+- `configuration_catalog` y `architecture_configurations`: definiciones tipadas de ajustes, su disponibilidad por versión y sus valores iniciales.
+- `roles`: copia por restaurante de los roles plantilla al momento de crear el restaurante.
 - `locations`: sedes pertenecientes a un restaurante.
-- `feature_catalog`: catálogo maestro de pestañas y capacidades disponibles en B&W.
-- `restaurant_features`: funciones habilitadas y configuración aplicable a cada restaurante.
 - Datos operativos de cada módulo: asociados al restaurante y, cuando aplique, a una sede.
 
-Las ocho pestañas configurables son Cuentas, CRM, Flujo de pedidos, Salón, Cocina, Estadísticas, Catálogo y Configuración. La autenticación necesaria para acceder sigue siendo infraestructura base aunque la pestaña de administración de Cuentas esté apagada.
+El `id` de `architectures` identifica una familia que puede tener muchas versiones. Cada fila de `architecture_versions` es una arquitectura concreta; `restaurants.architecture_version_id` fija cuál eligió el restaurante. Crear una versión nueva solo cambia la opción más reciente que se ofrece en nuevas altas. Los restaurantes existentes conservan su versión hasta que Setter la cambie expresamente.
 
+Las ocho pestañas configurables son Cuentas, CRM, Flujo de pedidos, Salón, Cocina, Estadísticas, Catálogo y Configuración. La autenticación necesaria para acceder sigue siendo infraestructura base aunque la pestaña de administración de Cuentas esté apagada.
 ## Aislamiento entre restaurantes
 
 - Los permisos deben aplicarse en la base de datos, no solo ocultando pestañas.

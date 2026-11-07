@@ -7,21 +7,25 @@
 
 | Entidad | Propósito |
 |---|---|
-| `restaurants` | Identidad del restaurante, estado activo/dado de baja, arquitectura elegida, ruta del logo y configuración general. |
+| `restaurants` | Nombre, estado activo/dado de baja, arquitectura elegida, necesidades seleccionadas, valores de configuración y ruta del logo. No guarda tipo ni ciudad. |
 | `accounts` | Perfil de una persona autenticada, su `auth.users.id`, nombre de usuario global, restaurante, rol y estado. La clave de acceso y contraseña no se guardan en esta tabla. |
 | `roles` | Roles habilitados para cada restaurante, con clave, etiqueta y permisos efectivos. La lista se crea como copia versionada desde la arquitectura seleccionada. |
-| `architectures` | Plantillas disponibles, versión y descripción del modelo operativo. |
-| `architecture_roles` | Roles que aporta cada versión de arquitectura. |
+| `architectures` | Familias estables de arquitectura, con nombre, descripción y estado. Una familia agrupa versiones. |
+| `architecture_versions` | Arquitecturas concretas e inmutables: versión, etiqueta, necesidades, roles plantilla y configuraciones disponibles. |
 | `needs` | Catálogo de capacidades opcionales: módulos y necesidades operativas configurables. |
-| `architecture_needs` | Necesidades que admite cada arquitectura y reglas de compatibilidad. |
-| `restaurant_needs` | Selección de necesidades por restaurante y su configuración asociada. |
+| `architecture_needs` | Necesidades que admite cada versión concreta. La misma selección puede ser cubierta por varias familias. |
+| `restaurants.needs` | Lista de necesidades elegidas al crear cada restaurante. |
+| `configuration_catalog` | Catálogo tipado de configuraciones, opciones, valor predeterminado y área funcional. |
+| `architecture_configurations` | Configuraciones que ofrece cada versión y posibles valores iniciales propios. |
+| `restaurants.configuration` y `restaurants.configuration_keys` | Valores JSON actuales y copia de las claves disponibles para ese restaurante. |
 | `locations` | Sedes del restaurante, con dirección opcional y horario de atención. |
 | `location_hours` | Horario de atención estructurado por día de la semana. |
 | `account_schedules` | Uno o más horarios de entrada y salida asignados a una cuenta de empleado. |
+| Asistencia (propuesta) | Marcas de entrada/salida con actor, sede efectiva, turno y auditoría; el mapa de calor es un resumen derivado. |
 
-Los nombres se proponen en inglés para mantener consistencia con las tablas y consultas actuales del proyecto. La pantalla puede usar etiquetas en español.
+Los nombres se mantienen en inglés para mantener consistencia con las tablas y consultas actuales del proyecto. La pantalla usa etiquetas en español.
 
-La selección de arquitectura y necesidades se guarda como configuración propia del restaurante. Los roles se copian a `roles` al crearlo para que una actualización futura de plantillas no cambie permisos de restaurantes ya existentes.
+`architectures.id` identifica una familia; `architecture_versions.id` identifica la arquitectura concreta. `restaurants.architecture_version_id` guarda la versión elegida. En altas nuevas se muestra la versión más reciente de cada familia activa que cubra las necesidades elegidas. Una versión nueva es inmutable y no cambia restaurantes anteriores; Setter puede mover un restaurante a otra versión compatible mediante una acción explícita. Los roles de esa versión se copian a `roles`.
 
 ## Acceso desde ambos productos
 
@@ -67,6 +71,14 @@ El frontend consulta `staff_profiles`, `locations`, catálogo, `open_orders`, `o
 - Setter ya usa el proyecto compartido para acceso por Gmail, lista de restaurantes, alta de restaurante y administrador inicial, cuentas, baja/reactivación, configuración y horarios de atención de sedes.
 - POS inicia sesión por nombre de usuario, consulta `accounts`, crea cuentas mediante `staff-admin` y consulta el estado del restaurante antes de abrir el espacio de trabajo.
 - Los módulos operativos derivados de Kffe’to, sus RPC y asistencias aún no han sido migrados a un modelo multi-restaurante. No habilitar restaurantes reales hasta asociar esos datos a `restaurant_id` y probar RLS por módulo.
+
+## Propuestas nuevas: asistencia y configuración dinámica
+
+- El detalle de la propuesta de permisos de entrada/salida, turnos nocturnos y asignaciones temporales está en [Cuentas](../Cuentas/spec_001.md).
+- El catálogo maestro de configuraciones, disponibilidad por arquitectura y valores por restaurante está en [Configuración](../Configuraci%C3%B3n/spec_001.md).
+- La migración `202611070001_setter_architecture_catalog.sql` agrega catálogos versionados de necesidades, familias/arquitecturas y configuraciones. `restaurants.architecture_version_id` referencia la arquitectura completa elegida; las versiones nuevas no cambian restaurantes existentes.
+- `architectures.id` identifica una familia y `architecture_versions.id` una versión inmutable con roles, necesidades y configuraciones. Setter solo ofrece la última versión compatible al crear y permite cambiar versiones anteriores de forma manual.
+- `account_schedules` todavía no lleva sede/vigencia y aún no existe una tabla de marcas de asistencia.
 
 ## Activación de producción
 
