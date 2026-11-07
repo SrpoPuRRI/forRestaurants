@@ -11,7 +11,7 @@
 
 ## Decisiones de producto acordadas
 
-- La interfaz se presenta como **Configurador de Black&White**. No muestra nombre, perfil ni cuenta de operador de plataforma; se abre directamente.
+- La interfaz se presenta como **Configurador de Black&White**. No muestra nombre, perfil ni cuenta de operador. El acceso se verifica con enlace de correo al Gmail del propietario antes de mostrar datos.
 - La vista inicial muestra restaurantes y la acción para crear uno. No usa navegación lateral ni una pantalla de actividad.
 - Crear un restaurante completa su configuración inicial y lo deja activo. No existe el estado «pendiente de configuración».
 - Cada restaurante puede estar activo o dado de baja. Los dados de baja se ocultan de la vista habitual; si existe al menos uno, aparece un control para mostrarlos u ocultarlos.
@@ -21,7 +21,7 @@
 - Cada sede puede guardar dirección opcional y horario de atención. Cada empleado puede tener asignado uno o más horarios de entrada y salida.
 - Si un restaurante está dado de baja, las cuentas asociadas no pueden operar Black&White POS. Tras resolver la sesión, la aplicación debe descartar los datos privados del restaurante, limpiar su interfaz y mostrar una pantalla bloqueante con el aviso **«Tu restaurante ha sido dado de baja»**. La restricción debe aplicarse también en los servicios de datos; limpiar el DOM por sí solo no controla el acceso.
 
-La interfaz directa no incluye autenticación visible de operador. El acceso de producción sigue pendiente de una decisión de seguridad: un enlace que no se comparte no equivale a control de acceso, especialmente porque Setter puede mostrar configuraciones privadas.
+La autenticación es una pantalla breve de correo y enlace; no crea un perfil visible. La autorización de plataforma se mantiene en una tabla privada de Supabase y se comprueba en cada operación privilegiada.
 
 ## Flujo de alta de restaurante
 

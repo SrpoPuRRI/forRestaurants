@@ -145,6 +145,8 @@ const s = {
   user: null,
   username: "",
   role: "Administrador",
+  roleLabel: "Administrador",
+  restaurantId: null,
   site: "Centro",
   page: "orders",
   category: "Todos",
@@ -161,6 +163,7 @@ const s = {
   accountsError: "",
   accountDate: "",
   accountDataDates: [],
+  restaurantSuspended: false,
 };
 
 //Función de formateo de textos: Fuente W3WSchools
@@ -327,8 +330,8 @@ function authEmailForUsername(username) {
 // Carga el perfil y la sede asociados a la cuenta autenticada.
 async function loadAuthenticatedProfile(user) {
   const { data: profile, error } = await supabase
-    .from("staff_profiles")
-    .select("auth_user_id,username,display_name,role,location_id")
+    .from("accounts")
+    .select("auth_user_id,username,display_name,location_id,roles!inner(key,name)")
     .eq("auth_user_id", user.id)
     .single();
   if (error || !profile)
@@ -348,7 +351,8 @@ async function loadAuthenticatedProfile(user) {
   }
   s.username = profile.username;
   s.user = profile.display_name;
-  s.role = profile.role === "admin" ? "Administrador" : "Empleado";
+  s.role = profile.roles?.key === "admin" ? "Administrador" : "Empleado";
+  s.roleLabel = profile.roles?.name || s.role;
   s.site = site;
   s.authUserId = profile.auth_user_id;
   s.locationId = profile.location_id;
@@ -377,6 +381,15 @@ async function submitLogin() {
       password,
     });
     if (error) throw new Error("Usuario o contraseña incorrectos.");
+    const { data: access, error: accessError } = await supabase.functions.invoke("restaurant-access", { body: {} });
+    if (accessError || !access?.active) {
+      s.restaurantSuspended = !accessError && access?.active === false;
+      await supabase.auth.signOut();
+      render();
+      if (!s.restaurantSuspended) throw new Error("La cuenta no está vinculada a un restaurante activo.");
+      return;
+    }
+    s.restaurantId = access.restaurant_id;
     await loadAuthenticatedProfile(data.user);
     s.page = "orders";
     render();
@@ -406,7 +419,16 @@ async function initializeApp() {
   } = await supabase.auth.getSession();
   if (session) {
     try {
-      await loadAuthenticatedProfile(session.user);
+      const { data: access, error } = await supabase.functions.invoke("restaurant-access", { body: {} });
+      if (!error && access?.active === false) {
+        s.restaurantSuspended = true;
+        await supabase.auth.signOut();
+      } else if (error || !access?.active) {
+        await supabase.auth.signOut();
+      } else {
+        s.restaurantId = access.restaurant_id;
+        await loadAuthenticatedProfile(session.user);
+      }
     } catch {
       await supabase.auth.signOut();
     }
@@ -490,7 +512,7 @@ function shell() {
     '</div><div><div class="person">' +
     esc(s.user) +
     '</div><div class="meta">' +
-    s.role +
+    esc(s.roleLabel || s.role) +
     " · " +
     (s.role === "Administrador" ? "Todas las sedes" : s.site) +
     '</div></div></div></aside><main class="work"><header class="topbar"><div class="mobile-brand"><img src="/assets/black-white-icon.svg" alt=""><span>BLACK&WHITE POS</span></div><div><div class="top-title">' +
@@ -643,54 +665,14 @@ async function loadAccounts() {
   const today = limaToday();
   if (s.role === "Administrador" && !s.accountDate) s.accountDate = today;
   render();
-  if (s.role === "Administrador") {
-    const [datesResult, accountsResult, locationsResult] = await Promise.all([
-      supabase.rpc("get_admin_account_data_dates"),
-      supabase.rpc("get_admin_accounts_for_date", { p_date: s.accountDate }),
-      supabase.from("locations").select("id,name").order("name"),
-    ]);
-    s.accountsLoading = false;
-    if (datesResult.error || accountsResult.error || locationsResult.error) {
-      s.accountsError =
-        "No se pudieron cargar las cuentas históricas. Comprueba que la migración de historial esté aplicada.";
-      s.accounts = [];
-      s.locations = [];
-      s.accountDataDates = [];
-      render();
-      return;
-    }
-    s.accountDataDates = (datesResult.data || []).map((x) => x.data_date);
-    s.accounts = (accountsResult.data || []).map((a) => ({
-      auth_user_id: a.auth_user_id,
-      username: a.username,
-      display_name: a.display_name,
-      role: a.role,
-      location_id: a.location_id,
-      site: a.site || "Todas las sedes",
-      attendance: Boolean(a.attended),
-      attendance_location: a.attendance_location || "",
-    }));
-    s.locations = locationsResult.data || [];
-    render();
-    return;
-  }
-  const [profilesResult, locationsResult, attendanceResult] = await Promise.all(
-    [
-      supabase
-        .from("staff_profiles")
-        .select(
-          "auth_user_id,username,display_name,role,location_id,locations(name)",
-        )
-        .order("display_name"),
-      supabase.from("locations").select("id,name").order("name"),
-      supabase
-        .from("attendance_records")
-        .select("staff_profile_id,attendance_date,location_id,locations(name)")
-        .eq("attendance_date", today),
-    ],
-  );
+  const [accountsResult, locationsResult, schedulesResult, rolesResult] = await Promise.all([
+    supabase.from("accounts").select("auth_user_id,username,display_name,role_id,location_id,roles!inner(key,name),locations(name)").eq("is_active", true).order("display_name"),
+    supabase.from("locations").select("id,name").eq("is_active", true).order("name"),
+    supabase.from("account_schedules").select("auth_user_id,weekday,starts_at,ends_at"),
+    supabase.from("roles").select("id,key,name,permissions").order("name"),
+  ]);
   s.accountsLoading = false;
-  if (profilesResult.error || locationsResult.error || attendanceResult.error) {
+  if (accountsResult.error || locationsResult.error) {
     s.accountsError =
       "No se pudieron cargar las cuentas. Revisa la conexión y los permisos.";
     s.accounts = [];
@@ -698,23 +680,27 @@ async function loadAccounts() {
     render();
     return;
   }
-  const present = new Map(
-    (attendanceResult.data || []).map((x) => [
-      x.staff_profile_id,
-      x.locations?.name || "",
-    ]),
-  );
-  s.accounts = (profilesResult.data || []).map((a) => ({
+  const scheduleByUser = new Map();
+  for (const item of schedulesResult.data || []) {
+    const list = scheduleByUser.get(item.auth_user_id) || [];
+    list.push(item);
+    scheduleByUser.set(item.auth_user_id, list);
+  }
+  s.accounts = (accountsResult.data || []).map((a) => ({
     auth_user_id: a.auth_user_id,
     username: a.username,
     display_name: a.display_name,
-    role: a.role,
+    role: a.roles?.key || "employee",
+    role_name: a.roles?.name || "Empleado",
     location_id: a.location_id,
     site: a.locations?.name || "Todas las sedes",
-    attendance: present.has(a.auth_user_id),
-    attendance_location: present.get(a.auth_user_id) || "",
+    attendance: false,
+    attendance_location: "",
+    schedules: scheduleByUser.get(a.auth_user_id) || [],
   }));
   s.locations = locationsResult.data || [];
+  s.availableRoles = rolesResult.data || [];
+  s.accountDataDates = [today];
   render();
 }
 // Genera la vista de administración de cuentas y asistencia.
@@ -733,7 +719,7 @@ function account() {
   const rows = list
     .map((a) => {
       const self = a.auth_user_id === s.authUserId,
-        role = a.role === "admin" ? "Administrador" : "Empleado",
+        role = a.role_name || (a.role === "admin" ? "Administrador" : "Empleado"),
         canDelete =
           !isHistorical &&
           s.role === "Administrador" &&
@@ -782,7 +768,7 @@ function account() {
         '</strong><br><span class="meta">@' +
         esc(a.username) +
         '</span></span></div></td><td><span class="roletag ' +
-        (a.role === "employee" ? "employeetag" : "") +
+        (a.role !== "admin" ? "employeetag" : "") +
         '">' +
         role +
         "</span></td><td>" +
@@ -829,7 +815,7 @@ function account() {
     '<button class="btn secondary" id="change-password">Cambiar contraseña</button></div></section><div class="metrics account-metrics"><article class="metric"><div class="metric-label">Mi perfil</div><div class="metric-value" style="font-size:17px">' +
     esc(s.user) +
     '</div><div class="metric-foot neutral">' +
-    s.role +
+    esc(s.roleLabel || s.role) +
     '</div></article><article class="metric"><div class="metric-label">Mi sede</div><div class="metric-value" style="font-size:17px">' +
     esc(s.site) +
     '</div></article><article class="metric"><div class="metric-label">Cuentas visibles</div><div class="metric-value">' +
@@ -947,14 +933,11 @@ function editAccountDialog(account) {
   const d = document.createElement("dialog");
   d.className = "password-dialog account-dialog";
   const isAdmin = account.role === "admin";
+  const roleOptions = (s.availableRoles || []).map((r) => '<option value="' + esc(r.key) + '" ' + (r.key === account.role ? "selected" : "") + '>' + esc(r.name) + "</option>").join("");
   d.innerHTML =
     '<form method="dialog"><div class="panel-title">Editar cuenta</div><label class="dialog-label">Nombre visible<input name="display_name" maxlength="100" required value="' +
     esc(account.display_name) +
-    '"></label><label class="dialog-label">Tipo de cuenta<select name="role" id="edit-account-role"><option value="employee" ' +
-    (isAdmin ? "disabled" : "") +
-    '>Empleado</option><option value="admin" ' +
-    (isAdmin ? "selected" : "") +
-    '>Administrador</option></select></label><label class="dialog-label" id="edit-account-location-wrap">Sede<select name="location_id" id="edit-account-location">' +
+    '"></label><label class="dialog-label">Tipo de cuenta<select name="role" id="edit-account-role">' + roleOptions + '</select></label><label class="dialog-label" id="edit-account-location-wrap">Sede<select name="location_id" id="edit-account-location">' +
     s.locations
       .map(
         (l) =>
@@ -975,8 +958,8 @@ function editAccountDialog(account) {
     site = f.querySelector("#edit-account-location"),
     save = f.querySelector("#save-account");
   const updateFields = () => {
-    wrap.hidden = role.value !== "employee";
-    site.required = role.value === "employee";
+    wrap.hidden = role.value === "admin";
+    site.required = role.value !== "admin";
   };
   role.addEventListener("change", updateFields);
   updateFields();
@@ -999,7 +982,7 @@ function editAccountDialog(account) {
           auth_user_id: account.auth_user_id,
           display_name: name,
           role: role.value,
-          location_id: role.value === "employee" ? site.value : null,
+          location_id: role.value !== "admin" ? site.value : null,
         },
       });
       if (error || data?.error)
@@ -1097,8 +1080,9 @@ async function markAttendance(staffId) {
 function createAccountDialog() {
   const d = document.createElement("dialog");
   d.className = "password-dialog account-dialog";
+  const roleOptions = (s.availableRoles || []).map((r) => '<option value="' + esc(r.key) + '">' + esc(r.name) + "</option>").join("");
   d.innerHTML =
-    '<form method="dialog"><div class="panel-title">Crear cuenta</div><p class="meta">La persona iniciará sesión con el usuario y la contraseña que asignes.</p><label class="dialog-label">Nombre completo<input name="display_name" maxlength="100" required autocomplete="name" placeholder="Ej. Ana Morales"></label><label class="dialog-label">Nombre de usuario<input name="username" maxlength="49" required autocomplete="off" placeholder="Ej. ana.morales"><span class="meta">Sin espacios; se guardará en minúsculas y sin tildes.</span></label><label class="dialog-label">Tipo de cuenta<select name="role" id="new-account-role"><option value="employee">Empleado</option><option value="admin">Administrador</option></select></label><label class="dialog-label" id="new-account-location-wrap">Sede<select name="location_id" id="new-account-location">' +
+    '<form method="dialog"><div class="panel-title">Crear cuenta</div><p class="meta">La persona iniciará sesión con el usuario y la contraseña que asignes.</p><label class="dialog-label">Nombre completo<input name="display_name" maxlength="100" required autocomplete="name" placeholder="Ej. Ana Morales"></label><label class="dialog-label">Nombre de usuario<input name="username" maxlength="49" required autocomplete="off" placeholder="Ej. ana.morales"><span class="meta">Sin espacios; se guardará en minúsculas y sin tildes.</span></label><label class="dialog-label">Tipo de cuenta<select name="role" id="new-account-role">' + roleOptions + '</select></label><label class="dialog-label" id="new-account-location-wrap">Sede<select name="location_id" id="new-account-location">' +
     s.locations
       .map(
         (l, i) =>
@@ -1113,7 +1097,7 @@ function createAccountDialog() {
       .join("") +
     '</select><span class="meta" id="no-locations-message" ' +
     (s.locations.length ? "hidden" : "") +
-    '>Primero crea una sede con “Gestionar sedes”.</span></label><label class="dialog-label">Contraseña inicial<input name="password" type="password" minlength="6" required autocomplete="new-password" placeholder="Mínimo 6 caracteres"></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="submit-new-account" value="save" ' +
+    '>Primero crea una sede con “Gestionar sedes”.</span></label><label class="dialog-label">Contraseña inicial<input name="password" type="password" minlength="10" required autocomplete="new-password" placeholder="Mínimo 10 caracteres"></label><label class="dialog-label">Horarios de trabajo<div id="work-schedule-rows"><div class="schedule-row"><select name="workday"><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="0">Domingo</option></select><input type="time" name="workstart"><input type="time" name="workend"></div></div><button type="button" class="btn small" id="add-work-schedule">＋ Agregar horario</button></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="submit-new-account" value="save" ' +
     (s.locations.length ? "" : "disabled") +
     ">Crear cuenta</button></div></form>";
   document.body.appendChild(d);
@@ -1122,15 +1106,18 @@ function createAccountDialog() {
     locationWrap = form.querySelector("#new-account-location-wrap"),
     locationSelect = form.querySelector("#new-account-location"),
     submit = form.querySelector("#submit-new-account");
-  role.addEventListener("change", () => {
-    const employee = role.value === "employee";
+  const syncRole = () => {
+    const employee = role.value !== "admin";
     locationWrap.hidden = !employee;
     submit.disabled = employee && !s.locations.length;
-  });
+  };
+  role.addEventListener("change", syncRole);
+  form.querySelector("#add-work-schedule").addEventListener("click", () => form.querySelector("#work-schedule-rows").insertAdjacentHTML("beforeend", form.querySelector("#work-schedule-rows .schedule-row").outerHTML));
   if (!s.locations.length) {
     locationSelect.disabled = true;
     locationWrap.hidden = false;
   }
+  syncRole();
   d.showModal();
   form.addEventListener("submit", async (e) => {
     if (!e.submitter || e.submitter.id !== "submit-new-account") return;
@@ -1144,10 +1131,12 @@ function createAccountDialog() {
         "El usuario debe tener hasta 49 caracteres: letras, números, punto, guion o guion bajo.";
       return;
     }
-    if (role.value === "employee" && !data.get("location_id")) {
+    if (role.value !== "admin" && !data.get("location_id")) {
       error.textContent = "Crea o selecciona una sede para el empleado.";
       return;
     }
+    const workdays = [...form.querySelectorAll('[name="workday"]')], workstarts = [...form.querySelectorAll('[name="workstart"]')], workends = [...form.querySelectorAll('[name="workend"]')], schedules = workdays.map((x, i) => ({ weekday: Number(x.value), starts_at: workstarts[i].value, ends_at: workends[i].value })).filter(x => x.starts_at && x.ends_at);
+    if (role.value !== "admin" && (!schedules.length || schedules.length !== workdays.length)) { error.textContent = "Asigna entrada y salida a cada horario del empleado."; return; }
     submit.disabled = true;
     try {
       const { data: result, error: invokeError } =
@@ -1158,8 +1147,9 @@ function createAccountDialog() {
             username,
             role: role.value,
             location_id:
-              role.value === "employee" ? data.get("location_id") : null,
+              role.value !== "admin" ? data.get("location_id") : null,
             password: data.get("password"),
+            schedules,
           },
         });
       if (invokeError)
@@ -1176,7 +1166,7 @@ function createAccountDialog() {
       error.textContent = err.message || "No se pudo crear la cuenta.";
     } finally {
       if (submit.isConnected)
-        submit.disabled = role.value === "employee" && !s.locations.length;
+        submit.disabled = role.value !== "admin" && !s.locations.length;
     }
   });
   d.addEventListener("close", () => d.remove());
@@ -1244,7 +1234,7 @@ function createLocationDialog() {
       return;
     }
     btn.disabled = true;
-    const { error } = await supabase.from("locations").insert({ name });
+    const { error } = await supabase.from("locations").insert({ name, restaurant_id: s.restaurantId });
     btn.disabled = false;
     if (error) {
       err.textContent =
@@ -1448,6 +1438,11 @@ function changePassword() {
 }
 // Renderiza la aplicación y conecta sus eventos principales.
 function render() {
+  if (s.restaurantSuspended) {
+    const root = $("#app");
+    root.innerHTML = '<main class="login"><section class="login-card" style="max-width:760px;padding:64px 36px"><img src="/assets/black-white-logo.svg" alt="Black&White POS" style="width:min(320px,80%);margin-bottom:38px"><div class="eyebrow">Acceso no disponible</div><h1 style="font-size:clamp(30px,6vw,58px);margin:14px 0">Tu restaurante ha sido dado de baja</h1><p>Contacta con el equipo de Black&amp;White para revisar el estado de tu servicio.</p></section></main>';
+    return;
+  }
   if (s.page === "catalog" && s.role !== "Administrador") s.page = "orders";
   applyDeviceClasses();
   let root = $("#app");

@@ -1,0 +1,20 @@
+project_id = "yqrilxnldkzmbhxzagaz"
+
+[api]
+enabled = true
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[functions.setter-create-restaurant]
+verify_jwt = true
+
+[functions.staff-admin]
+verify_jwt = true
+
+[functions.setter-admin]
+verify_jwt = true
+
+[functions.restaurant-access]
+verify_jwt = true
+

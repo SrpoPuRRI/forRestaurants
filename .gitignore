@@ -1,0 +1,4 @@
+# Local deployment credentials; never commit them.
+supaSecret.txt
+.env
+.env.*
