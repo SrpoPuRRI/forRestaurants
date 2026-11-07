@@ -10,7 +10,7 @@ alter table public.needs
   add column if not exists is_active boolean not null default true,
   add column if not exists updated_at timestamptz not null default now();
 
-create table public.architecture_versions (
+create table if not exists public.architecture_versions (
   id uuid primary key default gen_random_uuid(),
   architecture_id text not null references public.architectures(id) on delete cascade,
   version integer not null check (version > 0),
@@ -21,24 +21,36 @@ create table public.architecture_versions (
   unique (architecture_id, version)
 );
 
-insert into public.architecture_versions(architecture_id,version,label,description,role_templates)
-select id,version,'Versión '||version,description,role_templates from public.architectures;
+do $$
+begin
+  if exists(select 1 from information_schema.columns where table_schema='public' and table_name='architectures' and column_name='version')
+     and exists(select 1 from information_schema.columns where table_schema='public' and table_name='architectures' and column_name='role_templates') then
+    execute $q$insert into public.architecture_versions(architecture_id,version,label,description,role_templates)
+      select id,version,'Versión '||version,description,role_templates from public.architectures
+      on conflict (architecture_id,version) do nothing$q$;
+  end if;
+end $$;
 
-create table public.architecture_needs (
+create table if not exists public.architecture_needs (
   architecture_version_id uuid not null references public.architecture_versions(id) on delete cascade,
   need_key text not null references public.needs(key) on update cascade on delete restrict,
   created_at timestamptz not null default now(),
   primary key (architecture_version_id,need_key)
 );
 
-insert into public.architecture_needs(architecture_version_id,need_key)
-select v.id,f.key from public.architecture_versions v
-join public.architectures a on a.id=v.architecture_id
-cross join lateral unnest(a.allowed_features) as f(key)
-join public.needs n on n.key=f.key
-on conflict do nothing;
+do $$
+begin
+  if exists(select 1 from information_schema.columns where table_schema='public' and table_name='architectures' and column_name='allowed_features') then
+    execute $q$insert into public.architecture_needs(architecture_version_id,need_key)
+      select v.id,f.key from public.architecture_versions v
+      join public.architectures a on a.id=v.architecture_id
+      cross join lateral unnest(a.allowed_features) as f(key)
+      join public.needs n on n.key=f.key
+      on conflict do nothing$q$;
+  end if;
+end $$;
 
-create table public.configuration_catalog (
+create table if not exists public.configuration_catalog (
   key text primary key check (key ~ '^[a-z][a-z0-9_.-]{1,99}$'),
   label text not null,
   area text not null default 'general',
@@ -51,7 +63,7 @@ create table public.configuration_catalog (
   updated_at timestamptz not null default now()
 );
 
-create table public.architecture_configurations (
+create table if not exists public.architecture_configurations (
   architecture_version_id uuid not null references public.architecture_versions(id) on delete cascade,
   configuration_key text not null references public.configuration_catalog(key) on update cascade on delete cascade,
   default_value jsonb,
@@ -68,17 +80,20 @@ on conflict (key) do nothing;
 
 insert into public.architecture_configurations(architecture_version_id,configuration_key)
 select v.id,c.key from public.architecture_versions v
-join public.architectures a on a.id=v.architecture_id
 cross join public.configuration_catalog c
-where c.key like 'attendance.%' and 'accounts'=any(a.allowed_features)
+where c.key like 'attendance.%' and exists(select 1 from public.architecture_needs an where an.architecture_version_id=v.id and an.need_key='accounts')
 on conflict do nothing;
 
 alter table public.restaurants
-  add column architecture_version_id uuid;
+  add column if not exists architecture_version_id uuid;
 
-update public.restaurants r set architecture_version_id=v.id
-from public.architecture_versions v
-where v.architecture_id=r.architecture_id and v.version=r.architecture_version;
+do $$
+begin
+  if exists(select 1 from information_schema.columns where table_schema='public' and table_name='restaurants' and column_name='architecture_id')
+     and exists(select 1 from information_schema.columns where table_schema='public' and table_name='restaurants' and column_name='architecture_version') then
+    execute 'update public.restaurants r set architecture_version_id=v.id from public.architecture_versions v where v.architecture_id=r.architecture_id and v.version=r.architecture_version and r.architecture_version_id is null';
+  end if;
+end $$;
 
 update public.restaurants r
 set configuration=coalesce((select jsonb_object_agg(ac.configuration_key,coalesce(ac.default_value,c.default_value))
@@ -89,6 +104,7 @@ set configuration=coalesce((select jsonb_object_agg(ac.configuration_key,coalesc
 where r.architecture_version_id is not null;
 
 alter table public.restaurants
+  drop constraint if exists restaurants_architecture_version_id_fkey,
   drop constraint if exists restaurants_architecture_id_architecture_version_fkey,
   drop constraint if exists restaurants_architecture_id_fkey,
   drop column if exists architecture_id,
@@ -104,15 +120,19 @@ alter table public.architectures
   drop column if exists role_templates,
   drop column if exists allowed_features;
 
-create index architecture_versions_family_idx on public.architecture_versions(architecture_id,version desc);
-create index architecture_needs_need_key_idx on public.architecture_needs(need_key);
-create index architecture_configurations_key_idx on public.architecture_configurations(configuration_key);
-create index restaurants_configuration_keys_gin on public.restaurants using gin(configuration_keys);
+create index if not exists architecture_versions_family_idx on public.architecture_versions(architecture_id,version desc);
+create index if not exists architecture_needs_need_key_idx on public.architecture_needs(need_key);
+create index if not exists architecture_configurations_key_idx on public.architecture_configurations(configuration_key);
+create index if not exists restaurants_configuration_keys_gin on public.restaurants using gin(configuration_keys);
 
 alter table public.architecture_versions enable row level security;
 alter table public.architecture_needs enable row level security;
 alter table public.configuration_catalog enable row level security;
 alter table public.architecture_configurations enable row level security;
+drop policy if exists "architecture versions readable to authenticated" on public.architecture_versions;
+drop policy if exists "architecture needs readable to authenticated" on public.architecture_needs;
+drop policy if exists "configuration catalog readable to authenticated" on public.configuration_catalog;
+drop policy if exists "architecture configurations readable to authenticated" on public.architecture_configurations;
 create policy "architecture versions readable to authenticated" on public.architecture_versions for select to authenticated using (true);
 create policy "architecture needs readable to authenticated" on public.architecture_needs for select to authenticated using (true);
 create policy "configuration catalog readable to authenticated" on public.configuration_catalog for select to authenticated using (true);
