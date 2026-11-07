@@ -18,8 +18,15 @@ Deno.serve(async (req) => {
   const { data: { user }, error: userError } = await caller.auth.getUser(token);
   if (userError || !user) return reply(401, { error: "invalid_session" });
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data: operator } = await admin.from("platform_operators").select("auth_user_id").eq("auth_user_id", user.id).maybeSingle();
-  if (!operator) return reply(403, { error: "platform_operator_required" });
+  const { data: operator, error: operatorError } = await admin.from("platform_operators").select("auth_user_id").eq("auth_user_id", user.id).maybeSingle();
+  if (operatorError) {
+    console.error("platform_operator_lookup_failed", operatorError.message);
+    return reply(500, { error: "platform_operator_lookup_failed" });
+  }
+  if (!operator) {
+    console.warn("platform_operator_not_authorized", user.id);
+    return reply(403, { error: "platform_operator_required" });
+  }
   let body: Record<string, unknown>;
   try { body = await req.json(); } catch { return reply(400, { error: "invalid_json" }); }
   const name = String(body.name ?? "").trim();
