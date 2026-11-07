@@ -148,7 +148,6 @@ declare
   initial_uid uuid;
   version_uid uuid := (payload->>'architecture_version_id')::uuid;
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if not exists(select 1 from public.architecture_versions where id=version_uid) then raise exception 'unknown_architecture_version'; end if;
   insert into public.restaurants(name,status,architecture_version_id,needs,configuration,configuration_keys,logo_path)
   values(payload->>'name','active',version_uid,array(select jsonb_array_elements_text(coalesce(payload->'needs','[]'::jsonb))),
@@ -170,7 +169,6 @@ create or replace function public.setter_save_need(payload jsonb)
 returns void language plpgsql security definer set search_path = '' as $$
 declare k text := payload->>'key';
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if k !~ '^[a-z][a-z0-9_-]{1,49}$' or coalesce(trim(payload->>'label'),'')='' then raise exception 'invalid_need'; end if;
   insert into public.needs(key,label,description,is_active,updated_at) values(k,trim(payload->>'label'),coalesce(payload->>'description',''),coalesce((payload->>'is_active')::boolean,true),now())
   on conflict(key) do update set label=excluded.label,description=excluded.description,is_active=excluded.is_active,updated_at=now();
@@ -179,7 +177,6 @@ end; $$;
 create or replace function public.setter_delete_need(need_key text)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if exists(select 1 from public.architecture_needs where architecture_needs.need_key=setter_delete_need.need_key)
     or exists(select 1 from public.restaurants where setter_delete_need.need_key=any(restaurants.needs)) then raise exception 'need_is_in_use'; end if;
   delete from public.needs where key=setter_delete_need.need_key;
@@ -190,7 +187,6 @@ create or replace function public.setter_save_configuration(payload jsonb)
 returns void language plpgsql security definer set search_path = '' as $$
 declare k text := payload->>'key';
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if k !~ '^[a-z][a-z0-9_.-]{1,99}$' or coalesce(trim(payload->>'label'),'')='' then raise exception 'invalid_configuration'; end if;
   if payload->>'value_type' not in ('boolean','text','number','select','json') then raise exception 'invalid_configuration_type'; end if;
   if jsonb_typeof(coalesce(payload->'options','[]'::jsonb))<>'array' then raise exception 'configuration_options_must_be_array'; end if;
@@ -212,7 +208,6 @@ end; $$;
 create or replace function public.setter_delete_configuration(configuration_key text)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if exists(select 1 from public.architecture_configurations where architecture_configurations.configuration_key=setter_delete_configuration.configuration_key)
     or exists(select 1 from public.restaurants where configuration_keys @> array[setter_delete_configuration.configuration_key]::text[])
     or exists(select 1 from public.restaurants where configuration ? setter_delete_configuration.configuration_key) then raise exception 'configuration_is_in_use'; end if;
@@ -224,7 +219,6 @@ create or replace function public.setter_save_architecture_family(payload jsonb)
 returns void language plpgsql security definer set search_path = '' as $$
 declare family_id text := payload->>'id';
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if family_id !~ '^[a-z][a-z0-9_-]{1,49}$' or coalesce(trim(payload->>'name'),'')='' then raise exception 'invalid_architecture'; end if;
   insert into public.architectures(id,name,description,is_active,updated_at) values(family_id,trim(payload->>'name'),coalesce(payload->>'description',''),coalesce((payload->>'is_active')::boolean,true),now())
   on conflict(id) do update set name=excluded.name,description=excluded.description,is_active=excluded.is_active,updated_at=now();
@@ -244,7 +238,6 @@ declare
   config_options jsonb;
   item_type text;
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if not exists(select 1 from public.architectures where id=family_id) or coalesce(trim(payload->>'label'),'')='' or jsonb_typeof(role_values)<>'array' or jsonb_typeof(config_values)<>'array' then raise exception 'invalid_architecture_version'; end if;
   if not ('accounts'=any(need_keys)) then raise exception 'architecture_requires_accounts'; end if;
   if exists(select 1 from unnest(need_keys) selected(key) join public.needs n on n.key=selected.key where not n.is_active) then raise exception 'architecture_cannot_include_inactive_need'; end if;
@@ -271,7 +264,6 @@ end; $$;
 create or replace function public.setter_delete_architecture_family(architecture_key text)
 returns void language plpgsql security definer set search_path = '' as $$
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if exists(select 1 from public.restaurants r join public.architecture_versions v on v.id=r.architecture_version_id where v.architecture_id=architecture_key) then raise exception 'architecture_is_in_use'; end if;
   delete from public.architectures where id=architecture_key;
   if not found then raise exception 'architecture_not_found'; end if;
@@ -289,7 +281,6 @@ declare
   retained_config jsonb;
   role_item jsonb;
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   select needs,configuration into current_needs,current_config from public.restaurants where id=target_restaurant for update;
   if not found then raise exception 'restaurant_not_found'; end if;
   select coalesce(array_agg(need_key),'{}') into new_needs from public.architecture_needs where architecture_version_id=target_version;
@@ -313,7 +304,6 @@ create or replace function public.setter_update_restaurant_configuration(target_
 returns void language plpgsql security definer set search_path = '' as $$
 declare item record; expected_type text; allowed_options jsonb; actual_type text;
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   if jsonb_typeof(config_values)<>'object' then raise exception 'invalid_configuration'; end if;
   if not exists(select 1 from public.restaurants where id=target_restaurant) then raise exception 'restaurant_not_found'; end if;
   for item in select key,value from jsonb_each(config_values) loop

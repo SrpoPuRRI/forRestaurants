@@ -127,7 +127,6 @@ declare
   new_role uuid;
   initial_uid uuid;
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then raise exception 'service_role_required'; end if;
   insert into public.restaurants(name,kind,city,architecture_id,architecture_version,needs,configuration,logo_path)
   values (payload->>'name', coalesce(payload->>'kind','Restaurante'), coalesce(payload->>'city',''),
     payload->>'architecture_id', (payload->>'architecture_version')::integer,
