@@ -79,7 +79,7 @@ Lee `specs/Database/kffeto_production_reference_001.md` antes de proponer SQL. E
 
 Las specs dicen que las necesidades determinan qué roles ofrecer al admin para que él habilite los que usarán en su restaurante. Sin embargo, `supabase/functions/setter-create-restaurant/index.ts` todavía crea solamente los roles base **Administrador** y **Empleado**. `staff-admin` permite seleccionar roles ya asociados al restaurante, pero no hay todavía un flujo completo en Cuentas para elegir/administrar el catálogo derivado de necesidades. No tratar esta parte como cerrada.
 
-En el árbol local se confirmó que `staff-admin/index.ts` declaraba `schedules` dos veces y ejecutaba dos inserciones de los mismos horarios al crear una cuenta. Se eliminó el bloque duplicado. `deno check` pasó para las cuatro Edge Functions (`setter-create-restaurant`, `setter-admin`, `staff-admin` y `restaurant-access`). Esta corrección está validada localmente; aún no se ha publicado ni confirmado contra la función desplegada en Supabase.
+En el árbol local se confirmó que `staff-admin/index.ts` declaraba `schedules` dos veces y ejecutaba dos inserciones de los mismos horarios al crear una cuenta. Se eliminó el bloque duplicado. `deno check` pasó para las cuatro Edge Functions (`setter-create-restaurant`, `setter-admin`, `staff-admin` y `restaurant-access`). La corrección se publicó en el commit `65d482a`; GitHub Actions #10 terminó correctamente y desplegó las Edge Functions.
 
 ## Supabase, Auth y publicación
 
@@ -110,13 +110,12 @@ Detalles recientes del usuario ya reflejados en las specs:
 
 ## Próximos pasos recomendados
 
-1. Publicar la corrección de `staff-admin` cuando corresponda y verificar que las cuatro Edge Functions activas correspondan al commit publicado.
-2. Revisar la UX en producción de Configuración/Cuentas con una cuenta de prueba, sin cargar datos reales de clientes.
-3. Corregir/expandir el modelo de roles según necesidades y el selector del admin antes de crear cuentas de equipo.
-4. Diseñar y migrar el catálogo/pedidos/cobros a un esquema con aislamiento multi-restaurante y policies/RPC seguras.
-5. Conectar el checkout a las modalidades manuales configuradas; después integrar pagos automáticos y definir proveedor.
-6. Implementar efectivamente límites, devoluciones/correcciones y promociones, con validación en servidor.
-7. Definir la política de reinicio de notas, ranking de categorías y permisos de turno nocturno antes de automatizar/mostrar datos históricos.
+1. Revisar la UX en producción de Configuración/Cuentas con una cuenta de prueba, sin cargar datos reales de clientes.
+2. Corregir/expandir el modelo de roles según necesidades y el selector del admin antes de crear cuentas de equipo.
+3. Diseñar y migrar el catálogo/pedidos/cobros a un esquema con aislamiento multi-restaurante y policies/RPC seguras.
+4. Conectar el checkout a las modalidades manuales configuradas; después integrar pagos automáticos y definir proveedor.
+5. Implementar efectivamente límites, devoluciones/correcciones y promociones, con validación en servidor.
+6. Definir la política de reinicio de notas, ranking de categorías y permisos de turno nocturno antes de automatizar/mostrar datos históricos.
 
 ## Cuidado al continuar
 
