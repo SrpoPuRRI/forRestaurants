@@ -16,18 +16,15 @@
 
 El shell muestra la marca del restaurante activo en la parte superior izquierda: logo y nombre del restaurante. La cuenta y el rol se muestran en la barra lateral. La acción **Salir** permanece visible en la parte superior derecha.
 
-El espacio de trabajo tiene estas ocho pestañas configurables por restaurante:
+El espacio de trabajo tiene cinco secciones fijas para todos los restaurantes:
 
 1. Cuentas
-2. CRM
+2. Estadísticas
 3. Flujo de pedidos
-4. Salón
-5. Cocina
-6. Estadísticas
-7. Catálogo
-8. Configuración
+4. Catálogo
+5. Configuración
 
-Setter decide cuáles están habilitadas para cada restaurante. Black&White POS muestra únicamente las pestañas habilitadas y permitidas para la cuenta autenticada.
+Las únicas necesidades opcionales son CRM, Cocina, Salón, Delivery y Comprobantes. Setter no administra esta lista: muestra las cinco opciones fijas al crear el restaurante. La app POS usa la selección para mostrar al administrador las configuraciones correspondientes a necesidades y secciones. Las secciones fijas nunca se eliminan. Black&White POS respeta los permisos de la cuenta autenticada y las funciones habilitadas.
 
 ## Decisiones de navegación
 
@@ -42,4 +39,4 @@ Setter decide cuáles están habilitadas para cada restaurante. Black&White POS 
 - Definir variantes responsive y la composición exacta de la navegación móvil.
 - Definir estados visuales, accesibilidad, iconografía y reglas completas de contraste.
 - Aprobar arte final del logotipo y el ícono antes de producción.
-- Definir cómo se muestra Configuración cuando Setter desactiva esa pestaña para un restaurante.
+- Definir cómo las necesidades opcionales condicionan el comportamiento de las secciones fijas y qué ajustes ofrece Configuración.

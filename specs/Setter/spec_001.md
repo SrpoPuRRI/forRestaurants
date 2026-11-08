@@ -1,4 +1,4 @@
-# Black&White POS — Setter y arquitectura de la plataforma 001
+# Black&White POS — Setter y administración de plataforma 001
 
 **Estado:** Borrador de arquitectura inicial  
 **Propósito:** Documentar cómo Setter crea y configura restaurantes y cómo Black&White POS carga el espacio de trabajo de cada uno.
@@ -13,15 +13,19 @@
 
 - La interfaz se presenta como **Configurador de Black&White**. No muestra nombre, perfil ni cuenta de operador. El acceso se verifica con enlace de correo al Gmail del propietario antes de mostrar datos.
 - La vista inicial muestra restaurantes y la acción para crear uno. No usa navegación lateral ni una pantalla de actividad.
-- Junto a «Crear restaurante» hay una sección global «Necesidades y arquitectura» para administrar necesidades, familias de arquitectura y configuraciones.
-- Una familia de arquitectura tiene un identificador estable y un historial de versiones inmutables. Cada versión es una arquitectura completa: especifica las necesidades que soporta, los roles disponibles y las configuraciones con sus valores iniciales. Las mismas necesidades pueden corresponder a varias familias, con responsabilidades distintas.
-- Al crear un restaurante, Setter primero pide sus necesidades y luego muestra la versión más reciente de cada familia activa que las cubre. Guarda el UUID exacto de esa versión; nuevas versiones no alteran restaurantes existentes. Para cambiar un restaurante existente, el operador elige manualmente una versión compatible.
-- La ficha no solicita tipo de negocio ni ciudad. La versión seleccionada, no el identificador de familia, representa la arquitectura operativa exacta.
+- Setter administra los restaurantes. No tiene una sección para editar el catálogo de necesidades, no ofrece un catálogo global de configuraciones ni edita configuraciones operativas.
+- El alta muestra exactamente cinco necesidades opcionales con claves fijas: CRM (`crm`), Cocina (`kitchen`), Salón (`salon`), Delivery (`delivery`) y Comprobantes (`receipts`). No se pueden añadir, renombrar ni eliminar desde Setter.
+- Todos los restaurantes tienen siempre las secciones Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración. No se ofrecen como necesidades opcionales al crear un restaurante.
+- CRM, Cocina, Salón, Delivery y Comprobantes son las únicas necesidades opcionales. Las necesidades y los ajustes por sección pueden cambiar el comportamiento de las secciones fijas, sin quitarlas.
+- Cada sección fija puede tener comportamiento configurable desde Configuración. La disponibilidad de esas opciones y sus interacciones con CRM, Salón, Cocina u otras necesidades se definirá antes de implementarlas.
+- No se escogerá una arquitectura prearmada al crear un restaurante. Las necesidades seleccionadas determinan qué roles y configuraciones quedan disponibles; esto reemplaza el flujo anterior de elegir una familia y versión de arquitectura.
+- La app POS determina qué opciones de configuración y roles mostrar al administrador del restaurante, usando las cinco necesidades elegidas y las secciones fijas. Por ejemplo, las cuatro opciones de asistencia pertenecen a Cuentas > Configuración del restaurante, no a Setter.
+- La ficha no solicita tipo de negocio ni ciudad. Setter guarda las necesidades elegidas y administra el restaurante, sin elección de arquitectura ni edición de los valores operativos que configura el administrador en la app.
 - Crear un restaurante completa su configuración inicial y lo deja activo. No existe el estado «pendiente de configuración».
 - Cada restaurante puede estar activo o dado de baja. Los dados de baja se ocultan de la vista habitual; si existe al menos uno, aparece un control para mostrarlos u ocultarlos.
-- Setter guarda para cada restaurante las necesidades, la arquitectura seleccionada y la lista de roles resultante. Esos roles determinan las opciones al crear cuentas de restaurante.
+- Setter guarda las necesidades elegidas y administra el registro del restaurante. La app POS resuelve las opciones de configuración y los roles que el administrador del restaurante habilita; esos roles determinan las opciones al crear cuentas.
 - Setter puede consultar el total de cuentas y los roles; nunca muestra contraseñas. Desde Setter se pueden crear o eliminar cuentas, pero no editar su perfil ni cambiar su contraseña.
-- Setter muestra la configuración que también administra el rol Administrador dentro de Black&White POS. Las opciones se limitan a las necesidades habilitadas; no muestra ajustes de cada pestaña operativa.
+- La app POS muestra al administrador las configuraciones que corresponden a las necesidades elegidas y a las secciones fijas. CRM, Salón y Cocina sí pueden ser necesidades opcionales.
 - Cada sede puede guardar dirección opcional y horario de atención. Cada empleado puede tener asignado uno o más horarios de entrada y salida.
 - Si un restaurante está dado de baja, las cuentas asociadas no pueden operar Black&White POS. Tras resolver la sesión, la aplicación debe descartar los datos privados del restaurante, limpiar su interfaz y mostrar una pantalla bloqueante con el aviso **«Tu restaurante ha sido dado de baja»**. La restricción debe aplicarse también en los servicios de datos; limpiar el DOM por sí solo no controla el acceso.
 
@@ -30,34 +34,30 @@ La autenticación es una pantalla breve de correo y enlace; no crea un perfil vi
 ## Flujo de alta de restaurante
 
 1. Un operador autorizado entra a Setter.
-2. Si hace falta, prepara necesidades, arquitecturas, roles y configuraciones en la sección de plataforma.
-3. Crea el restaurante, selecciona sus necesidades y elige una de las versiones más recientes compatibles que Setter presenta.
-4. El sistema guarda el UUID de esa versión, copia sus roles y valores iniciales de configuración, y crea la cuenta inicial Administrador vinculada al restaurante.
-5. La persona inicia sesión en Black&White POS. La app resuelve su restaurante y sus permisos sin pedirle que lo seleccione.
+2. Crea el restaurante y selecciona sus necesidades; Setter guarda esas necesidades y crea la cuenta inicial Administrador vinculada al restaurante.
+3. La persona inicia sesión en Black&White POS. La app resuelve su restaurante y sus permisos sin pedirle que lo seleccione.
+4. Dentro del POS, el administrador ve las configuraciones aplicables según las necesidades y las secciones fijas, y guarda sus valores en los campos/tablas propios de cada área.
 
 La contraseña inicial debe tratarse como credencial temporal; nunca se almacena en texto plano en las tablas del producto. El método de entrega y el cambio obligatorio en el primer acceso quedan por definir.
 
 ## Modelo de datos
 
-- `restaurants`: nombre, estado, `architecture_version_id` exacto, necesidades elegidas y valores actuales de configuración.
-- `needs`: catálogo administrable de necesidades.
-- `architectures`: familias estables de arquitectura con metadatos.
-- `architecture_versions`: cada versión completa e inmutable, con número, roles plantilla y descripción.
-- `architecture_needs`: necesidades soportadas por cada versión concreta.
-- `configuration_catalog` y `architecture_configurations`: definiciones tipadas de ajustes, su disponibilidad por versión y sus valores iniciales.
-- `roles`: copia por restaurante de los roles plantilla al momento de crear el restaurante.
+- `restaurants`: nombre, estado, necesidades opcionales elegidas y valores directos de configuración que correspondan al restaurante.
+- `restaurants.needs` acepta únicamente `crm`, `kitchen`, `salon`, `delivery` y `receipts`; no existe catálogo editable de necesidades.
+- Roles y relaciones se guardan como datos propios de Cuentas cuando se defina su modelo; las opciones se presentan y administran en la app POS.
+- Configuraciones persistidas en columnas directas de `restaurants` o en tablas de dominio específicas, según su forma y relación. No se usará un catálogo genérico de configuraciones.
 - `locations`: sedes pertenecientes a un restaurante.
 - Datos operativos de cada módulo: asociados al restaurante y, cuando aplique, a una sede.
 
-El `id` de `architectures` identifica una familia que puede tener muchas versiones. Cada fila de `architecture_versions` es una arquitectura concreta; `restaurants.architecture_version_id` fija cuál eligió el restaurante. Crear una versión nueva solo cambia la opción más reciente que se ofrece en nuevas altas. Los restaurantes existentes conservan su versión hasta que Setter la cambie expresamente.
+Las necesidades elegidas determinan qué opciones aparecen en la app POS, sin selector de arquitectura/versiones. El backend valida y persiste cada ajuste en campos o tablas con significado de dominio, en lugar de usar un almacén genérico clave-valor. Los valores, restricciones y relaciones deben quedar definidos en el esquema de cada área.
 
-Las ocho pestañas configurables son Cuentas, CRM, Flujo de pedidos, Salón, Cocina, Estadísticas, Catálogo y Configuración. La autenticación necesaria para acceder sigue siendo infraestructura base aunque la pestaña de administración de Cuentas esté apagada.
+Las secciones fijas son Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración. Las necesidades opcionales marcables son CRM, Cocina, Salón, Delivery y Comprobantes. La lista es fija y no editable desde Setter. La autenticación necesaria para acceder es infraestructura base. La app presenta los ajustes según las necesidades elegidas y las secciones fijas.
 ## Aislamiento entre restaurantes
 
 - Los permisos deben aplicarse en la base de datos, no solo ocultando pestañas.
 - Las políticas RLS deben limitar cada lectura y escritura a los restaurantes a los que pertenece la cuenta.
 - Las funciones de servidor y RPC deben comprobar membresía, rol, restaurante y módulos activos.
-- Setter administra el catálogo de funciones; los datos operativos permanecen dentro del ámbito de cada restaurante.
+- Setter administra restaurantes y sus cuentas iniciales; el POS administra roles y configuraciones operativas dentro del restaurante.
 
 ## Logo y archivos
 
@@ -69,7 +69,9 @@ Las ocho pestañas configurables son Cuentas, CRM, Flujo de pedidos, Salón, Coc
 
 La creación de usuarios privilegiados requiere una operación de servidor de Setter. Una clave privilegiada de Supabase no se expone en el navegador. La operación debe validar que quien usa Setter tenga autorización de plataforma y manejar de forma segura errores parciales entre la creación de la identidad Auth y los registros de negocio.
 
-## Decisiones pendientes de arquitectura
+## Decisiones pendientes
+
+- Definir qué valores iniciales reciben los ajustes operativos al crear el restaurante y si el administrador los completa en un paso inicial dentro del POS.
 
 - Si cada usuario POS pertenece a un solo restaurante o puede tener varias membresías.
 - Cómo se obtiene un identificador de acceso único si el inicio usa nombre de usuario sin restaurante.

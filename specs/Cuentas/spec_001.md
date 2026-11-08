@@ -1,22 +1,35 @@
 # Black&White POS — Cuentas 001
 
 **Estado:** Borrador inicial  
-**Tipo:** Pestaña opcional por restaurante; la autenticación es infraestructura base.
+**Tipo:** Sección fija para todos los restaurantes. La autenticación es infraestructura base.
 
 ## Propósito
 
 Gestionar las personas que pueden operar un restaurante y las acciones que permite el rol de cada una.
 
+## Decisión de disponibilidad
+
+Cuentas siempre está disponible y no se configura como una necesidad opcional. Sus roles disponibles derivan de las necesidades seleccionadas y los roles que el operador habilitó; su comportamiento también puede variar por opciones que el administrador del restaurante controla desde Configuración. Los permisos de asistencia descritos abajo son un ejemplo de esas opciones.
+
 ## Alcance por especificar
 
 - Perfil, alta, edición, suspensión y baja de cuentas del restaurante.
 - Roles, permisos por módulo y asignación de sede.
-- La arquitectura elegida en Setter define los roles disponibles para cada restaurante y estos se guardan asociados al restaurante.
+- Las necesidades seleccionadas determinan qué roles puede habilitar el administrador dentro de la app POS. Los roles habilitados se asocian al restaurante y determinan las opciones al crear cuentas.
 - Cada sede puede tener una dirección opcional y un horario de atención.
 - Cada empleado puede tener asignado uno o más horarios de entrada y salida.
 - Invitación o contraseña temporal y cambio de contraseña.
 - Historial de acciones administrativas y sesiones.
 - Restricciones de administración de cuenta para proteger al último administrador.
+
+## Nota personal de fin de mes
+
+Cada empleado tiene una nota de texto asociada a su cuenta para apuntar información útil de fin de mes. El empleado consulta y edita su propia nota; el administrador puede consultar la nota de cada cuenta del restaurante. La nota se guarda en la base de datos y tiene una preferencia de reinicio configurable desde Configuración:
+
+- Reinicio manual.
+- Reinicio automático cada 7, 15 o 30 días.
+
+El criterio temporal exacto para contar el intervalo, la hora de ejecución y qué ocurre con el contenido al reiniciar (borrado, archivo o historial) aún no están decididos. La interfaz no debe borrar contenido hasta definir y documentar ese comportamiento.
 
 ## Propuesta de asistencia y salida
 

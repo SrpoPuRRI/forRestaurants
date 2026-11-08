@@ -6,7 +6,7 @@
 
 ## Principio de uso
 
-Kffe’to es un POS funcional de una cafetería concreta. Su base muestra decisiones operativas que ya funcionan en producción, pero Black&White será un producto multi-restaurante, configurable y con arquitecturas distintas por restaurante. Kffe’to es una inspiración y un caso probado; no se copia como diseño final ni se asume que sus reglas sirvan para todos los clientes.
+Kffe’to es un POS funcional de una cafetería concreta. Su base muestra decisiones operativas que ya funcionan en producción, pero Black&White será un producto multi-restaurante que adapta su operación a las necesidades de cada restaurante. Kffe’to es una inspiración y un caso probado; no se copia como diseño final ni se asume que sus reglas sirvan para todos los clientes.
 
 El snapshot contiene estructura, columnas, restricciones, índices, políticas, firmas de funciones y triggers. No contiene filas de negocio ni cuerpos de funciones. Los comportamientos que se infieren del nombre de una función o trigger deben confirmarse con su código antes de implementarlos.
 
@@ -79,13 +79,13 @@ Las RPC financieras y administrativas aparecen mayormente como `SECURITY DEFINER
 4. **Tratar pedidos financieros como historial protegido.** Validar el reparto de pagos y registrar correcciones con actor y motivo.
 5. **Controlar concurrencia de pedidos abiertos.** `revision` y el argumento de revisión esperada evitan que una edición pise otra.
 6. **Aplicar sede y rol en la base.** La visibilidad de catálogo y datos operativos no depende solo de ocultar controles en la UI.
-7. **Mantener necesidades del cliente en modelo configurable.** Kffe’to usa roles fijos y montos específicos Yape/efectivo; B&W debe admitir roles y métodos de pago que varían por arquitectura/restaurante.
+7. **Mantener necesidades del cliente en modelo configurable.** Kffe’to usa roles fijos y montos específicos Yape/efectivo; B&W debe ofrecer roles y configuraciones según las necesidades seleccionadas, con métodos de pago configurables por restaurante.
 
 ## Propuestas para revisar en el modelo actual de B&W
 
 Estas son ideas para discutir. **No están aprobadas y no se han añadido al SQL.**
 
-1. **Cuenta normalizada y reglas de asignación.** Mantener `accounts` como perfil multi-restaurante, pero reforzar en base de datos la unicidad del usuario normalizado y definir qué roles requieren sede. No fijar `admin`/`employee` como catálogo global: cada restaurante conserva la copia de roles de su arquitectura.
+1. **Cuenta normalizada y reglas de asignación.** Mantener `accounts` como perfil multi-restaurante, pero reforzar en base de datos la unicidad del usuario normalizado y definir qué roles requieren sede. No fijar `admin`/`employee` como catálogo global: los roles habilitados se derivan de las necesidades y se guardan asociados al restaurante.
 2. **Historial de perfiles.** Evaluar una tabla de historial para cambios de nombre visible, rol, sede y estado. Almacenar snapshots cuando pedidos/asistencias dependan de nombres actuales.
 3. **Asistencia.** Incorporar una tabla de marcas con unicidad por persona y fecha, sede, actor que marcó y snapshots. Relacionarla con `account_schedules` sin convertir el horario en inventario ni en una regla de acceso.
    - `accounts.location_id`, `accounts.is_active` y `accounts.created_at` describen principalmente el estado actual y el alta; no reconstruyen por sí solos en qué sede trabajaba alguien ni si seguía activo en una fecha pasada.
@@ -101,6 +101,6 @@ Estas son ideas para discutir. **No están aprobadas y no se han añadido al SQL
 
 ## Diferencias con la primera migración local de B&W
 
-La migración actual crea `restaurants`, `accounts`, `roles`, `architectures`, `needs`, `locations`, `location_hours` y `account_schedules`, junto con RLS básico para esas entidades. No crea aún catálogo, pedidos, pagos, asistencia ni historial operativo multi-restaurante. Kffe’to sugiere qué invariantes valdría la pena considerar al diseñar esos módulos, pero no justifica añadirlos como SQL sin definir antes las arquitecturas y flujos de B&W.
+La migración actual crea `restaurants`, `accounts`, `roles`, `architectures`, `needs`, `locations`, `location_hours` y `account_schedules`, junto con RLS básico para esas entidades. No crea aún catálogo, pedidos, pagos, asistencia ni historial operativo multi-restaurante. Kffe’to sugiere qué invariantes valdría la pena considerar al diseñar esos módulos, pero no justifica añadirlos como SQL sin definir antes los flujos de B&W.
 
 Antes de implementar una RPC de pedidos/cobro/asistencia o de migrar producción, solicitar los cuerpos de las funciones relevantes del snapshot y contrastarlos con los requisitos de B&W. El export compartido no incluía esos cuerpos ni datos de negocio.

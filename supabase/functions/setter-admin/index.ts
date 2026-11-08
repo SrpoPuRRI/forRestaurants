@@ -29,61 +29,10 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return reply(400, { error: "invalid_json" }); }
   const action = String(body.action ?? "");
   const restaurantId = String(body.restaurant_id ?? "");
-  const catalogCalls: Record<string, { fn: string; args: Record<string, unknown> }> = {
-    save_need: { fn: "setter_save_need", args: { payload: body.need } },
-    delete_need: { fn: "setter_delete_need", args: { need_key: body.key } },
-    save_architecture_family: { fn: "setter_save_architecture_family", args: { payload: body.architecture } },
-    create_architecture_version: { fn: "setter_create_architecture_version", args: { payload: body.version } },
-    delete_architecture_family: { fn: "setter_delete_architecture_family", args: { architecture_key: body.key } },
-    save_configuration_definition: { fn: "setter_save_configuration", args: { payload: body.configuration } },
-    delete_configuration_definition: { fn: "setter_delete_configuration", args: { configuration_key: body.key } },
-  };
-  if (catalogCalls[action]) {
-    const { fn, args } = catalogCalls[action];
-    const { error } = await db.rpc(fn, args);
-    return error ? reply(400, { error: error.message }) : reply(200, { success: true });
-  }
   if (action === "set_status") {
     if (!restaurantId || !["active", "deactivated"].includes(String(body.status))) return reply(400, { error: "invalid_status_request" });
     const { error } = await db.from("restaurants").update({ status: body.status, updated_at: new Date().toISOString() }).eq("id", restaurantId);
     return error ? reply(400, { error: error.message }) : reply(200, { success: true });
-  }
-  if (action === "set_configuration") {
-    if (!restaurantId || !body.configuration || typeof body.configuration !== "object") return reply(400, { error: "invalid_configuration" });
-    const { error } = await db.rpc("setter_update_restaurant_configuration", { target_restaurant: restaurantId, config_values: body.configuration });
-    return error ? reply(400, { error: error.message }) : reply(200, { success: true });
-  }
-  if (action === "set_restaurant_architecture") {
-    if (!restaurantId || !body.architecture_version_id) return reply(400, { error: "restaurant_and_architecture_version_required" });
-    const { error } = await db.rpc("setter_change_restaurant_architecture", {
-      target_restaurant: restaurantId,
-      target_version: body.architecture_version_id,
-    });
-    return error ? reply(400, { error: error.message }) : reply(200, { success: true });
-  }
-  if (action === "save_location") {
-    const locationId = String(body.location_id ?? "");
-    const locationPayload = { restaurant_id: restaurantId, name: String(body.name ?? "").trim(), address: String(body.address ?? "").trim() || null };
-    if (!restaurantId || !locationPayload.name) return reply(400, { error: "restaurant_and_location_name_required" });
-    let savedId = locationId;
-    if (locationId) {
-      const { data, error } = await db.from("locations").update(locationPayload).eq("id", locationId).eq("restaurant_id", restaurantId).select("id").maybeSingle();
-      if (error || !data) return reply(400, { error: error?.message ?? "location_not_found" });
-      savedId = data.id;
-    } else {
-      const { data, error } = await db.from("locations").insert(locationPayload).select("id").single();
-      if (error || !data) return reply(400, { error: error?.message ?? "location_create_failed" });
-      savedId = data.id;
-    }
-    const hours = Array.isArray(body.hours) ? body.hours as Array<{weekday:number;opens_at:string;closes_at:string;closed:boolean}> : [];
-    if (hours.some(h => !Number.isInteger(Number(h.weekday)) || Number(h.weekday)<0 || Number(h.weekday)>6 || (!h.closed && (!h.opens_at || !h.closes_at || h.opens_at>=h.closes_at)))) return reply(400,{error:"invalid_location_hours"});
-    const { error: clearError } = await db.from("location_hours").delete().eq("location_id", savedId);
-    if (clearError) return reply(400,{error:clearError.message});
-    if (hours.length) {
-      const { error } = await db.from("location_hours").insert(hours.map(h=>({location_id:savedId,weekday:Number(h.weekday),opens_at:h.closed?null:h.opens_at,closes_at:h.closed?null:h.closes_at,closed:Boolean(h.closed)})));
-      if (error) return reply(400,{error:error.message});
-    }
-    return reply(200,{location_id:savedId});
   }
   if (action === "create_account") {
     const username = normalize(String(body.username ?? ""));

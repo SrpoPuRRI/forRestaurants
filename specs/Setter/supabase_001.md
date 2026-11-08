@@ -3,29 +3,45 @@
 **Estado:** Primera implementación local; requiere configuración única y despliegue del proyecto Supabase antes de usarla en producción.
 **Objetivo:** Una base Supabase compartida por Setter y Black&White POS, con datos aislados por restaurante.
 
-## Modelo propuesto
+## Esquema actualmente desplegado (flujo anterior)
+
+La siguiente tabla describe el modelo que ya se implementó y desplegó para el flujo previo de familias/versiones de arquitectura. No representa el nuevo flujo acordado más abajo.
 
 | Entidad | Propósito |
 |---|---|
-| `restaurants` | Nombre, estado activo/dado de baja, arquitectura elegida, necesidades seleccionadas, valores de configuración y ruta del logo. No guarda tipo ni ciudad. |
+| `restaurants` | Nombre, estado activo/dado de baja, necesidades opcionales seleccionadas, ajustes tipados de dominio y ruta del logo. No guarda arquitectura, tipo ni ciudad. |
 | `accounts` | Perfil de una persona autenticada, su `auth.users.id`, nombre de usuario global, restaurante, rol y estado. La clave de acceso y contraseña no se guardan en esta tabla. |
-| `roles` | Roles habilitados para cada restaurante, con clave, etiqueta y permisos efectivos. La lista se crea como copia versionada desde la arquitectura seleccionada. |
-| `architectures` | Familias estables de arquitectura, con nombre, descripción y estado. Una familia agrupa versiones. |
-| `architecture_versions` | Arquitecturas concretas e inmutables: versión, etiqueta, necesidades, roles plantilla y configuraciones disponibles. |
-| `needs` | Catálogo de capacidades opcionales: módulos y necesidades operativas configurables. |
-| `architecture_needs` | Necesidades que admite cada versión concreta. La misma selección puede ser cubierta por varias familias. |
-| `restaurants.needs` | Lista de necesidades elegidas al crear cada restaurante. |
-| `configuration_catalog` | Catálogo tipado de configuraciones, opciones, valor predeterminado y área funcional. |
+| `roles` | Roles habilitados para cada restaurante, con clave, etiqueta y permisos efectivos. Se crean/administran según los flujos de roles definidos para el POS. |
+| `restaurants.needs` | Lista cerrada de necesidades opcionales: `crm`, `kitchen`, `salon`, `delivery`, `receipts`. Las secciones base no se guardan aquí porque siempre existen. |
+| `attendance_*` | Interruptores tipados de asistencia: autoentrada, entrada por compañero, autosalida y salida por compañero. Se administran desde Configuración del POS. |
 | `architecture_configurations` | Configuraciones que ofrece cada versión y posibles valores iniciales propios. |
 | `restaurants.configuration` y `restaurants.configuration_keys` | Valores JSON actuales y copia de las claves disponibles para ese restaurante. |
 | `locations` | Sedes del restaurante, con dirección opcional y horario de atención. |
 | `location_hours` | Horario de atención estructurado por día de la semana. |
 | `account_schedules` | Uno o más horarios de entrada y salida asignados a una cuenta de empleado. |
 | Asistencia (propuesta) | Marcas de entrada/salida con actor, sede efectiva, turno y auditoría; el mapa de calor es un resumen derivado. |
+| Movimientos y pagos (propuesta) | Registro común para todos los restaurantes, con timestamp, total, hasta diez importes y un arreglo ordenado que identifica el método usado en cada espacio. |
 
 Los nombres se mantienen en inglés para mantener consistencia con las tablas y consultas actuales del proyecto. La pantalla usa etiquetas en español.
 
-`architectures.id` identifica una familia; `architecture_versions.id` identifica la arquitectura concreta. `restaurants.architecture_version_id` guarda la versión elegida. En altas nuevas se muestra la versión más reciente de cada familia activa que cubra las necesidades elegidas. Una versión nueva es inmutable y no cambia restaurantes anteriores; Setter puede mover un restaurante a otra versión compatible mediante una acción explícita. Los roles de esa versión se copian a `roles`.
+No se usa selector de arquitectura/versiones. En el alta se guardan únicamente las necesidades opcionales escogidas. Las secciones fijas son Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración; el POS decide qué opciones mostrar según esas secciones y las necesidades.
+
+La migración `202611080001_fixed_optional_needs.sql` transforma las antiguas claves `dining` a `salon`, filtra las antiguas secciones base de `restaurants.needs`, mantiene los cuatro valores de asistencia en columnas booleanas y retira el catálogo genérico de configuraciones y las tablas de arquitectura. La función de alta valida estrictamente las cinco claves permitidas.
+
+El movimiento conserva una instantánea de los tipos de pago junto con los importes para que cambios posteriores a los métodos configurados no alteren el significado histórico. El diseño físico de esa tabla queda pendiente de la especificación de Flujo de pedidos; no se incorpora todavía a una migración SQL.
+
+## Flujo objetivo acordado (pendiente de rediseño SQL)
+
+Setter administra restaurantes y no edita un catálogo de necesidades. El alta ofrece exactamente CRM (`crm`), Cocina (`kitchen`), Salón (`salon`), Delivery (`delivery`) y Comprobantes (`receipts`); no hay otras necesidades marcables ni se pueden añadir desde la interfaz. Setter no administra configuraciones operativas ni expone un catálogo genérico de configuraciones. El alta no pide una arquitectura o versión: guarda la selección de necesidades en el restaurante. La app POS decide qué ajustes presentar al administrador a partir de esa selección y de las cinco secciones fijas.
+
+Lógicamente, el esquema futuro necesita:
+
+- En `restaurants`, las necesidades y campos explícitos para valores simples (por ejemplo, delivery propio, uso de proveedor externo y datos asociados).
+- Tablas de dominio para valores estructurados o múltiples, como métodos de pago, roles y relaciones de cuentas, en lugar de una tabla universal de configuraciones.
+- La app determina qué opciones mostrar a partir de las necesidades seleccionadas; las operaciones de servidor validan y guardan esos valores en sus campos/tablas de dominio.
+- La configuración de métodos de pago vive dentro del POS y se guarda en el modelo de pagos; no se administra como arquitectura ni como catálogo genérico.
+
+La estructura restante de roles y campos se definirá con cada sección. La migración nueva elimina los objetos del flujo anterior y conserva restaurantes, roles, cuentas, sedes y preferencias de asistencia.
 
 ## Acceso desde ambos productos
 
@@ -34,9 +50,9 @@ Los nombres se mantienen en inglés para mantener consistencia con las tablas y 
 - La clave `service_role` solo existe como secreto de Edge Functions; nunca se incluye en Setter, en Black&White POS ni en código estático.
 - Sin selección de restaurante al iniciar sesión, el nombre de usuario debe ser único globalmente. Una sesión resuelve la cuenta, restaurante, rol y sede desde `accounts`.
 
-## Edge Functions
+## Edge Functions actuales (modelo desplegado)
 
-1. `setter-create-restaurant`: valida la solicitud, guarda restaurante, arquitectura, necesidades y copia de roles; crea la cuenta inicial Administrador y devuelve las credenciales temporales una sola vez.
+1. `setter-create-restaurant`: valida el nombre y la lista cerrada de necesidades, guarda el restaurante y crea su cuenta inicial Administrador.
 2. `setter-create-account`: valida que el rol esté habilitado en ese restaurante, crea la identidad Auth y guarda la relación. Si guardar el perfil falla, elimina la identidad recién creada.
 3. `setter-delete-account`: revoca el acceso y conserva los registros históricos necesarios.
 4. `setter-set-restaurant-status`: activa o da de baja un restaurante. La baja impide leer y modificar datos operativos; POS debe limpiar el contenido visible de la sesión y mostrar el aviso de baja.
@@ -66,18 +82,18 @@ El frontend consulta `staff_profiles`, `locations`, catálogo, `open_orders`, `o
 
 ## Implementación y límites actuales
 
-- La migración `202611060001_platform_core.sql` crea catálogos de necesidades/arquitecturas, restaurantes, roles por restaurante, cuentas Auth, sedes, horarios, registro de operador, políticas RLS y bucket privado de logos.
+- La migración `202611060001_platform_core.sql` creó los primeros catálogos de necesidades/arquitecturas, restaurantes, roles por restaurante, cuentas Auth, sedes, horarios, registro de operador, políticas RLS y bucket privado de logos.
 - Edge Functions: `setter-create-restaurant`, `setter-admin`, `staff-admin` y `restaurant-access`.
-- Setter ya usa el proyecto compartido para acceso por Gmail, lista de restaurantes, alta de restaurante y administrador inicial, cuentas, baja/reactivación, configuración y horarios de atención de sedes.
+- Setter ya usa el proyecto compartido para acceso por Gmail, lista de restaurantes, alta de restaurante y administrador inicial, cuentas y baja/reactivación. La pantalla de catálogo de necesidades/arquitecturas y los editores de configuración/sedes se retiraron del frontend.
 - POS inicia sesión por nombre de usuario, consulta `accounts`, crea cuentas mediante `staff-admin` y consulta el estado del restaurante antes de abrir el espacio de trabajo.
 - Los módulos operativos derivados de Kffe’to, sus RPC y asistencias aún no han sido migrados a un modelo multi-restaurante. No habilitar restaurantes reales hasta asociar esos datos a `restaurant_id` y probar RLS por módulo.
 
 ## Propuestas nuevas: asistencia y configuración dinámica
 
 - El detalle de la propuesta de permisos de entrada/salida, turnos nocturnos y asignaciones temporales está en [Cuentas](../Cuentas/spec_001.md).
-- El catálogo maestro de configuraciones, disponibilidad por arquitectura y valores por restaurante está en [Configuración](../Configuraci%C3%B3n/spec_001.md).
-- La migración `202611070001_setter_architecture_catalog.sql` agrega catálogos versionados de necesidades, familias/arquitecturas y configuraciones. `restaurants.architecture_version_id` referencia la arquitectura completa elegida; las versiones nuevas no cambian restaurantes existentes.
-- `architectures.id` identifica una familia y `architecture_versions.id` una versión inmutable con roles, necesidades y configuraciones. Setter solo ofrece la última versión compatible al crear y permite cambiar versiones anteriores de forma manual.
+- La relación objetivo de configuraciones con necesidades/secciones y los valores por restaurante está en [Configuración](../Configuraci%C3%B3n/spec_001.md).
+- La migración `202611070001_setter_architecture_catalog.sql` agregó temporalmente catálogos versionados de arquitecturas y configuraciones; el siguiente cambio de esquema los retira porque ya no forman parte del modelo elegido.
+- La migración `202611080001_fixed_optional_needs.sql` migra los datos a la lista fija de cinco necesidades opcionales, reemplaza la configuración genérica de asistencia por columnas booleanas tipadas y retira del esquema los catálogos de arquitectura/configuración.
 - `account_schedules` todavía no lleva sede/vigencia y aún no existe una tabla de marcas de asistencia.
 
 ## Activación de producción
