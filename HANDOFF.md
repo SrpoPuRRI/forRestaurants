@@ -79,7 +79,7 @@ Lee `specs/Database/kffeto_production_reference_001.md` antes de proponer SQL. E
 
 Las specs dicen que las necesidades determinan qué roles ofrecer al admin para que él habilite los que usarán en su restaurante. Sin embargo, `supabase/functions/setter-create-restaurant/index.ts` todavía crea solamente los roles base **Administrador** y **Empleado**. `staff-admin` permite seleccionar roles ya asociados al restaurante, pero no hay todavía un flujo completo en Cuentas para elegir/administrar el catálogo derivado de necesidades. No tratar esta parte como cerrada.
 
-Además, al revisar el árbol actual se encontraron dos declaraciones `const schedules` dentro del mismo bloque de creación en `supabase/functions/staff-admin/index.ts` (aprox. líneas 41 y 58). Eso parece un error de compilación TypeScript. Es inconsistente con el Actions verde que desplegó las funciones; verificar el archivo que quedó en `main` y los logs/estado de la función en Supabase antes de confiar en alta de cuentas. El paso siguiente debería compilar/validar explícitamente las Edge Functions y corregir cualquier duplicación sin alterar el historial financiero ni hacer cambios destructivos.
+En el árbol local se confirmó que `staff-admin/index.ts` declaraba `schedules` dos veces y ejecutaba dos inserciones de los mismos horarios al crear una cuenta. Se eliminó el bloque duplicado. `deno check` pasó para las cuatro Edge Functions (`setter-create-restaurant`, `setter-admin`, `staff-admin` y `restaurant-access`). Esta corrección está validada localmente; aún no se ha publicado ni confirmado contra la función desplegada en Supabase.
 
 ## Supabase, Auth y publicación
 
@@ -110,7 +110,7 @@ Detalles recientes del usuario ya reflejados en las specs:
 
 ## Próximos pasos recomendados
 
-1. Verificar el error sospechoso de `staff-admin` y que las cuatro Edge Functions activas correspondan al commit publicado.
+1. Publicar la corrección de `staff-admin` cuando corresponda y verificar que las cuatro Edge Functions activas correspondan al commit publicado.
 2. Revisar la UX en producción de Configuración/Cuentas con una cuenta de prueba, sin cargar datos reales de clientes.
 3. Corregir/expandir el modelo de roles según necesidades y el selector del admin antes de crear cuentas de equipo.
 4. Diseñar y migrar el catálogo/pedidos/cobros a un esquema con aislamiento multi-restaurante y policies/RPC seguras.

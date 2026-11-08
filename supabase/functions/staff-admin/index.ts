@@ -55,12 +55,6 @@ Deno.serve(async (req) => {
       const { error: scheduleError } = await admin.from("account_schedules").insert(schedules.map(s=>({auth_user_id:created.user!.id,weekday:Number(s.weekday),starts_at:s.starts_at,ends_at:s.ends_at})));
       if (scheduleError) { await admin.auth.admin.deleteUser(created.user.id); return reply(400,{error:scheduleError.message}); }
     }
-    const schedules = Array.isArray(body.schedules) ? body.schedules : [];
-    if (schedules.length) {
-      const rows = schedules.map((s: any) => ({ auth_user_id: created.user!.id, weekday: Number(s.weekday), starts_at: s.starts_at, ends_at: s.ends_at }));
-      const { error: scheduleError } = await admin.from("account_schedules").insert(rows);
-      if (scheduleError) { await admin.auth.admin.deleteUser(created.user.id); return reply(400, { error: scheduleError.message }); }
-    }
     return reply(201, { auth_user_id: created.user.id, username, role: role.name });
   }
   const targetId = String(body.auth_user_id ?? "");
