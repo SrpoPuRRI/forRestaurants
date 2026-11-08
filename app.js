@@ -8,6 +8,7 @@ import {
 } from "./supabase-config.js";
 import createOrderFlow from "./order-flow.js";
 import createStatistics from "./statistics.js";
+import createRestaurantSettings from "./restaurant-settings.js";
 
 //Sección de inicialización de las cuentas, función propuesta por la documentación que leí en Supabase
 const supabase =
@@ -164,6 +165,14 @@ const s = {
   accountDate: "",
   accountDataDates: [],
   restaurantSuspended: false,
+  roleKey: "employee",
+  roleId: null,
+  restaurantSettings: null,
+  settingRoles: [],
+  paymentSettings: {},
+  roleSettings: {},
+  settingsLoading: false,
+  settingsError: "",
 };
 
 //Función de formateo de textos: Fuente W3WSchools
@@ -258,6 +267,13 @@ const statistics = createStatistics({
   formatDateShort,
   formatDateLong,
 });
+const restaurantSettings = createRestaurantSettings({
+  supabase,
+  state: s,
+  esc,
+  toast,
+  render: () => render(),
+});
 
 // Devuelve el pedido activo o el borrador actual.
 function active() {
@@ -331,7 +347,7 @@ function authEmailForUsername(username) {
 async function loadAuthenticatedProfile(user) {
   const { data: profile, error } = await supabase
     .from("accounts")
-    .select("auth_user_id,username,display_name,location_id,roles!inner(key,name)")
+    .select("auth_user_id,role_id,username,display_name,location_id,roles!inner(key,name)")
     .eq("auth_user_id", user.id)
     .single();
   if (error || !profile)
@@ -352,10 +368,13 @@ async function loadAuthenticatedProfile(user) {
   s.username = profile.username;
   s.user = profile.display_name;
   s.role = profile.roles?.key === "admin" ? "Administrador" : "Empleado";
+  s.roleKey = profile.roles?.key || "employee";
+  s.roleId = profile.role_id;
   s.roleLabel = profile.roles?.name || s.role;
   s.site = site;
   s.authUserId = profile.auth_user_id;
   s.locationId = profile.location_id;
+  await restaurantSettings.load();
 }
 // Valida las credenciales e inicia la sesión del usuario.
 async function submitLogin() {
@@ -456,6 +475,7 @@ function nav(m) {
     ["orders", "＋", m ? "Pedidos" : "Flujo de pedidos"],
   ];
   if (s.role === "Administrador") list.push(["catalog", "▤", "Catálogo"]);
+  if (s.role === "Administrador") list.push(["settings", "⚙", "Configuración"]);
   const icon = (key, fallback) =>
     key === "account"
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="15.7" cy="6.7" r="3.1"/><path d="M11.5 13.2c1.1-1.3 2.5-2 4.2-2 3.5 0 5.8 2.5 5.8 6v3.4c-2.1 1.1-4.7 1.7-7.4 1.7h-1.8"/><circle cx="7.2" cy="9.1" r="4.2"/><path d="M1 21v-2.7c0-4.2 2.6-6.9 6.4-6.9h.8c3.8 0 6.4 2.7 6.4 6.9V21c-2.1 1.2-4.3 1.8-6.8 1.8S3.1 22.2 1 21Z"/></svg>'
@@ -486,6 +506,7 @@ function title() {
     stats: "Estadísticas",
     account: "Cuenta",
     catalog: "Catálogo",
+    settings: "Configuración",
   }[s.page];
 }
 // Genera la estructura principal de la aplicación.
@@ -538,6 +559,8 @@ function page() {
       ? orderFlow.renderCatalog()
       : s.page === "stats"
         ? statistics.render()
+        : s.page === "settings" && s.role === "Administrador"
+          ? restaurantSettings.render()
         : account();
 }
 // Genera la vista del flujo de pedidos y sus productos disponibles.
@@ -665,11 +688,12 @@ async function loadAccounts() {
   const today = limaToday();
   if (s.role === "Administrador" && !s.accountDate) s.accountDate = today;
   render();
-  const [accountsResult, locationsResult, schedulesResult, rolesResult] = await Promise.all([
+  const [accountsResult, locationsResult, schedulesResult, rolesResult, notesResult] = await Promise.all([
     supabase.from("accounts").select("auth_user_id,username,display_name,role_id,location_id,roles!inner(key,name),locations(name)").eq("is_active", true).order("display_name"),
     supabase.from("locations").select("id,name").eq("is_active", true).order("name"),
     supabase.from("account_schedules").select("auth_user_id,weekday,starts_at,ends_at"),
     supabase.from("roles").select("id,key,name,permissions").order("name"),
+    supabase.from("employee_notes").select("auth_user_id,note,updated_at").eq("restaurant_id", s.restaurantId),
   ]);
   s.accountsLoading = false;
   if (accountsResult.error || locationsResult.error) {
@@ -700,6 +724,7 @@ async function loadAccounts() {
   }));
   s.locations = locationsResult.data || [];
   s.availableRoles = rolesResult.data || [];
+  s.employeeNotes = notesResult.data || [];
   s.accountDataDates = [today];
   render();
 }
@@ -834,7 +859,7 @@ function account() {
       : "") +
     "</div></div>" +
     body +
-    "</section>"
+    `</section>${emp ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Mi nota del mes</div><div class="meta">Anota información útil para el cierre de mes.</div></div><button class="btn secondary" id="save-employee-note">Guardar nota</button></div><textarea id="employee-note" maxlength="5000" placeholder="Escribe una nota para recordar…">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.note || "")}</textarea><div class="meta">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.updated_at ? `Última edición: ${formatDateLong(limaToday())}` : "Aún no hay una nota guardada.")}</div></section>` : s.role === "Administrador" ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Notas del equipo</div><div class="meta">Notas personales que cada empleado mantiene para el cierre de mes.</div></div></div><div class="notes-team-list">${list.filter((a) => a.role !== "admin").map((a) => { const note = (s.employeeNotes || []).find((x) => x.auth_user_id === a.auth_user_id)?.note; return `<div class="notes-team-row"><strong>${esc(a.display_name)}</strong><span class="roletag employeetag">${esc(a.role_name)}</span><p>${note ? esc(note) : '<span class="meta">Sin nota registrada</span>'}</p></div>`; }).join("") || '<div class="empty">No hay empleados.</div>'}</div></section>` : ""}`
   );
 }
 // Abre el diálogo para seleccionar la fecha de asistencia.
@@ -1539,6 +1564,7 @@ function bind() {
         orderFlow.enter(s.page);
         if (s.page === "account") loadAccounts();
         if (s.page === "stats") statistics.enter();
+        if (s.page === "settings") restaurantSettings.load().then(() => render());
       }),
   );
   $("#login-form")?.addEventListener("submit", (e) => {
@@ -1564,6 +1590,21 @@ function bind() {
   if (s.page === "stats") {
     statistics.bind();
     return;
+  }
+  if (s.page === "settings") {
+    restaurantSettings.bind();
+    return;
+  }
+  if (s.page === "account") {
+    $("#save-employee-note")?.addEventListener("click", async () => {
+      const button = $("#save-employee-note");
+      button.disabled = true;
+      const result = await supabase.from("employee_notes").upsert({ auth_user_id: s.authUserId, restaurant_id: s.restaurantId, note: $("#employee-note").value, updated_at: new Date().toISOString() }, { onConflict: "auth_user_id" });
+      button.disabled = false;
+      if (result.error) return toast("No se pudo guardar la nota.");
+      toast("Nota guardada.");
+      loadAccounts();
+    });
   }
   $("#site")?.addEventListener("change", (e) => {
     s.site = e.target.value;

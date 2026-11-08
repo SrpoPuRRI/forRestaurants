@@ -624,6 +624,15 @@ export default function createStatistics({
       summary = totals(),
       rank = rankings(),
       points = chartData();
+    const stored = state.restaurantSettings || {};
+    const roleStored = (state.roleSettings || {})[state.roleId] || {};
+    const canSeeRankings = !isEmployee || Boolean(stored.rankings_employees_enabled);
+    const rankVisible = (key) => {
+      if (!canSeeRankings || !stored.rankings_enabled) return false;
+      if (!isEmployee) return Boolean(stored[`rankings_${key}`]);
+      if (stored.rankings_same_for_all_roles) return Boolean(stored[`rankings_${key}`]);
+      return Boolean(roleStored[`rankings_${key}`]);
+    };
     const dateText =
       data.mode === "single"
         ? `${data.start === limaToday() ? "Hoy, " : ""}${formatDateLong(data.start)}`
@@ -633,19 +642,19 @@ export default function createStatistics({
       : `<select class="select" id="stats-site-filter"><option value="">Todas las sedes</option>${data.locations.map((loc) => `<option value="${esc(loc.id)}" ${data.selectedLocation === loc.id ? "selected" : ""}>${esc(loc.name)}</option>`).join("")}</select>`;
     const cards = `<div class="metrics"><article class="metric"><div class="metric-label">Saldo neto</div><div class="metric-value">${money(summary.total)}</div><div class="metric-foot">Solo pedidos correctos</div></article><article class="metric"><div class="metric-label">Pedidos pagados</div><div class="metric-value">${summary.valid.length}</div><div class="metric-foot neutral">${esc(dateText)}</div></article><article class="metric"><div class="metric-label">Promedio por pedido</div><div class="metric-value">${money(summary.average)}</div><div class="metric-foot neutral">Saldo neto / pedidos correctos</div></article><article class="metric"><div class="metric-label">Desglose</div><div class="stats-payments"><span>Yape <strong>${money(summary.yape)}</strong></span><span>Efectivo <strong>${money(summary.cash)}</strong></span></div></article></div>`;
     const sections = [];
-    if (isEmployee || data.settings.products)
+    if (rankVisible("products"))
       sections.push(
         `<section class="panel"><div class="panel-head"><div class="panel-title">Productos más vendidos</div></div>${rankingRows(rank.products)}</section>`,
       );
-    if (!isEmployee && data.settings.variants)
+    if (rankVisible("variants"))
       sections.push(
         `<section class="panel"><div class="panel-head"><div class="panel-title">Variantes más vendidas</div></div>${rankingRows(rank.variants)}</section>`,
       );
-    if (!isEmployee && data.settings.addons)
+    if (rankVisible("addons"))
       sections.push(
         `<section class="panel"><div class="panel-head"><div class="panel-title">Agregados más vendidos</div></div>${rankingRows(rank.addons)}</section>`,
       );
-    if (!isEmployee && data.settings.taxonomy)
+    if (rankVisible("categories"))
       sections.push(
         `<section class="panel"><div class="panel-head"><div class="panel-title">${esc(rank.taxonomyLabel)}</div></div>${rankingRows(rank.taxonomy)}</section>`,
       );
@@ -655,7 +664,7 @@ export default function createStatistics({
           `<article class="stats-movement ${order.status === "erroneous" ? "is-erroneous" : ""}"><div class="stats-movement-info"><div class="stats-movement-title"><strong>${esc(order.operator_name_snapshot || "Pedido")}</strong>${order.status === "erroneous" ? '<span class="badge erroneous-badge">Erróneo</span>' : ""}</div><div class="stats-movement-meta">${esc(order.locations?.name || data.locations.find((x) => x.id === order.location_id)?.name || "Sede")} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(order.paid_at))}</div><div class="stats-movement-items">${esc(itemDescription(order))}</div></div><div class="stats-movement-total"><strong>${money(order.total)}</strong><button type="button" class="btn secondary stats-view-button" data-view-movement="${esc(order.id)}">Ver</button></div></article>`,
       )
       .join("");
-    return `<section class="page-head stats-page-head"><div><div class="eyebrow">${isEmployee ? "Resumen diario" : "Visión general"}</div><h1>${isEmployee ? `Hoy en ${esc(state.site)}` : "Estadísticas"}</h1><p class="desc">${isEmployee ? "Resumen y movimientos de hoy en tu sede." : "Consulta pagos e indicadores del periodo seleccionado."}</p></div><div class="stats-toolbar">${isEmployee ? `<span class="stats-period-label">${esc(dateText)}</span>` : `<button type="button" class="icon stats-calendar-trigger" id="stats-open-date" aria-label="Elegir fechas" title="Elegir fechas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M7.5 13h2m3 0h2m-7 4h2"/></svg></button>${siteFilter}<button type="button" class="btn secondary" id="stats-edit-sections">Editar</button>`}</div></section>${data.error ? `<div class="inline-error" role="alert">${esc(data.error)}</div>` : ""}${data.taxonomyError ? `<div class="inline-error" role="status">No se pudieron cargar los datos de categorías/etiquetas; los pagos e historial siguen disponibles. ${esc(data.taxonomyError)}</div>` : ""}${data.loading ? '<div class="stats-loading-bar">Actualizando estadísticas…</div>' : ""}${cards}<section class="panel stats-chart-panel"><div class="panel-head"><div class="panel-title">${data.mode === "single" ? "Pedidos por hora" : "Pedidos por día"}</div><span class="meta">${data.mode === "single" ? "Hora de Lima" : esc(dateText)}</span></div>${chartHtml()}</section><div class="stats-rankings">${sections.join("")}</div><section class="panel stats-history-panel"><div class="panel-head"><div><div class="panel-title">${isEmployee ? "Movimientos de hoy" : "Movimientos del periodo"}</div><div class="meta">${data.orders.length} registros · los erróneos se conservan y no suman al saldo</div></div><span class="stats-scroll-hint">Desplázate para ver todos</span></div><div class="stats-history-list" role="region" aria-label="Movimientos del periodo" tabindex="0">${movementRows || '<div class="empty">No hay movimientos en este periodo.</div>'}</div></section>`;
+    return `<section class="page-head stats-page-head"><div><div class="eyebrow">${isEmployee ? "Resumen diario" : "Visión general"}</div><h1>${isEmployee ? `Hoy en ${esc(state.site)}` : "Estadísticas"}</h1><p class="desc">${isEmployee ? "Resumen y movimientos de hoy en tu sede." : "Consulta pagos e indicadores del periodo seleccionado."}</p></div><div class="stats-toolbar">${isEmployee ? `<span class="stats-period-label">${esc(dateText)}</span>` : `<button type="button" class="icon stats-calendar-trigger" id="stats-open-date" aria-label="Elegir fechas" title="Elegir fechas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M7.5 13h2m3 0h2m-7 4h2"/></svg></button>${siteFilter}`}</div></section>${data.error ? `<div class="inline-error" role="alert">${esc(data.error)}</div>` : ""}${data.taxonomyError ? `<div class="inline-error" role="status">No se pudieron cargar los datos de categorías/etiquetas; los pagos e historial siguen disponibles. ${esc(data.taxonomyError)}</div>` : ""}${data.loading ? '<div class="stats-loading-bar">Actualizando estadísticas…</div>' : ""}${cards}<section class="panel stats-chart-panel"><div class="panel-head"><div class="panel-title">${data.mode === "single" ? "Pedidos por hora" : "Pedidos por día"}</div><span class="meta">${data.mode === "single" ? "Hora de Lima" : esc(dateText)}</span></div>${chartHtml()}</section><div class="stats-rankings">${sections.join("") || '<section class="panel"><div class="empty">No hay rankings habilitados para tu rol.</div></section>'}</div><section class="panel stats-history-panel"><div class="panel-head"><div><div class="panel-title">${isEmployee ? "Movimientos de hoy" : "Movimientos del periodo"}</div><div class="meta">${data.orders.length} registros · los erróneos se conservan y no suman al saldo</div></div><span class="stats-scroll-hint">Desplázate para ver todos</span></div><div class="stats-history-list" role="region" aria-label="Movimientos del periodo" tabindex="0">${movementRows || '<div class="empty">No hay movimientos en este periodo.</div>'}</div></section>`;
   }
   // Genera el calendario para seleccionar un periodo.
   function datePickerHtml(month, selectedStart, selectedEnd, mode) {
