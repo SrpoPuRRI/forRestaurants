@@ -70,10 +70,10 @@ export default function createOrderFlow({
     data.productAddons
       .filter((x) => x.product_id === id)
       .map((x) => x.addon_id);
-  // Obtiene las variantes activas disponibles para un producto.
-  const activeVariants = (product) =>
+  // Obtiene las variantes configuradas para la sede, incluso si están fuera de stock.
+  const variantsAtLocation = (product) =>
     data.variants
-      .filter((v) => v.product_id === product.id && v.is_active)
+      .filter((v) => v.product_id === product.id)
       .filter(
         (v) =>
           product.product_kind !== "standard" ||
@@ -81,17 +81,17 @@ export default function createOrderFlow({
             (x) =>
               x.variant_id === v.id &&
               x.location_id === currentLocationId() &&
-              x.is_available,
+              (x.is_available || !v.is_active),
           ),
       );
   // Obtiene todas las variantes de un producto para editarlo.
   const variantsForEditor = (productId) =>
     data.variants.filter((v) => v.product_id === productId);
-  // Obtiene los agregados activos de un producto.
+  // Obtiene todos los agregados del producto; fuera de stock siguen visibles.
   const addonsFor = (productId) =>
     productAddonIds(productId)
       .map((id) => byId(data.addons, id))
-      .filter((x) => x && x.is_active);
+      .filter(Boolean);
   // Obtiene la sede seleccionada para el pedido.
   const currentLocationId = () =>
     data.orderLocationId || state.locationId || data.locations[0]?.id || "";
@@ -461,7 +461,7 @@ export default function createOrderFlow({
   // Filtra y ordena los productos visibles en el menú.
   function menuProducts() {
     let list = data.products.filter(
-      (product) => product.is_active && activeVariants(product).length,
+      (product) => variantsAtLocation(product).length,
     );
     const hasFilters = Boolean(
       data.categoryId ||
@@ -579,9 +579,21 @@ export default function createOrderFlow({
     });
   }
 
+  function showOutOfStockNotice(kind, name) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "password-dialog entity-dialog confirm-dialog";
+    const subject = kind === "producto" ? `El producto ${name}` : kind === "variante" ? `La variante ${name}` : `El agregado ${name}`;
+    dialog.innerHTML = `<div class="panel-title">Fuera de stock</div><p>${esc(subject)} está fuera de stock.</p><div class="dialog-actions"><button type="button" class="btn primary" data-accept-stock>Aceptar</button></div>`;
+    dialog.querySelector("[data-accept-stock]").onclick = () => dialog.close();
+    document.body.appendChild(dialog);
+    dialog.showModal();
+    dialog.addEventListener("close", () => dialog.remove(), { once: true });
+  }
+
   // Genera la tarjeta visual de un producto.
   function renderProductCard(product, active) {
-    const variants = activeVariants(product);
+    const variants = variantsAtLocation(product);
+    const outOfStock = !product.is_active || (product.product_kind === "standard" && !variants.some((variant) => variant.is_active));
     const price =
       product.product_kind !== "standard"
         ? "Agregar movimiento"
@@ -591,17 +603,20 @@ export default function createOrderFlow({
     const selected = data.selectedMenuProduct === product.id && !active;
     const special =
       product.product_kind === "income" || product.product_kind === "expense";
+    const employeeStockAction = state.roleKey === "employee" && !special
+      ? `<button type="button" class="product-icon stock-toggle" data-menu-stock="${esc(product.id)}" aria-label="${product.is_active ? "Marcar" : "Volver a marcar"} ${esc(product.name)} ${product.is_active ? "fuera de stock" : "disponible"}" title="${product.is_active ? "Marcar fuera de stock" : "Marcar disponible"}">${product.is_active ? "×" : "✓"}</button>`
+      : "";
     const hoverActions =
       !active && isAdmin() && !special
         ? `<span class="product-actions"><button type="button" class="product-icon" data-menu-edit="${esc(product.id)}" aria-label="Editar ${esc(product.name)}" title="Editar">✎</button><button type="button" class="product-icon" data-menu-add="${esc(product.id)}" aria-label="Agregar ${esc(product.name)}" title="Agregar">＋</button></span>`
         : !active && selected
-          ? `<span class="product-actions">${isAdmin() && !special ? `<button type="button" class="product-icon" data-menu-edit="${esc(product.id)}" aria-label="Editar ${esc(product.name)}" title="Editar">✎</button>` : ""}<button type="button" class="product-icon" data-menu-add="${esc(product.id)}" aria-label="Agregar ${esc(product.name)}" title="Agregar">＋</button></span>`
-          : "";
+          ? `<span class="product-actions">${isAdmin() && !special ? `<button type="button" class="product-icon" data-menu-edit="${esc(product.id)}" aria-label="Editar ${esc(product.name)}" title="Editar">✎</button>` : ""}<button type="button" class="product-icon" data-menu-add="${esc(product.id)}" aria-label="Agregar ${esc(product.name)}" title="Agregar">＋</button>${employeeStockAction}</span>`
+          : employeeStockAction ? `<span class="product-actions">${employeeStockAction}</span>` : "";
     const firstTag = productTags(product.id)
       .map((id) => byId(data.tags, id)?.name)
       .filter(Boolean)[0];
-    return `<article class="product ${!active && isAdmin() ? "admin-hover" : ""} ${special ? `special ${product.product_kind === "income" ? "in" : "out"}` : ""} ${selected ? "selected" : ""}" tabindex="0" data-product-card="${esc(product.id)}">
-      <span class="product-copy"><span class="pname">${esc(product.name)}</span><span class="tag">${esc(firstTag || (special ? (product.product_kind === "income" ? "Entrada de dinero" : "Salida de dinero") : ""))}</span></span>
+    return `<article class="product ${!active && isAdmin() ? "admin-hover" : ""} ${special ? `special ${product.product_kind === "income" ? "in" : "out"}` : ""} ${outOfStock ? "out-of-stock" : ""} ${selected ? "selected" : ""}" tabindex="0" data-product-card="${esc(product.id)}">
+      <span class="product-copy"><span class="pname">${esc(product.name)}</span><span class="tag">${outOfStock ? "Fuera de stock" : esc(firstTag || (special ? (product.product_kind === "income" ? "Entrada de dinero" : "Salida de dinero") : ""))}</span></span>
       <span class="price">${price}</span>${hoverActions}</article>`;
   }
 
@@ -622,7 +637,7 @@ export default function createOrderFlow({
     const hasOptions =
       !isSpecial &&
       Boolean(product) &&
-      (activeVariants(product).length > 1 || addonsFor(product.id).length > 0);
+      (variantsAtLocation(product).length > 1 || addonsFor(product.id).length > 0);
     const method = item.payment_method
       ? item.payment_method === "cash"
         ? "Efectivo"
@@ -758,6 +773,10 @@ export default function createOrderFlow({
 
   // Agrega un producto al pedido o abre sus opciones.
   function addProductToOrder(product) {
+    if (!product.is_active || (product.product_kind === "standard" && !variantsAtLocation(product).some((variant) => variant.is_active))) {
+      showOutOfStockNotice("producto", product.name);
+      return;
+    }
     if (
       product.product_kind === "income" ||
       product.product_kind === "expense"
@@ -765,7 +784,7 @@ export default function createOrderFlow({
       specialDialog(product);
       return;
     }
-    const variants = activeVariants(product);
+    const variants = variantsAtLocation(product);
     if (!variants.length) {
       toast("Este producto no está disponible en la sede seleccionada.");
       return;
@@ -787,6 +806,19 @@ export default function createOrderFlow({
     selectedAddons,
     current = activeOrder(),
   ) {
+    if (!product.is_active) {
+      showOutOfStockNotice("producto", product.name);
+      return;
+    }
+    if (!variant?.is_active) {
+      showOutOfStockNotice("variante", variant?.name || product.name);
+      return;
+    }
+    const unavailableAddon = selectedAddons.find((x) => !x.is_active);
+    if (unavailableAddon) {
+      showOutOfStockNotice("agregado", unavailableAddon.name);
+      return;
+    }
     if (!current) {
       data.activeDraft = {
         location_id: currentLocationId(),
@@ -836,16 +868,28 @@ export default function createOrderFlow({
     const d = document.createElement("dialog");
     d.className = "password-dialog product-options-dialog";
     const defaultVariant =
-      existing?.variant_id || (variants.length === 1 ? variants[0].id : "");
+      existing?.variant_id || (variants.length === 1 && variants[0].is_active ? variants[0].id : "");
     const oldAddonIds = new Set(
       (existing?.addons || []).map((x) => x.addon_id),
     );
     const draw = () => {
-      d.innerHTML = `<form method="dialog"><div class="panel-title">${editingIndex == null ? "Agregar producto" : "Editar producto"}</div><p class="meta">${esc(product.name)}</p>
-        <fieldset class="option-group"><legend>Variante <span class="required">Obligatoria</span></legend>${variants.map((v) => `<label class="option-row"><input type="radio" name="variant" value="${esc(v.id)}" ${d.querySelector(`[name="variant"][value="${CSS.escape(v.id)}"]`)?.checked || v.id === defaultVariant ? "checked" : ""}><span>${esc(v.name)}</span><strong>${money(v.price)}</strong></label>`).join("")}</fieldset>
-        ${addons.length ? `<fieldset class="option-group"><legend>Agregados <span class="meta">Opcionales</span></legend>${addons.map((a) => `<label class="option-row"><input type="checkbox" name="addon" value="${esc(a.id)}" ${d.querySelector(`[name="addon"][value="${CSS.escape(a.id)}"]`)?.checked || oldAddonIds.has(a.id) ? "checked" : ""}><span>${esc(a.name)}</span><strong>+ ${money(a.price)}</strong></label>`).join("")}</fieldset>` : ""}
+      d.innerHTML = `<form method="dialog"><div class="panel-title">${editingIndex == null ? "Agregar producto" : "Editar producto"}</div><p class="meta">${esc(product.name)}${!product.is_active ? " · Fuera de stock" : ""}</p>
+        <fieldset class="option-group"><legend>Variante <span class="required">Obligatoria</span></legend>${variants.map((v) => `<label class="option-row ${v.is_active ? "" : "option-unavailable"}" data-unavailable-variant="${v.is_active ? "" : esc(v.id)}"><input type="radio" name="variant" value="${esc(v.id)}" ${d.querySelector(`[name="variant"][value="${CSS.escape(v.id)}"]`)?.checked || v.id === defaultVariant ? "checked" : ""}><span>${esc(v.name)}${v.is_active ? "" : " · Fuera de stock"}</span><strong>${money(v.price)}</strong></label>`).join("")}</fieldset>
+        ${addons.length ? `<fieldset class="option-group"><legend>Agregados <span class="meta">Opcionales</span></legend>${addons.map((a) => `<label class="option-row ${a.is_active ? "" : "option-unavailable"}" data-unavailable-addon="${a.is_active ? "" : esc(a.id)}"><input type="checkbox" name="addon" value="${esc(a.id)}" ${d.querySelector(`[name="addon"][value="${CSS.escape(a.id)}"]`)?.checked || oldAddonIds.has(a.id) ? "checked" : ""}><span>${esc(a.name)}${a.is_active ? "" : " · Fuera de stock"}</span><strong>+ ${money(a.price)}</strong></label>`).join("")}</fieldset>` : ""}
         <div class="dialog-actions"><button type="button" class="btn secondary" data-cancel-options>Cancelar</button><button type="submit" class="btn primary" data-confirm-options>${editingIndex == null ? "Agregar producto" : "Guardar cambios"}</button></div><p class="password-error" role="alert"></p></form>`;
       d.querySelector("[data-cancel-options]").onclick = () => d.close();
+      d.querySelectorAll("[data-unavailable-variant]").forEach((row) => row.addEventListener("click", (event) => {
+        const id = row.dataset.unavailableVariant;
+        if (!id) return;
+        event.preventDefault();
+        showOutOfStockNotice("variante", byId(variants, id)?.name || product.name);
+      }));
+      d.querySelectorAll("[data-unavailable-addon]").forEach((row) => row.addEventListener("click", (event) => {
+        const id = row.dataset.unavailableAddon;
+        if (!id) return;
+        event.preventDefault();
+        showOutOfStockNotice("agregado", byId(addons, id)?.name || product.name);
+      }));
       d.querySelector("form").onsubmit = (event) => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);
@@ -855,12 +899,25 @@ export default function createOrderFlow({
             "Elige una variante para continuar.";
           return;
         }
+        if (!product.is_active) {
+          showOutOfStockNotice("producto", product.name);
+          return;
+        }
+        if (!variant.is_active) {
+          showOutOfStockNotice("variante", variant.name);
+          return;
+        }
         const selectedAddons = [...form.getAll("addon")]
           .map((id) => byId(addons, id))
           .filter(Boolean);
         if (editingIndex == null)
           addConfiguredLine(product, variant, selectedAddons);
         else {
+          const unavailableAddon = selectedAddons.find((x) => !x.is_active);
+          if (unavailableAddon) {
+            showOutOfStockNotice("agregado", unavailableAddon.name);
+            return;
+          }
           const item = activeOrder().items[editingIndex];
           item.variant_id = variant.id;
           item.variant_name = variant.name;
@@ -1715,7 +1772,6 @@ export default function createOrderFlow({
       ["categories", "Categorías"],
       ["tags", "Etiquetas"],
       ["addons", "Agregados"],
-      ["print-format", "Formato de ticket"],
     ];
     let body = "";
     if (data.catalogTab === "products") {
@@ -1723,7 +1779,7 @@ export default function createOrderFlow({
         data.products.filter((p) => p.product_kind === "standard"),
         data.productQuery,
       );
-      body = `<div class="panel-head"><div class="panel-title">Productos</div><input class="search catalog-search" id="product-admin-search" placeholder="Buscar producto" value="${esc(data.productQuery)}"><button class="btn primary" data-new-product>＋ Crear producto</button></div><div class="catalog-list">${products.map((p) => `<div class="catalog-row"><div><strong>${esc(p.name)}</strong><div class="meta">${p.is_active ? "Activo" : "Inactivo"} · ${variantsForEditor(p.id).length} variantes</div></div><div class="catalog-actions"><button class="rowaction" data-edit-product="${esc(p.id)}">Editar</button><button class="rowaction danger-action" data-toggle-product="${esc(p.id)}">${p.is_active ? "Desactivar" : "Activar"}</button><button class="rowaction danger-action" data-delete-product="${esc(p.id)}">Eliminar</button></div></div>`).join("") || '<div class="empty">No hay productos.</div>'}</div>`;
+      body = `<div class="panel-head"><div class="panel-title">Productos</div><input class="search catalog-search" id="product-admin-search" placeholder="Buscar producto" value="${esc(data.productQuery)}"><button class="btn primary" data-new-product>＋ Crear producto</button></div><div class="catalog-list">${products.map((p) => `<div class="catalog-row"><div><strong>${esc(p.name)}</strong><div class="meta">${p.is_active ? "Disponible" : "Fuera de stock"} · ${variantsForEditor(p.id).length} variantes</div></div><div class="catalog-actions"><button class="rowaction" data-edit-product="${esc(p.id)}">Editar</button><button class="rowaction danger-action" data-toggle-product="${esc(p.id)}">${p.is_active ? "Marcar fuera de stock" : "Marcar disponible"}</button><button class="rowaction danger-action" data-delete-product="${esc(p.id)}">Eliminar</button></div></div>`).join("") || '<div class="empty">No hay productos.</div>'}</div>`;
     } else if (data.catalogTab === "categories") {
       const list = ranked(data.categories, data.categoryQuery);
       body = `<div class="panel-head"><div class="panel-title">Categorías</div><input class="search catalog-search" id="category-admin-search" placeholder="Buscar categoría" value="${esc(data.categoryQuery)}"><button class="btn primary" data-new-category>＋ Crear categoría</button></div><div class="catalog-list">${list.map((x) => `<div class="catalog-row"><div><strong>${esc(x.name)}</strong><div class="meta">${data.groups.includes(x.id) ? "Grupo de categorías" : "Categoría"} · ${productCatsByCategory(x.id).length} productos</div></div><div class="catalog-actions"><button class="rowaction" data-edit-category="${esc(x.id)}">Editar</button><button class="rowaction danger-action" data-delete-category="${esc(x.id)}">Eliminar</button></div></div>`).join("") || '<div class="empty">No hay categorías.</div>'}</div>`;
@@ -1732,11 +1788,9 @@ export default function createOrderFlow({
       body = `<div class="panel-head"><div class="panel-title">Etiquetas</div><input class="search catalog-search" id="tag-admin-search" placeholder="Buscar etiqueta" value="${esc(data.tagQuery)}"><button class="btn primary" data-new-tag>＋ Crear etiqueta</button></div><div class="catalog-list">${list.map((x) => `<div class="catalog-row"><div><strong>${esc(x.name)}</strong><div class="meta">${data.productTags.filter((p) => p.tag_id === x.id).length} productos</div></div><div class="catalog-actions"><button class="rowaction" data-edit-tag="${esc(x.id)}">Editar</button><button class="rowaction danger-action" data-delete-tag="${esc(x.id)}">Eliminar</button></div></div>`).join("") || '<div class="empty">No hay etiquetas.</div>'}</div>`;
     } else if (data.catalogTab === "addons") {
       const list = ranked(data.addons, data.addonQuery);
-      body = `<div class="panel-head"><div class="panel-title">Agregados</div><input class="search catalog-search" id="addon-admin-search" placeholder="Buscar agregado" value="${esc(data.addonQuery)}"><button class="btn primary" data-new-addon-global>＋ Crear agregado</button></div><div class="catalog-list">${list.map((x) => `<div class="catalog-row"><div><strong>${esc(x.name)}</strong><div class="meta">${money(x.price)} · ${x.is_active ? `${data.productAddons.filter((p) => p.addon_id === x.id).length} productos` : "Archivado"}</div></div><div class="catalog-actions"><button class="rowaction" data-edit-addon="${esc(x.id)}">Editar</button><button class="rowaction danger-action" data-delete-addon="${esc(x.id)}">${x.is_active ? "Eliminar" : "Eliminar definitivamente"}</button></div></div>`).join("") || '<div class="empty">No hay agregados.</div>'}</div>`;
-    } else {
-      body = `<div class="panel-head"><div><div class="panel-title">Formato de ticket</div><div class="meta">Carga un archivo JSON para definir encabezado, pie y parámetros de impresión.</div></div><label class="btn primary" for="print-format-file">Subir formato</label><input id="print-format-file" type="file" accept="application/json,.json" hidden></div><div class="catalog-list"><div class="catalog-row"><div><strong>Formato de comprobante</strong><div class="meta">Se guarda en Supabase y los teléfonos lo consultan antes de imprimir.</div></div><button type="button" class="rowaction" data-download-print-format>Descargar ejemplo</button></div></div><p class="meta">Campos del prototipo: header, footer, paper_width (384), feed_px y density (1 a 7).</p>`;
+      body = `<div class="panel-head"><div class="panel-title">Agregados</div><input class="search catalog-search" id="addon-admin-search" placeholder="Buscar agregado" value="${esc(data.addonQuery)}"><button class="btn primary" data-new-addon-global>＋ Crear agregado</button></div><div class="catalog-list">${list.map((x) => `<div class="catalog-row"><div><strong>${esc(x.name)}</strong><div class="meta">${money(x.price)} · ${x.is_active ? "Disponible" : "Fuera de stock"} · ${data.productAddons.filter((p) => p.addon_id === x.id).length} productos</div></div><div class="catalog-actions"><button class="rowaction" data-edit-addon="${esc(x.id)}">Editar</button><button class="rowaction danger-action" data-toggle-addon="${esc(x.id)}">${x.is_active ? "Marcar fuera de stock" : "Marcar disponible"}</button><button class="rowaction danger-action" data-delete-addon="${esc(x.id)}">Eliminar</button></div></div>`).join("") || '<div class="empty">No hay agregados.</div>'}</div>`;
     }
-    return `<section class="page-head"><div><div class="eyebrow">Administración</div><h1>Administrar catálogo</h1><p class="desc">Gestiona productos, categorías, etiquetas, variantes y agregados compartidos.</p></div></section><div class="catalog-tabs">${tabs.map(([id, label]) => `<button class="catalog-tab ${data.catalogTab === id ? "active" : ""}" data-catalog-tab="${id}">${label}</button>`).join("")}</div><section class="panel catalog-panel">${body}</section>`;
+    return `<section class="page-head"><div><div class="eyebrow">Administración</div><h1>Administrar catálogo</h1><p class="desc">Gestiona productos, categorías, etiquetas, variantes y agregados.</p></div></section><div class="catalog-tabs">${tabs.map(([id, label]) => `<button class="catalog-tab ${data.catalogTab === id ? "active" : ""}" data-catalog-tab="${id}">${label}</button>`).join("")}</div><section class="panel catalog-panel">${body}</section>`;
   }
 
   // Obtiene los productos relacionados con una categoría.
@@ -1926,12 +1980,10 @@ export default function createOrderFlow({
       modal.className = "password-dialog picker-dialog";
       const drawPicker = (query = "") => {
         const available = ranked(
-          data.addons.filter(
-            (x) => x.is_active && !editor.addonIds.includes(x.id),
-          ),
+          data.addons.filter((x) => !editor.addonIds.includes(x.id)),
           query,
         );
-        modal.innerHTML = `<div class="panel-title">Agregar a este producto</div><p class="meta">Los agregados se comparten entre sedes.</p><input class="search catalog-search" data-addon-picker-search placeholder="Buscar agregado" value="${esc(query)}"><div class="picker-list">${available.map((x) => `<button type="button" class="picker-option" data-pick-addon="${esc(x.id)}"><span><strong>${esc(x.name)}</strong><strong>${money(x.price)}</strong></span></button>`).join("") || '<div class="empty">No hay agregados disponibles para asignar.</div>'}</div><p class="password-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="button" class="btn secondary" data-create-addon>Crear nuevo</button><button type="button" class="btn primary" data-assign-addon disabled>Asignar agregado</button></div>`;
+        modal.innerHTML = `<div class="panel-title">Agregar a este producto</div><p class="meta">Los agregados se comparten entre sedes.</p><input class="search catalog-search" data-addon-picker-search placeholder="Buscar agregado" value="${esc(query)}"><div class="picker-list">${available.map((x) => `<button type="button" class="picker-option" data-pick-addon="${esc(x.id)}"><span><strong>${esc(x.name)}${x.is_active ? "" : " · Fuera de stock"}</strong><strong>${money(x.price)}</strong></span></button>`).join("") || '<div class="empty">No hay agregados para asignar.</div>'}</div><p class="password-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="button" class="btn secondary" data-create-addon>Crear nuevo</button><button type="button" class="btn primary" data-assign-addon disabled>Asignar agregado</button></div>`;
         let selected = "";
         modal.querySelectorAll("[data-pick-addon]").forEach(
           (b) =>
@@ -1994,12 +2046,12 @@ export default function createOrderFlow({
           variants
             .map(
               (v) =>
-                `<div class="variant-editor-row"><div><strong>${esc(v.name)}</strong><span class="meta">${money(v.price)} · ${v.is_active ? "Activa" : "Inactiva"}</span><span class="meta">Sedes: ${
+                `<div class="variant-editor-row"><div><strong>${esc(v.name)}</strong><span class="meta">${money(v.price)} · ${v.is_active ? "Disponible" : "Fuera de stock"}</span><span class="meta">Sedes: ${
                   v.locations
                     .map((id) => esc(byId(data.locations, id)?.name || ""))
                     .filter(Boolean)
                     .join(", ") || "ninguna"
-                }</span></div><div><button type="button" class="rowaction" data-edit-variant="${esc(v.id)}">Editar</button><button type="button" class="rowaction danger-action" data-remove-variant="${esc(v.id)}">${v.is_active ? "Desactivar" : "Activar"}</button><button type="button" class="rowaction danger-action" data-delete-variant="${esc(v.id)}">Eliminar</button></div></div>`,
+                }</span></div><div><button type="button" class="rowaction" data-edit-variant="${esc(v.id)}">Editar</button><button type="button" class="rowaction danger-action" data-remove-variant="${esc(v.id)}">${v.is_active ? "Marcar fuera de stock" : "Marcar disponible"}</button><button type="button" class="rowaction danger-action" data-delete-variant="${esc(v.id)}">Eliminar</button></div></div>`,
             )
             .join("") ||
           '<div class="empty">Agrega al menos una variante.</div>'
@@ -2010,7 +2062,7 @@ export default function createOrderFlow({
             .filter(Boolean)
             .map(
               (x) =>
-                `<div class="product-addon-row"><span><strong>${esc(x.name)}</strong><small>${money(x.price)}</small></span><button type="button" class="rowaction danger-action" data-unassign-addon="${esc(x.id)}">Quitar</button><input type="hidden" name="addon" value="${esc(x.id)}"></div>`,
+                `<div class="product-addon-row"><span><strong>${esc(x.name)}</strong><small>${money(x.price)} · ${x.is_active ? "Disponible" : "Fuera de stock"}</small></span><button type="button" class="rowaction danger-action" data-unassign-addon="${esc(x.id)}">Quitar</button><input type="hidden" name="addon" value="${esc(x.id)}"></div>`,
             )
             .join("") ||
           '<div class="empty">Este producto aún no tiene agregados permitidos.</div>'
@@ -2035,27 +2087,6 @@ export default function createOrderFlow({
               (x) => x.id === b.dataset.removeVariant,
             );
             if (!v) return;
-            if (v.is_active && !v.id.startsWith("new-")) {
-              const { data: pending, error } = await supabase
-                .from("open_orders")
-                .select("id")
-                .eq("status", "open")
-                .contains("items", [{ variant_id: v.id }])
-                .limit(1);
-              if (error) {
-                toast(
-                  error.message ||
-                    "No se pudo comprobar si la variante está en un pedido abierto.",
-                );
-                return;
-              }
-              if (pending?.length) {
-                toast(
-                  "No se puede desactivar: la variante aparece en un pedido abierto.",
-                );
-                return;
-              }
-            }
             v.is_active = !v.is_active;
             draw();
           }),
@@ -2070,42 +2101,6 @@ export default function createOrderFlow({
             if (v.id.startsWith("new-")) {
               editor.variants = editor.variants.filter((x) => x !== v);
               draw();
-              return;
-            }
-            const { data: pending, error: pendingError } = await supabase
-              .from("open_orders")
-              .select("id")
-              .eq("status", "open")
-              .contains("items", [{ variant_id: v.id }])
-              .limit(1);
-            if (pendingError) {
-              toast(
-                pendingError.message ||
-                  "No se pudo comprobar si hay pedidos abiertos.",
-              );
-              return;
-            }
-            if (pending?.length) {
-              toast(
-                "No se puede eliminar: la variante aparece en un pedido abierto.",
-              );
-              return;
-            }
-            const { data: linked, error: lookupError } = await supabase
-              .from("order_items")
-              .select("id")
-              .eq("variant_id", v.id)
-              .limit(1);
-            if (lookupError) {
-              toast(
-                lookupError.message || "No se pudo comprobar el historial.",
-              );
-              return;
-            }
-            if (linked?.length) {
-              toast(
-                "Esta variante ya tiene historial; desactívala para conservar los pedidos.",
-              );
               return;
             }
             const { error } = await supabase
@@ -2308,11 +2303,13 @@ export default function createOrderFlow({
               if (error) throw error;
             }
           }
-          const { error: activateError } = await supabase
-            .from("products")
-            .update({ is_active: true })
-            .eq("id", savedProduct.id);
-          if (activateError) throw activateError;
+          if (!product) {
+            const { error: activateError } = await supabase
+              .from("products")
+              .update({ is_active: true })
+              .eq("id", savedProduct.id);
+            if (activateError) throw activateError;
+          }
           d.close();
           await loadCatalog();
           toast(product ? "Producto actualizado." : "Producto creado.");
@@ -2605,20 +2602,9 @@ export default function createOrderFlow({
       .map((x) => x.product_id);
   }
 
-  // Elimina o archiva un agregado según su historial.
+  // Elimina un agregado; las referencias históricas futuras quedarán protegidas por claves foráneas.
   async function deleteAddon(addon) {
-    const { data: history, error: historyError } = await supabase
-      .from("order_item_addons")
-      .select("order_item_id")
-      .eq("addon_id", addon.id)
-      .limit(1);
-    if (historyError) {
-      toast(
-        historyError.message ||
-          "No se pudo comprobar el historial del agregado.",
-      );
-      return;
-    }
+    if (!(await confirmInApp("Eliminar agregado", `¿Eliminar ${addon.name} del catálogo?`, "Eliminar agregado"))) return;
     const { error: unlinkError } = await supabase
       .from("product_addons")
       .delete()
@@ -2630,22 +2616,13 @@ export default function createOrderFlow({
       );
       return;
     }
-    const result = history?.length
-      ? await supabase
-          .from("addons")
-          .update({ is_active: false })
-          .eq("id", addon.id)
-      : await supabase.from("addons").delete().eq("id", addon.id);
+    const result = await supabase.from("addons").delete().eq("id", addon.id);
     if (result.error) {
       toast(result.error.message || "No se pudo eliminar el agregado.");
       return;
     }
     await loadCatalog();
-    toast(
-      history?.length
-        ? "Agregado archivado para conservar el historial."
-        : "Agregado eliminado.",
-    );
+    toast("Agregado eliminado.");
   }
 
   // Conecta un campo de búsqueda con el estado correspondiente.
@@ -2677,6 +2654,10 @@ export default function createOrderFlow({
         if (event.target.closest("[data-menu-add],[data-menu-edit]")) return;
         const product = byId(data.products, card.dataset.productCard);
         if (!product) return;
+        if (!product.is_active || (product.product_kind === "standard" && !variantsAtLocation(product).some((variant) => variant.is_active))) {
+          addProductToOrder(product);
+          return;
+        }
         if (
           !activeOrder() &&
           window.matchMedia("(hover: none)").matches &&
@@ -2703,6 +2684,24 @@ export default function createOrderFlow({
           if (p) addProductToOrder(p);
         }),
     );
+    document.querySelectorAll("[data-menu-stock]").forEach((button) => {
+      button.onclick = async (event) => {
+        event.stopPropagation();
+        const product = byId(data.products, button.dataset.menuStock);
+        if (!product) return;
+        const { error } = await supabase.rpc("set_catalog_stock_availability", {
+          p_entity: "product",
+          p_entity_id: product.id,
+          p_is_available: !product.is_active,
+        });
+        if (error) {
+          toast(error.message || "No se pudo actualizar la disponibilidad.");
+          return;
+        }
+        await loadCatalog();
+        toast(product.is_active ? "Producto marcado fuera de stock." : "Producto disponible.");
+      };
+    });
     document.querySelectorAll("[data-menu-edit]").forEach(
       (b) =>
         (b.onclick = (e) => {
@@ -2809,7 +2808,7 @@ export default function createOrderFlow({
           else
             productOptionsDialog(
               product,
-              activeVariants(product),
+              variantsAtLocation(product),
               addonsFor(product.id),
               index,
             );
@@ -2859,33 +2858,6 @@ export default function createOrderFlow({
           render();
         }),
     );
-    document.querySelector("[data-download-print-format]")?.addEventListener("click", () => {
-      const example = { schema_version: 1, header: "BLACK&WHITE POS", footer: "Gracias por tu compra", paper_width: 384, feed_px: 120, density: 3 };
-      const url = URL.createObjectURL(new Blob([JSON.stringify(example, null, 2)], { type: "application/json" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "formato-ticket-black-white.json";
-      link.click();
-      URL.revokeObjectURL(url);
-    });
-    document.querySelector("#print-format-file")?.addEventListener("change", async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      try {
-        if (file.size > 16384) throw new Error("El formato debe pesar menos de 16 KB.");
-        const format = JSON.parse(await file.text());
-        if (format.schema_version !== 1 || typeof format.header !== "string" || format.header.length > 120 || typeof format.footer !== "string" || format.footer.length > 120 || Number(format.paper_width) !== 384 || !Number.isInteger(Number(format.density)) || Number(format.density) < 1 || Number(format.density) > 7 || !Number.isInteger(Number(format.feed_px)) || Number(format.feed_px) < 0 || Number(format.feed_px) > 2000) {
-          throw new Error("Formato inválido. Revisa schema_version 1, encabezado, pie, ancho 384, avance y densidad de 1 a 7.");
-        }
-        const { error } = await supabase.rpc("save_printer_template", { p_format: format });
-        if (error) throw error;
-        toast("Formato de ticket guardado.");
-      } catch (error) {
-        toast(error?.message || "No se pudo guardar el formato.");
-      } finally {
-        event.target.value = "";
-      }
-    });
     document
       .querySelector("[data-new-product]")
       ?.addEventListener("click", () => openProductEditor());
@@ -2903,33 +2875,12 @@ export default function createOrderFlow({
           if (!p) return;
           if (
             !(await confirmInApp(
-              p.is_active ? "Desactivar producto" : "Activar producto",
-              `${p.name} ${p.is_active ? "dejará de aparecer en el menú" : "volverá a aparecer en el menú"}.`,
-              p.is_active ? "Desactivar" : "Activar",
+              p.is_active ? "Marcar fuera de stock" : "Marcar disponible",
+              `${p.name} ${p.is_active ? "seguirá visible, pero no se podrá agregar a pedidos" : "volverá a poder agregarse a pedidos"}.`,
+              p.is_active ? "Fuera de stock" : "Disponible",
             ))
           )
             return;
-          if (p.is_active) {
-            const { data: pending, error: pendingError } = await supabase
-              .from("open_orders")
-              .select("id")
-              .eq("status", "open")
-              .contains("items", [{ product_id: p.id }])
-              .limit(1);
-            if (pendingError) {
-              toast(
-                pendingError.message ||
-                  "No se pudo comprobar si hay pedidos abiertos.",
-              );
-              return;
-            }
-            if (pending?.length) {
-              toast(
-                "No se puede desactivar: el producto aparece en un pedido abierto.",
-              );
-              return;
-            }
-          }
           const { error } = await supabase
             .from("products")
             .update({ is_active: !p.is_active })
@@ -2940,7 +2891,7 @@ export default function createOrderFlow({
             );
           else {
             await loadCatalog();
-            toast(p.is_active ? "Producto desactivado." : "Producto activado.");
+            toast(p.is_active ? "Producto marcado fuera de stock." : "Producto disponible.");
           }
         }),
     );
@@ -2952,56 +2903,11 @@ export default function createOrderFlow({
             !p ||
             !(await confirmInApp(
               "Eliminar producto",
-              `¿Eliminar ${p.name}? Si tiene pedidos en el historial, tendrás que desactivarlo.`,
+              `¿Eliminar ${p.name} del catálogo? Si ya está en pedidos históricos, la base de datos impedirá borrarlo; puedes marcarlo fuera de stock.`,
               "Eliminar producto",
             ))
           )
             return;
-          const { data: pending, error: pendingError } = await supabase
-            .from("open_orders")
-            .select("id")
-            .eq("status", "open")
-            .contains("items", [{ product_id: p.id }])
-            .limit(1);
-          if (pendingError) {
-            toast(
-              pendingError.message ||
-                "No se pudo comprobar si hay pedidos abiertos.",
-            );
-            return;
-          }
-          if (pending?.length) {
-            toast(
-              "No se puede eliminar: el producto aparece en un pedido abierto.",
-            );
-            return;
-          }
-          const { data: linked, error: lookupError } = await supabase
-            .from("order_items")
-            .select("id")
-            .eq("product_id", p.id)
-            .limit(1);
-          if (lookupError) {
-            toast(lookupError.message || "No se pudo comprobar el historial.");
-            return;
-          }
-          if (linked?.length) {
-            toast(
-              "Este producto tiene pedidos históricos; desactívalo para conservarlos.",
-            );
-            return;
-          }
-          const variantIds = variantsForEditor(p.id).map((v) => v.id);
-          if (variantIds.length) {
-            const { error } = await supabase
-              .from("variants")
-              .delete()
-              .in("id", variantIds);
-            if (error) {
-              toast(error.message || "No se pudieron eliminar las variantes.");
-              return;
-            }
-          }
           const { error } = await supabase
             .from("products")
             .delete()
@@ -3014,6 +2920,15 @@ export default function createOrderFlow({
           toast("Producto eliminado.");
         }),
     );
+    document.querySelectorAll("[data-toggle-addon]").forEach((b) => {
+      b.onclick = async () => {
+        const addon = byId(data.addons, b.dataset.toggleAddon);
+        if (!addon) return;
+        const { error } = await supabase.from("addons").update({ is_active: !addon.is_active }).eq("id", addon.id);
+        if (error) toast(error.message || "No se pudo cambiar la disponibilidad.");
+        else { await loadCatalog(); toast(addon.is_active ? "Agregado marcado fuera de stock." : "Agregado disponible."); }
+      };
+    });
     document
       .querySelector("[data-new-category]")
       ?.addEventListener("click", () => openCategoryEditor());
@@ -3106,12 +3021,6 @@ export default function createOrderFlow({
     stopPolling();
   }
 
-  function openPrintFormat() {
-    data.catalogTab = "print-format";
-    render();
-    document.querySelector("#print-format-file")?.click();
-  }
-
   return {
     renderOrders,
     renderCatalog,
@@ -3120,6 +3029,5 @@ export default function createOrderFlow({
     load: loadCatalog,
     cleanup,
     printTicket,
-    openPrintFormat,
   };
 }

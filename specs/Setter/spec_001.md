@@ -13,17 +13,19 @@
 
 - La interfaz se presenta como **Configurador de Black&White**. No muestra nombre, perfil ni cuenta de operador. El acceso se verifica con enlace de correo al Gmail del propietario antes de mostrar datos.
 - La vista inicial muestra restaurantes y la acción para crear uno. No usa navegación lateral ni una pantalla de actividad.
-- Setter administra los restaurantes. No tiene una sección para editar el catálogo de necesidades, no ofrece un catálogo global de configuraciones ni edita configuraciones operativas.
+- Setter administra el alta de restaurantes y registra sus necesidades iniciales. No tiene una sección para editar el catálogo global de necesidades, no ofrece un catálogo global de configuraciones ni edita configuraciones operativas. Después del alta, el administrador del restaurante puede cambiar sus necesidades desde Black&White POS.
 - El alta muestra exactamente cinco necesidades opcionales con claves fijas: CRM (`crm`), Cocina (`kitchen`), Salón (`salon`), Delivery (`delivery`) y Comprobantes (`receipts`). No se pueden añadir, renombrar ni eliminar desde Setter.
 - Todos los restaurantes tienen siempre las secciones Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración. No se ofrecen como necesidades opcionales al crear un restaurante.
 - CRM, Cocina, Salón, Delivery y Comprobantes son las únicas necesidades opcionales. Las necesidades y los ajustes por sección pueden cambiar el comportamiento de las secciones fijas, sin quitarlas.
 - Cada sección fija puede tener comportamiento configurable desde Configuración. La disponibilidad de esas opciones y sus interacciones con CRM, Salón, Cocina u otras necesidades se definirá antes de implementarlas.
-- No se escogerá una arquitectura prearmada al crear un restaurante. Las necesidades seleccionadas determinan qué roles y configuraciones quedan disponibles; esto reemplaza el flujo anterior de elegir una familia y versión de arquitectura.
+- No se escogerá una arquitectura prearmada al crear un restaurante. Las necesidades seleccionadas determinan qué roles y configuraciones quedan disponibles; esto reemplaza el flujo anterior de elegir una familia y versión de arquitectura. Los roles vienen de un catálogo global y Setter no administra ese catálogo.
 - La app POS determina qué opciones de configuración y roles mostrar al administrador del restaurante, usando las cinco necesidades elegidas y las secciones fijas. Por ejemplo, las cuatro opciones de asistencia pertenecen a Cuentas > Configuración del restaurante, no a Setter.
 - La ficha no solicita tipo de negocio ni ciudad. Setter guarda las necesidades elegidas y administra el restaurante, sin elección de arquitectura ni edición de los valores operativos que configura el administrador en la app.
 - Crear un restaurante completa su configuración inicial y lo deja activo. No existe el estado «pendiente de configuración».
 - Cada restaurante puede estar activo o dado de baja. Los dados de baja se ocultan de la vista habitual; si existe al menos uno, aparece un control para mostrarlos u ocultarlos.
-- Setter guarda las necesidades elegidas y administra el registro del restaurante. La app POS resuelve las opciones de configuración y los roles que el administrador del restaurante habilita; esos roles determinan las opciones al crear cuentas.
+- Setter guarda las necesidades elegidas y administra el registro del restaurante. La app POS calcula, a partir de las necesidades y la configuración guardada, qué IDs de roles globales habilita el restaurante; luego el administrador asigna uno o varios roles a cada cuenta en Cuentas.
+- Después del alta, el administrador del restaurante puede añadir o quitar necesidades opcionales desde el POS, sin crear otro restaurante. La ubicación exacta del control en la interfaz queda pendiente.
+- Quitar una necesidad revoca sus roles y accesos de interfaz/operación, pero conserva los registros y valores existentes. La información no se elimina ni se migra a otro restaurante.
 - Setter puede consultar el total de cuentas y los roles; nunca muestra contraseñas. Desde Setter se pueden crear o eliminar cuentas, pero no editar su perfil ni cambiar su contraseña.
 - La app POS muestra al administrador las configuraciones que corresponden a las necesidades elegidas y a las secciones fijas. CRM, Salón y Cocina sí pueden ser necesidades opcionales.
 - Cada sede puede guardar dirección opcional y horario de atención. Cada empleado puede tener asignado uno o más horarios de entrada y salida.
@@ -44,7 +46,11 @@ La contraseña inicial debe tratarse como credencial temporal; nunca se almacena
 
 - `restaurants`: nombre, estado, necesidades opcionales elegidas y valores directos de configuración que correspondan al restaurante.
 - `restaurants.needs` acepta únicamente `crm`, `kitchen`, `salon`, `delivery` y `receipts`; no existe catálogo editable de necesidades.
-- Roles y relaciones se guardan como datos propios de Cuentas cuando se defina su modelo; las opciones se presentan y administran en la app POS.
+- `roles` es un catálogo global de la app, sin `restaurant_id` ni relación hacia cuentas.
+- `restaurants` guarda un array de IDs de roles habilitados para ese restaurante según sus necesidades y configuración. `accounts` guarda un array de IDs de roles asignados a cada cuenta. La app calcula los permisos efectivos; el backend aplica la misma autorización.
+- No hay roles mixtos predefinidos: se acumulan permisos asignando varios roles a una cuenta.
+- El rol especial `Empleado` existe para todos los restaurantes y concede los permisos de todos los roles disponibles para ese restaurante. Es exclusivo y no se combina con otros roles. Si el restaurante no tiene necesidades opcionales, o solo selecciona Comprobantes, los roles son Administrador y Empleado.
+- Cocina habilita Cocinero; la opción de barra separada habilita Barista y Bartender y el espacio de trabajo Barra. Salón habilita Mesero y Portero. CRM habilita Social Manager. Delivery habilita Repartidor cuando se definan y activen sus configuraciones. Comprobantes no añade roles. Si existe al menos una necesidad opcional distinta de Comprobantes, Cajero se incluye entre los roles disponibles; si se quitan todas esas necesidades, Cajero se quita y Empleado cubre conceptualmente caja.
 - Configuraciones persistidas en columnas directas de `restaurants` o en tablas de dominio específicas, según su forma y relación. No se usará un catálogo genérico de configuraciones.
 - `locations`: sedes pertenecientes a un restaurante.
 - Datos operativos de cada módulo: asociados al restaurante y, cuando aplique, a una sede.

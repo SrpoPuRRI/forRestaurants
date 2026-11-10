@@ -1965,6 +1965,10 @@ body{color:var(--ink);background:#f4f1ea}
 .pay{background:var(--accent)}
 .pay:hover:not(:disabled){background:#9f3e2c}
 .product:hover,.open-card:hover{border-color:var(--gold)}
+.product.out-of-stock{border-style:dashed;opacity:.72}
+.product.out-of-stock .tag{color:#a2483a;font-weight:700}
+.option-row.option-unavailable{opacity:.68;border-color:#e9d6d2}
+.option-row.option-unavailable span{color:#a2483a}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline-color:var(--gold)}
 .sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 8px 18px;border-bottom:1px solid var(--line)}
 .sidebar-brand img{width:39px;height:39px;flex:none}

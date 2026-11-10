@@ -541,7 +541,6 @@ function shell() {
     '</div><div class="top-sub"><span>' +
     shownLabel +
     '</span></div></div><div class="top-right">' +
-    (s.page === "catalog" && s.role === "Administrador" ? '<button class="btn secondary" id="open-print-format" style="padding:8px 10px;font-size:10px">Subir formato</button>' : "") +
     '<button class="btn secondary" id="logout" style="padding:8px 10px;font-size:10px">Salir</button></div></header><div class="content">' +
     page() +
     '</div></main><nav class="mobile-nav ' +
@@ -1582,7 +1581,6 @@ function bind() {
     s.draft = { items: [], note: "" };
     render();
   });
-  $("#open-print-format")?.addEventListener("click", () => orderFlow.openPrintFormat());
   if (s.page === "orders" || s.page === "catalog") {
     orderFlow.bind();
     return;
