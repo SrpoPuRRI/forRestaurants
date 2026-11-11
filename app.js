@@ -401,6 +401,25 @@ async function loadAuthenticatedProfile(user) {
   s.locationId = profile.location_id;
   await restaurantSettings.load();
 }
+
+// Calls the access gate with the exact Auth JWT returned by Supabase Auth.
+// Keep this as fetch rather than relying on the Functions client's implicit session header.
+async function fetchRestaurantAccess(accessToken) {
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/restaurant-access`, {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: "{}",
+  });
+  const data = await response.json().catch(() => null);
+  return {
+    data,
+    error: response.ok ? null : new Error(data?.error || `No se pudo validar el restaurante (${response.status}).`),
+  };
+}
 // Valida las credenciales e inicia la sesión del usuario.
 async function submitLogin() {
   const button = $("#login"),
@@ -425,10 +444,7 @@ async function submitLogin() {
       password,
     });
     if (error) throw new Error("Usuario o contraseña incorrectos.");
-    const { data: access, error: accessError } = await supabase.functions.invoke("restaurant-access", {
-      body: {},
-      headers: { Authorization: `Bearer ${data.session.access_token}` },
-    });
+    const { data: access, error: accessError } = await fetchRestaurantAccess(data.session.access_token);
     if (accessError || !access?.active) {
       s.restaurantSuspended = !accessError && access?.active === false;
       await supabase.auth.signOut();
@@ -468,10 +484,7 @@ async function initializeApp() {
   } = await supabase.auth.getSession();
   if (session) {
     try {
-      const { data: access, error } = await supabase.functions.invoke("restaurant-access", {
-        body: {},
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const { data: access, error } = await fetchRestaurantAccess(session.access_token);
       if (!error && access?.active === false) {
         s.restaurantSuspended = true;
         await supabase.auth.signOut();
