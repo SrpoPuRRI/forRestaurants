@@ -3,14 +3,27 @@
 **Actualizado:** 11 de noviembre de 2026
 **Objetivo:** permitir que otra sesión continúe el trabajo sin repetir descubrimientos ni confundir lo especificado con lo que ya está implementado.
 
+## Continuación inmediata para la nueva cuenta (11 de noviembre)
+
+El último problema reportado en producción es al cambiar el logo desde **Setter → Editar restaurante**: `permission denied for table restaurants`. Se rastreó en el código antes de cambiar nada: Setter envía esa acción a la Edge Function `setter-admin`; esta usa el cliente Supabase con `service_role` para leer `restaurants.id,logo_path` y luego actualizar `restaurants.logo_path`. `BYPASSRLS` evita RLS, pero no otorga permisos SQL de tabla. La migración inicial otorgaba permisos a `authenticated`, no los permisos `SELECT` y `UPDATE` que esta operación necesita para `service_role`.
+
+La corrección de origen ya está en `202611110003_setter_restaurant_service_access.sql` y otorga únicamente `SELECT, UPDATE` sobre `public.restaurants` a `service_role`. El commit actual de forRestaurants es `dd5df2c` (`aaijasf`); incluye esa migración y la nota de despliegue en `supabase/README.md`. El repo estaba limpio y alineado con `origin/main` al documentar esto. **No se ha confirmado aquí que GitHub Actions haya aplicado esta migración ni que el flujo de logo ya funcione en producción.** Próximo paso: revisar la acción de Supabase correspondiente a `dd5df2c`, comprobar que `supabase db push` terminó bien y volver a probar el cambio desde Setter. Si la acción falla, detenerse y diagnosticar antes de pedir otro despliegue. No hace falta cambiar el bucket para este error concreto; las políticas/bucket de logo están en `202611110002_restaurant_logo_storage.sql` y cubren el flujo de Storage.
+
+La llamada a Supabase Edge Functions usa ahora explícitamente el bearer del service key como medida defensiva. Eso no era la causa de `permission denied for table restaurants`; la causa identificada es el GRANT ausente. `setter-admin` también emite errores diferenciados para carga de objeto y escritura de metadatos, con eventos `setter_restaurant_logo_upload_failed` y `setter_restaurant_update_failed`, para que el próximo diagnóstico distinga Storage de Postgres.
+
+El repo Setter separado (`F:\PROYECTOS\dosMiniProyectos\setter`) tiene como último commit local/remoto `9fa4a9b` (`I should be able to set a logo for a certain restaurant`) y estaba limpio. El formulario de creación acepta logo opcional; contraseña mínima de seis caracteres; Enter abre confirmación y la confirmación separa Cancelar de Aceptar y crear. El formulario de edición de Setter permite cambiar/quitar el logo. El POS también permite al admin del restaurante cambiar/quitar el logo desde Configuración. Los logos se almacenan en el bucket privado `restaurant-assets`, la base conserva `logo_path`, y la interfaz usa URL firmada temporal. Setter y POS son despliegues frontend independientes; la migración/funciones se despliegan desde forRestaurants.
+
+**Estado de trabajo al cambiar de cuenta:** el árbol de forRestaurants y el de Setter estaban limpios; no quedó ningún archivo local sin commit. Esto documenta el estado comprobado en la sesión, no una confirmación de que el último workflow de Supabase haya terminado.
+
 ## Estado rápido
 
 - Repositorio POS/backend: `F:\PROYECTOS\forRestaurants`, rama `main`, remoto `SrpoPuRRI/forRestaurants`.
-- Último commit de backend desplegado: `65d482a` — `Fix duplicate staff schedule insertion`; GitHub Actions #10 terminó correctamente. El commit `4231b1a` actualizó solo este handoff.
-- Supabase Actions para el último despliegue terminó correctamente: [run 42526209757](https://github.com/SrpoPuRRI/forRestaurants/actions/runs/42526209757).
-- El check de Cloudflare Pages asociado al mismo commit terminó correctamente: [Cloudflare Pages](https://github.com/SrpoPuRRI/forRestaurants/runs/128862361196).
-- Repositorio Setter: `F:\PROYECTOS\dosMiniProyectos\setter`, rama `main`, remoto `SrpoPuRRI/BandWConfig`. Último commit publicado: `0bd7108` — `Use fixed optional restaurant needs in Setter`. El árbol estaba limpio. La URL de GitHub Pages comprobada anteriormente es `https://srpopurri.github.io/BandWConfig/`.
-- No quedó una acción manual pendiente para aplicar la última migración: GitHub Actions la aplicó al recibir el push. Cloudflare Pages se publica desde el repositorio conectado.
+- Último despliegue que está confirmado en el historial previo: `65d482a` — `Fix duplicate staff schedule insertion`; GitHub Actions #10 terminó correctamente. Esto no confirma el despliegue de los commits posteriores.
+- El último commit de código de base/backend que se comprobó localmente es `dd5df2c` (`aaijasf`), alineado con `origin/main`, y contiene la migración `202611110003_setter_restaurant_service_access.sql`. **Revisar Actions para saber si ya se aplicó en Supabase.**
+- El último run de Supabase previamente confirmado fue [run 42526209757](https://github.com/SrpoPuRRI/forRestaurants/actions/runs/42526209757), asociado al despliegue anterior; no asumir que cubre `dd5df2c`.
+- El check de Cloudflare Pages asociado a aquel despliegue previo terminó correctamente: [Cloudflare Pages](https://github.com/SrpoPuRRI/forRestaurants/runs/128862361196). No asumir que verifica los últimos cambios del frontend.
+- Repositorio Setter: `F:\PROYECTOS\dosMiniProyectos\setter`, rama `main`, remoto `SrpoPuRRI/BandWConfig`. Último commit publicado comprobado: `9fa4a9b` — `I should be able to set a logo for a certain restaurant`; el árbol estaba limpio. La URL de GitHub Pages comprobada anteriormente es `https://srpopurri.github.io/BandWConfig/`.
+- Las migraciones y Edge Functions se aplican mediante el workflow descrito abajo. Para el arreglo actual de permisos de Setter hay que confirmar la acción posterior al commit `dd5df2c`; no declarar resuelto el incidente solo porque el commit exista.
 - Los despliegues verdes **no significan que el POS esté listo para incorporar restaurantes clientes**. Las tablas y RPC operativas heredadas de Kffe’to todavía no tienen aislamiento multi-restaurante suficiente.
 
 ## Producto y decisiones vigentes
@@ -106,10 +119,16 @@ En el árbol local se confirmó que `staff-admin/index.ts` declaraba `schedules`
 - Migración vigente de necesidades fijas y eliminación del catálogo genérico: `202611080001_fixed_optional_needs.sql`.
 - Migración de preferencias operativas: `202611080002_restaurant_operational_settings.sql`.
 - Migración de catálogo multi-restaurante y formatos de comprobante: `202611100001_restaurant_catalog.sql` (pendiente de aplicar al proyecto remoto).
+- Migración de espacios de trabajo de Cocina/Salón: `202611110001_restaurant_workspaces.sql` (estado remoto por confirmar).
+- Migraciones de bucket/logos y privilegios del servicio: `202611110002_restaurant_logo_storage.sql` y `202611110003_setter_restaurant_service_access.sql` (el segundo está incluido en `dd5df2c`; estado remoto por confirmar).
 - Workflow `.github/workflows/deploy-supabase.yml`: cuando cambia `supabase/**`, `main` enlaza proyecto, ejecuta `supabase db push --yes --remote` y despliega cuatro Edge Functions.
 - Secrets de GitHub Actions ya funcionaban en el último run. En GitHub están como nombres `SUPABASE_ACCESS_TOKEN` y `SUPABASE_DB_PASSWORD`; nunca documentar sus valores.
 - El proyecto Cloudflare Pages está conectado al repositorio. Los cambios bajo `supabase/**` despliegan Supabase mediante Actions; los cambios de frontend publican Pages. Comprobar el despliegue que corresponda a cada cambio.
 - No repetir ni permitir que se suba `supaSecret.txt` u otro token personal. Push protection de GitHub bloqueó ese archivo anteriormente; el archivo/commit con token no debe volver a estar en historial.
+
+### Historial de error al aplicar migraciones
+
+El propietario reportó que `supabase db push --yes --remote` se detuvo en `202611100001_restaurant_catalog.sql`, al crear `public.categories`, con `ERROR: relation "categories" already exists` (`SQLSTATE 42P07`). Esto demuestra que el esquema remoto ya tenía al menos esa relación cuando la migración intentó crearla; no asumir que la base remota coincide con el historial local de migraciones. El usuario compartió resultados de introspección de tablas, funciones y otros objetos para reconciliar la diferencia. Antes de volver a ejecutar `db push`, revisar el estado actual de `supabase_migrations.schema_migrations` y comparar el esquema remoto con **todas** las sentencias de `202611100001_restaurant_catalog.sql`; hacer una reparación segura y repetible. No resolverlo con `IF NOT EXISTS` a ciegas, marcando la migración como aplicada sin validar cada objeto/policy/RPC, ni editando una migración que ya se haya aplicado en algún entorno. Hasta reconciliar esto, la acción del commit `dd5df2c` podría volver a detenerse antes de llegar al GRANT de `202611110003`.
 
 ## Especificaciones disponibles
 

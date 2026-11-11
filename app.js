@@ -425,7 +425,10 @@ async function submitLogin() {
       password,
     });
     if (error) throw new Error("Usuario o contraseña incorrectos.");
-    const { data: access, error: accessError } = await supabase.functions.invoke("restaurant-access", { body: {} });
+    const { data: access, error: accessError } = await supabase.functions.invoke("restaurant-access", {
+      body: {},
+      headers: { Authorization: `Bearer ${data.session.access_token}` },
+    });
     if (accessError || !access?.active) {
       s.restaurantSuspended = !accessError && access?.active === false;
       await supabase.auth.signOut();
@@ -465,7 +468,10 @@ async function initializeApp() {
   } = await supabase.auth.getSession();
   if (session) {
     try {
-      const { data: access, error } = await supabase.functions.invoke("restaurant-access", { body: {} });
+      const { data: access, error } = await supabase.functions.invoke("restaurant-access", {
+        body: {},
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
       if (!error && access?.active === false) {
         s.restaurantSuspended = true;
         await supabase.auth.signOut();
