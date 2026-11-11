@@ -39,7 +39,7 @@ El usuario quiere un flujo claro y no ambiguo, datos específicos por restaurant
 - La migración local `202611110001_restaurant_workspaces.sql` añade tablas/RPC con aislamiento por restaurante para pisos, mesas, colas de Cocina/Salón y eventos de progreso. **No está aplicada en Supabase**; los workspaces no funcionarán en el entorno remoto hasta aplicar las migraciones pendientes y verificar las funciones.
 - La cola se limpia al abrir Cocina y elimina pedidos completados con más de dos días; no hay proceso programado en servidor. El alta/pago del pedido heredado y su entrada a cola son llamadas separadas, no una transacción única.
 - La UI de permisos sigue usando únicamente los roles heredados Administrador y Empleado. Los roles globales/múltiples y los permisos individuales Cocinero, Mesero, Portero, etc., aún no están implementados; por tanto, no tratar estas pantallas como autorización final por puesto.
-- El mapa es funcional como prototipo operativo, pero la unión de mesas conserva las mesas y sus números como grupo visual (no crea una mesa física consolidada). El flujo de una mesa con cuenta abierta asociada aún requiere definir el vínculo persistente.
+- El mapa y las colas son funcionales en el código local. `salon_open_order_links` vincula la cuenta abierta con su mesa para recuperar esa relación al reabrirla; la migración todavía debe aplicarse y probarse en Supabase. La unión de mesas conserva las mesas y sus números como grupo visual (no crea una mesa física consolidada).
 
 El commit `b7563c8` contiene:
 

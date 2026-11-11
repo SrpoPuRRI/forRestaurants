@@ -1343,9 +1343,40 @@ export default function createOrderFlow({
             p_yape_percent: universalize ? 0 : percent,
           };
           let result;
-          const sourceOpenOrderId = isOpenOrder() ? data.activeOpen.id : null;
+          let sourceOpenOrderId = isOpenOrder() ? data.activeOpen.id : null;
+          // A table draft must first become a linked open order. This reserves
+          // the table before payment is committed and lets payment/queue RPCs
+          // retain the table identity if another request arrives concurrently.
+          if (!sourceOpenOrderId && state.orderTableId && workspaces?.has("salon")) {
+            const { data: openId, error: openError } = await supabase.rpc("create_open_order", {
+              p_location_id: orderNow.location_id || currentLocationId(),
+              p_note: orderNow.note || null,
+              p_items: toRpcItems(orderNow.items),
+            });
+            if (openError) throw openError;
+            data.activeOpen = {
+              id: openId,
+              location_id: orderNow.location_id || currentLocationId(),
+              note: orderNow.note || "",
+              items: orderNow.items,
+              revision: 1,
+              operator_name: state.user,
+            };
+            const linked = await workspaces.linkOpenOrder(openId);
+            if (!linked) {
+              const { error: cancelError } = await supabase.rpc("cancel_open_order", { p_order_id: openId });
+              if (cancelError) throw new Error("No se pudo reservar la mesa ni revertir el pedido temporal. Aparece en Pedidos abiertos; revísalo antes de continuar.");
+              data.activeOpen = null;
+              throw new Error("No se pudo reservar la mesa. El pago no se registró; inténtalo otra vez.");
+            }
+            sourceOpenOrderId = openId;
+          }
           if (isOpenOrder()) {
             const currentOpen = data.activeOpen;
+            if (state.orderTableId && workspaces?.has("salon")) {
+              const linked = await workspaces.linkOpenOrder(currentOpen.id);
+              if (!linked) throw new Error("No se pudo reservar la mesa. El pago no se registró; corrige el vínculo antes de continuar.");
+            }
             const saveResult = await supabase.rpc("update_open_order", {
               p_order_id: currentOpen.id,
               p_expected_revision: currentOpen.revision,
@@ -1370,9 +1401,11 @@ export default function createOrderFlow({
           }
           if (result.error) throw result.error;
           const paidOrderId = result.data?.order_id;
-          const paidQueueOrder = { id: paidOrderId, kind: "paid", location_id: orderNow.location_id || currentLocationId(), table_label: state.orderTableLabel, note: orderNow.note || "", items: orderNow.items };
-          if (paidOrderId && workspaces?.has("kitchen") && (state.restaurantSettings?.kitchen_entry_mode === "paid" || !sourceOpenOrderId)) await workspaces.enqueueOrder("kitchen", paidQueueOrder);
-          if (paidOrderId && !workspaces?.has("kitchen") && workspaces?.has("salon") && (state.restaurantSettings?.salon_entry_mode === "paid" || !sourceOpenOrderId)) await workspaces.enqueueOrder("salon", paidQueueOrder);
+          const paidQueueOrder = { id: paidOrderId, kind: "paid", source_open_order_id: sourceOpenOrderId, location_id: orderNow.location_id || currentLocationId(), table_label: state.orderTableLabel, note: orderNow.note || "", items: toWorkspaceItems(orderNow.items) };
+          let paidQueueWritten = false;
+          if (paidOrderId && workspaces?.has("kitchen") && (state.restaurantSettings?.kitchen_entry_mode === "paid" || !sourceOpenOrderId)) paidQueueWritten = await workspaces.enqueueOrder("kitchen", paidQueueOrder);
+          if (paidOrderId && !workspaces?.has("kitchen") && workspaces?.has("salon") && (state.restaurantSettings?.salon_entry_mode === "paid" || !sourceOpenOrderId)) paidQueueWritten = await workspaces.enqueueOrder("salon", paidQueueOrder);
+          if (sourceOpenOrderId && workspaces?.has("salon") && (paidQueueWritten || await workspaces.hasOpenOrderQueue(sourceOpenOrderId) || !paidQueueOrder.items.length)) await workspaces.clearOpenOrderTable(sourceOpenOrderId);
           d.close();
           data.activeDraft = null;
           data.activeOpen = null;
@@ -1614,6 +1647,30 @@ export default function createOrderFlow({
     }));
   }
 
+  // Enriches kitchen/salon snapshots with names from the loaded catalog.
+  function toWorkspaceItems(items = []) {
+    return (items || []).flatMap((item) => {
+      const product = byId(data.products, item.product_id);
+      const variant = byId(data.variants, item.variant_id);
+      const kind = item.product_kind || item.line_kind || product?.product_kind;
+      if (kind === "income" || kind === "expense") return [];
+      return [{
+        ...item,
+        product_name: item.product_name || item.product_name_snapshot || item.name || product?.name || "Producto",
+        variant_name: item.variant_name || item.variant_name_snapshot || variant?.name || "",
+        unit_price: Number(item.unit_price ?? item.price ?? variant?.price ?? 0),
+        addons: (item.addons || []).map((addon) => {
+          const catalogAddon = byId(data.addons, addon.addon_id);
+          return {
+            ...addon,
+            name: addon.name || addon.addon_name_snapshot || catalogAddon?.name || "Agregado",
+            price: Number(addon.price ?? addon.unit_price ?? catalogAddon?.price ?? 0),
+          };
+        }),
+      }];
+    });
+  }
+
   // Publica el borrador actual como un pedido abierto.
   async function publishDraft() {
     if (!data.activeDraft || !data.activeDraft.items.length) {
@@ -1637,8 +1694,24 @@ export default function createOrderFlow({
       revision: 1,
       operator_name: state.user,
     };
-    if (workspaces?.has("kitchen") && state.restaurantSettings?.kitchen_entry_mode === "open") await workspaces.enqueueOrder("kitchen", { id, kind: "open", location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: data.activeDraft?.items || [] });
-    else if (workspaces?.has("salon") && !workspaces?.has("kitchen") && state.restaurantSettings?.salon_entry_mode === "open") await workspaces.enqueueOrder("salon", { id, kind: "open", location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: data.activeOpen.items || [] });
+    if (state.orderTableId && workspaces?.has("salon")) {
+      const linked = await workspaces.linkOpenOrder(id);
+      if (!linked) {
+        const { error: cancelError } = await supabase.rpc("cancel_open_order", { p_order_id: id });
+        if (cancelError) {
+          data.activeOpen = null;
+          await refreshOpenOrders(false);
+          toast("No se vinculó la mesa y no se pudo revertir el pedido temporal. Revísalo en Pedidos abiertos.");
+        } else {
+          data.activeOpen = null;
+          await refreshOpenOrders(false);
+          toast("No se pudo reservar la mesa. El pedido sigue como borrador.");
+        }
+        return;
+      }
+    }
+    if (workspaces?.has("kitchen") && state.restaurantSettings?.kitchen_entry_mode === "open") await workspaces.enqueueOrder("kitchen", { id, kind: "open", location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: toWorkspaceItems(data.activeDraft?.items || []) });
+    else if (workspaces?.has("salon") && !workspaces?.has("kitchen") && state.restaurantSettings?.salon_entry_mode === "open") await workspaces.enqueueOrder("salon", { id, kind: "open", location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: toWorkspaceItems(data.activeOpen.items || []) });
     data.activeDraft = null;
     await refreshOpenOrders(false);
     render();
@@ -1677,8 +1750,8 @@ export default function createOrderFlow({
           break;
         }
         current.revision = Number(revision);
-        if (workspaces?.has("kitchen") && state.restaurantSettings?.kitchen_entry_mode === "open") await workspaces.enqueueOrder("kitchen", { id: current.id, kind: "open", location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: current.items });
-        else if (workspaces?.has("salon") && !workspaces?.has("kitchen") && state.restaurantSettings?.salon_entry_mode === "open") await workspaces.enqueueOrder("salon", { id: current.id, kind: "open", location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: current.items });
+        if (workspaces?.has("kitchen") && state.restaurantSettings?.kitchen_entry_mode === "open") await workspaces.enqueueOrder("kitchen", { id: current.id, kind: "open", location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: toWorkspaceItems(current.items) });
+        else if (workspaces?.has("salon") && !workspaces?.has("kitchen") && state.restaurantSettings?.salon_entry_mode === "open") await workspaces.enqueueOrder("salon", { id: current.id, kind: "open", location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: toWorkspaceItems(current.items) });
       } while (data.saveQueued);
     } finally {
       data.saveBusy = false;
@@ -1696,6 +1769,8 @@ export default function createOrderFlow({
     }
     if (data.activeOpen?.id === id) {
       data.activeOpen = null;
+      state.orderTableId = null;
+      state.orderTableLabel = "";
       render();
       return;
     }
@@ -1709,6 +1784,7 @@ export default function createOrderFlow({
       revision: order.revision,
       operator_name: order.operator_name,
     };
+    await workspaces?.getOpenOrderTable(id);
     data.orderLocationId = order.location_id;
     data.openFilterLocationId = isAdmin()
       ? data.openFilterLocationId
@@ -1744,6 +1820,8 @@ export default function createOrderFlow({
     )
       return;
     data.activeDraft = null;
+    state.orderTableId = null;
+    state.orderTableLabel = "";
     render();
   }
 
@@ -3041,6 +3119,7 @@ export default function createOrderFlow({
     load: loadCatalog,
     reloadCatalog: loadCatalog,
     cleanup,
+    hasActiveOrder: () => Boolean(data.activeDraft || data.activeOpen),
     printTicket,
   };
 }

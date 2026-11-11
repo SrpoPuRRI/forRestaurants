@@ -23,7 +23,7 @@ Cada restaurante con Salón tendrá una cola de pedidos por servir. Si también 
 
 Los restaurantes pueden tener uno o varios pisos. Cada piso guarda la configuración de su propia grilla; se pueden ajustar tamaños relativos de filas y columnas y se persiste el resultado.
 
-La implementación local usa tablas separadas por restaurante para pisos y mesas. Cada mesa guarda piso, posición, tamaño, número y estado. Las RPC comprueban que la posición esté dentro de la grilla y libre.
+La implementación local usa tablas separadas por restaurante para pisos y mesas. Cada mesa guarda piso, posición, tamaño, número y estado. Las RPC comprueban que la posición esté dentro de la grilla y libre. `salon_open_order_links` relaciona una cuenta abierta con su mesa, evita asignar una segunda cuenta abierta a la misma mesa y permite recuperar la mesa al reabrir la cuenta. Al pagar o cancelar, se elimina ese vínculo y la ocupación se conserva mientras haya pedidos activos en Cocina o Salón.
 
 ### Crear y ordenar mesas
 

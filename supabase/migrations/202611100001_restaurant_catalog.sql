@@ -1,5 +1,5 @@
 -- Tenant-scoped catalog for Black&White POS.
-create table public.categories (
+create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   name text not null,
@@ -9,7 +9,7 @@ create table public.categories (
   unique (restaurant_id, name)
 );
 
-create table public.tags (
+create table if not exists public.tags (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   name text not null,
@@ -18,7 +18,7 @@ create table public.tags (
   unique (restaurant_id, name)
 );
 
-create table public.products (
+create table if not exists public.products (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   name text not null,
@@ -32,11 +32,11 @@ create table public.products (
   unique (id, restaurant_id),
   foreign key (category_id, restaurant_id) references public.categories(id, restaurant_id) on delete set null (category_id)
 );
-create unique index products_one_special_kind_per_restaurant_idx
+create unique index if not exists products_one_special_kind_per_restaurant_idx
   on public.products(restaurant_id, product_kind) where product_kind in ('income','expense');
-create index products_restaurant_name_idx on public.products(restaurant_id, name);
+create index if not exists products_restaurant_name_idx on public.products(restaurant_id, name);
 
-create table public.variants (
+create table if not exists public.variants (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   product_id uuid not null,
@@ -50,9 +50,9 @@ create table public.variants (
   unique (product_id, name),
   foreign key (product_id, restaurant_id) references public.products(id, restaurant_id) on delete cascade
 );
-create index variants_restaurant_product_idx on public.variants(restaurant_id, product_id);
+create index if not exists variants_restaurant_product_idx on public.variants(restaurant_id, product_id);
 
-create table public.addons (
+create table if not exists public.addons (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   name text not null,
@@ -64,7 +64,7 @@ create table public.addons (
   unique (restaurant_id, name)
 );
 
-create table public.product_categories (
+create table if not exists public.product_categories (
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   product_id uuid not null,
   category_id uuid not null,
@@ -72,7 +72,7 @@ create table public.product_categories (
   foreign key (product_id, restaurant_id) references public.products(id, restaurant_id) on delete cascade,
   foreign key (category_id, restaurant_id) references public.categories(id, restaurant_id) on delete cascade
 );
-create table public.product_tags (
+create table if not exists public.product_tags (
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   product_id uuid not null,
   tag_id uuid not null,
@@ -80,7 +80,7 @@ create table public.product_tags (
   foreign key (product_id, restaurant_id) references public.products(id, restaurant_id) on delete cascade,
   foreign key (tag_id, restaurant_id) references public.tags(id, restaurant_id) on delete cascade
 );
-create table public.product_addons (
+create table if not exists public.product_addons (
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   product_id uuid not null,
   addon_id uuid not null,
@@ -88,7 +88,7 @@ create table public.product_addons (
   foreign key (product_id, restaurant_id) references public.products(id, restaurant_id) on delete cascade,
   foreign key (addon_id, restaurant_id) references public.addons(id, restaurant_id) on delete restrict
 );
-create table public.variant_locations (
+create table if not exists public.variant_locations (
   restaurant_id uuid not null default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   variant_id uuid not null,
   location_id uuid not null,
@@ -98,7 +98,7 @@ create table public.variant_locations (
   foreign key (location_id, restaurant_id) references public.locations(id, restaurant_id) on delete cascade
 );
 
-create table public.restaurant_receipt_templates (
+create table if not exists public.restaurant_receipt_templates (
   restaurant_id uuid primary key default public.current_restaurant_id() references public.restaurants(id) on delete cascade,
   format jsonb not null,
   updated_at timestamptz not null default now(),
@@ -112,10 +112,13 @@ begin
   return new;
 end;
 $$;
+drop trigger if exists products_touch_updated_at on public.products;
 create trigger products_touch_updated_at before update on public.products
   for each row execute function public.catalog_touch_updated_at();
+drop trigger if exists variants_touch_updated_at on public.variants;
 create trigger variants_touch_updated_at before update on public.variants
   for each row execute function public.catalog_touch_updated_at();
+drop trigger if exists addons_touch_updated_at on public.addons;
 create trigger addons_touch_updated_at before update on public.addons
   for each row execute function public.catalog_touch_updated_at();
 
@@ -139,9 +142,11 @@ begin
   return null;
 end;
 $$;
+drop trigger if exists products_require_variant on public.products;
 create constraint trigger products_require_variant
   after insert or update on public.products deferrable initially deferred
   for each row execute function public.catalog_assert_active_product_has_variant();
+drop trigger if exists variants_preserve_product_variant on public.variants;
 create constraint trigger variants_preserve_product_variant
   after insert or update or delete on public.variants deferrable initially deferred
   for each row execute function public.catalog_assert_active_product_has_variant();
@@ -187,6 +192,8 @@ begin
     'product_tags','product_addons','variant_locations','restaurant_receipt_templates'
   ] loop
     execute format('alter table public.%I enable row level security', table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_tenant_read', table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_admin_manage', table_name);
     if table_name = 'restaurant_receipt_templates' then
       execute format('create policy %I on public.%I for select to authenticated using (restaurant_id = (select public.current_restaurant_id()) and exists (select 1 from public.restaurants r where r.id = restaurant_id and ''receipts'' = any(r.needs)))', table_name || '_tenant_read', table_name);
       execute format('create policy %I on public.%I for all to authenticated using (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = ''admin'' and exists (select 1 from public.restaurants r where r.id = restaurant_id and ''receipts'' = any(r.needs))) with check (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = ''admin'' and exists (select 1 from public.restaurants r where r.id = restaurant_id and ''receipts'' = any(r.needs)))', table_name || '_admin_manage', table_name);

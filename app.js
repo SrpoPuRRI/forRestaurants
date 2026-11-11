@@ -228,6 +228,7 @@ const workspaces = createRestaurantWorkspaces({
   money,
   esc,
   refreshCatalog: () => orderFlow?.reloadCatalog(),
+  hasActiveOrder: () => orderFlow?.hasActiveOrder() || false,
   navigate: (page) => {
     s.page = page;
     render();
@@ -485,6 +486,8 @@ async function initializeApp() {
       s.current = null;
       s.orders = [];
       s.draft = { items: [], note: "" };
+      s.orderTableId = null;
+      s.orderTableLabel = "";
       render();
     }
   });
@@ -1431,6 +1434,8 @@ function deleteAccountDialog(account) {
       s.current = null;
       s.orders = [];
       s.draft = { items: [], note: "" };
+      s.orderTableId = null;
+      s.orderTableLabel = "";
       render();
       return;
     }
@@ -1615,6 +1620,8 @@ function bind() {
     s.current = null;
     s.orders = [];
     s.draft = { items: [], note: "" };
+    s.orderTableId = null;
+    s.orderTableLabel = "";
     render();
   });
   if (s.page === "orders" || s.page === "catalog") {
