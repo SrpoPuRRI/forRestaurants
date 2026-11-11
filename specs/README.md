@@ -15,6 +15,7 @@ Este directorio contiene las especificaciones del producto y decisiones que guí
 - [Estadísticas](Estad%C3%ADsticas/spec_001.md)
 - [Catálogo](Cat%C3%A1logo/spec_001.md)
 - [Configuración](Configuraci%C3%B3n/spec_001.md)
+- [Decisiones pendientes por flujo](Pendientes%20por%20definir/spec_001.md): preguntas abiertas que debemos resolver antes de implementar cada módulo.
 
 ## Regla de producto acordada
 
@@ -26,4 +27,4 @@ La dirección de roles acordada es un catálogo global de roles, un array de IDs
 
 Los movimientos del restaurante usarán un desglose común para admitir hasta diez métodos de pago configurados por restaurante. Cada movimiento guarda importes por espacio, un arreglo alineado que identifica el método usado en cada espacio, el total y la hora del movimiento. El detalle de Configuración y Flujo de pedidos fija el comportamiento y la preservación histórica de esos métodos.
 
-Las especificaciones funcionales siguen en borrador y se completarán antes de implementar cada módulo operativo.
+Las especificaciones funcionales registran decisiones y pendientes; la existencia de una especificación no significa que el módulo esté implementado. El avance local de los espacios opcionales y las dependencias para probarlos se registra en `HANDOFF.md`.

@@ -9,6 +9,7 @@ import {
 import createOrderFlow from "./order-flow.js";
 import createStatistics from "./statistics.js";
 import createRestaurantSettings from "./restaurant-settings.js";
+import createRestaurantWorkspaces from "./restaurant-workspaces.js";
 
 //Sección de inicialización de las cuentas, función propuesta por la documentación que leí en Supabase
 const supabase =
@@ -168,6 +169,9 @@ const s = {
   roleKey: "employee",
   roleId: null,
   restaurantSettings: null,
+  restaurantNeeds: [],
+  orderTableId: null,
+  orderTableLabel: "",
   settingRoles: [],
   paymentSettings: {},
   roleSettings: {},
@@ -215,13 +219,30 @@ window.addEventListener("resize", () => {
 
 //Sección de formateos
 //Formateo de Flujo de pedidos
-const orderFlow = createOrderFlow({
+let orderFlow;
+const workspaces = createRestaurantWorkspaces({
   supabase,
   state: s,
   render: () => render(),
   toast,
   money,
   esc,
+  refreshCatalog: () => orderFlow?.reloadCatalog(),
+  navigate: (page) => {
+    s.page = page;
+    render();
+    orderFlow?.enter(page);
+    workspaces.enter(page);
+  },
+});
+orderFlow = createOrderFlow({
+  supabase,
+  state: s,
+  render: () => render(),
+  toast,
+  money,
+  esc,
+  workspaces,
 });
 
 //Formateo de las estadísticas
@@ -457,6 +478,7 @@ async function initializeApp() {
   supabase.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT" && s.user) {
       orderFlow.cleanup();
+      workspaces.cleanup();
       s.user = null;
       s.authUserId = null;
       s.locationId = null;
@@ -476,6 +498,11 @@ function nav(m) {
   ];
   if (s.role === "Administrador") list.push(["catalog", "▤", "Catálogo"]);
   if (s.role === "Administrador") list.push(["settings", "⚙", "Configuración"]);
+  if (s.restaurantNeeds?.includes("crm")) list.push(["crm", "◎", "CRM"]);
+  if (s.restaurantNeeds?.includes("kitchen")) list.push(["kitchen", "▦", "Cocina"]);
+  if (s.restaurantNeeds?.includes("kitchen") && s.restaurantSettings?.kitchen_has_separate_bar) list.push(["bar", "◉", "Barra"]);
+  if (s.restaurantNeeds?.includes("salon")) list.push(["salon", "⌂", "Salón"]);
+  if (s.restaurantNeeds?.includes("delivery")) list.push(["delivery", "↗", "Delivery"]);
   const icon = (key, fallback) =>
     key === "account"
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="15.7" cy="6.7" r="3.1"/><path d="M11.5 13.2c1.1-1.3 2.5-2 4.2-2 3.5 0 5.8 2.5 5.8 6v3.4c-2.1 1.1-4.7 1.7-7.4 1.7h-1.8"/><circle cx="7.2" cy="9.1" r="4.2"/><path d="M1 21v-2.7c0-4.2 2.6-6.9 6.4-6.9h.8c3.8 0 6.4 2.7 6.4 6.9V21c-2.1 1.2-4.3 1.8-6.8 1.8S3.1 22.2 1 21Z"/></svg>'
@@ -507,6 +534,11 @@ function title() {
     account: "Cuenta",
     catalog: "Catálogo",
     settings: "Configuración",
+    crm: "CRM",
+    kitchen: "Cocina",
+    bar: "Barra",
+    salon: "Salón",
+    delivery: "Delivery",
   }[s.page];
 }
 // Genera la estructura principal de la aplicación.
@@ -560,6 +592,8 @@ function page() {
         ? statistics.render()
         : s.page === "settings" && s.role === "Administrador"
           ? restaurantSettings.render()
+        : ["crm", "kitchen", "bar", "salon", "delivery"].includes(s.page)
+          ? workspaces.render(s.page)
         : account();
 }
 // Genera la vista del flujo de pedidos y sus productos disponibles.
@@ -1561,6 +1595,7 @@ function bind() {
         s.page = b.dataset.page;
         render();
         orderFlow.enter(s.page);
+          workspaces.enter(s.page);
         if (s.page === "account") loadAccounts();
         if (s.page === "stats") statistics.enter();
         if (s.page === "settings") restaurantSettings.load().then(() => render());
@@ -1572,6 +1607,7 @@ function bind() {
   });
   $("#logout")?.addEventListener("click", async () => {
     orderFlow.cleanup();
+    workspaces.cleanup();
     if (supabase) await supabase.auth.signOut();
     s.user = null;
     s.authUserId = null;
@@ -1591,6 +1627,10 @@ function bind() {
   }
   if (s.page === "settings") {
     restaurantSettings.bind();
+    return;
+  }
+  if (["crm", "kitchen", "bar", "salon", "delivery"].includes(s.page)) {
+    workspaces.bind();
     return;
   }
   if (s.page === "account") {

@@ -1,13 +1,13 @@
 # Black&White POS — Salón 001
 
-**Estado:** Borrador inicial  
+**Estado:** Especificación parcial; mapa, edición y cola implementados localmente, pendientes de aplicar y verificar en Supabase  
 **Tipo:** Pestaña opcional por restaurante.
 
 ## Propósito
 
 Organizar el servicio en local cuando el restaurante atiende mesas.
 
-## Alcance por especificar
+## Alcance
 
 - Plano, zonas, mesas, capacidad y estados de ocupación.
 - Asignación de cuenta, anfitrión y personal de atención.
@@ -19,11 +19,11 @@ Organizar el servicio en local cuando el restaurante atiende mesas.
 
 Cada restaurante con Salón tendrá una cola de pedidos por servir. Si también existe Cocina, la cola recibe los pedidos cuando Cocina los marca como listos; si no hay Cocina, Salón recibe directamente los pedidos que cumplan la regla de integración configurada.
 
-**Listo en Cocina** y **Entregado en Salón** son estados distintos. Que Cocina complete un pedido solo habilita su paso a la cola de servicio; el personal de Salón debe registrar por separado la entrega. La forma de esa acción y sus marcas de tiempo queda por definir.
+**Listo en Cocina** y **Entregado en Salón** son estados distintos. Que Cocina complete un pedido solo habilita su paso a la cola de servicio; la UI y RPC local permiten registrar por separado la entrega con su actor y marca de tiempo.
 
-Los restaurantes pueden tener uno o varios pisos. Cada piso guarda la configuración de su propia grilla; las celdas se pueden redimensionar manualmente y se persiste la grilla resultante para ese piso. La definición física de pisos y grillas aún está por diseñar.
+Los restaurantes pueden tener uno o varios pisos. Cada piso guarda la configuración de su propia grilla; se pueden ajustar tamaños relativos de filas y columnas y se persiste el resultado.
 
-Se mantiene la propuesta de un registro por restaurante, con su `restaurant_id` y un array de mesas. Cada mesa guarda su identificador/número, el piso al que pertenece y una coordenada de la grilla de ese piso. La posición debe apuntar a una celda libre. Cada piso persiste además la configuración de su grilla. La estructura final de tablas y columnas para almacenar pisos, grillas y mesas queda por decidir.
+La implementación local usa tablas separadas por restaurante para pisos y mesas. Cada mesa guarda piso, posición, tamaño, número y estado. Las RPC comprueban que la posición esté dentro de la grilla y libre.
 
 ### Crear y ordenar mesas
 
@@ -41,7 +41,7 @@ Se mantiene la propuesta de un registro por restaurante, con su `restaurant_id` 
 - **Redimensionar:** cambia el área que ocupa la mesa dentro de la grilla, indicando desde qué línea de la grilla hasta qué línea se extiende. Solo puede ocupar celdas disponibles.
 - **Fusionar:** solo está disponible si al menos otra mesa toca uno de sus lados. Una mesa en diagonal no cuenta como vecina. Si no cumple la condición, la opción se muestra atenuada y no se puede elegir.
 
-El resultado de fusionar mesas (número/identidad resultante, conservación de ambas y posibilidad de deshacer) queda por definir.
+La fusión local agrupa mesas visualmente, conserva los números y permite deshacer el grupo. No crea una entidad física consolidada para el servicio.
 
 ### Vista de pisos e identificación en pedidos
 
@@ -57,4 +57,4 @@ Salón puede usar Cocina para enviar comandas, pero Cocina no exige Salón: tamb
 
 ## Pendientes
 
-Definir el modelo de datos de pisos/grillas/mesas, orientación exacta del orden cardinal, reservas, reasignaciones, políticas de cancelación y permisos del personal. Definir además el flujo cuando se integra desde pedidos abiertos, en especial si la comida aún no está lista.
+Aplicar y verificar la migración de Salón en Supabase. Asociar una cuenta abierta persistente con su mesa y definir el comportamiento al reabrir una mesa ocupada. También faltan reservas, reasignaciones, políticas de cancelación, permisos individuales por rol y reglas de pedidos abiertos cuando Cocina y Salón están activos.

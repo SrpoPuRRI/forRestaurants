@@ -27,6 +27,10 @@ Flujo de pedidos siempre está disponible. Las necesidades opcionales pueden cam
 
 ## Colas operativas opcionales
 
+## Cierre automático de Caja y operaciones pendientes
+
+Al acercarse el cambio al siguiente turno a menos de cinco minutos, el proceso automático de Caja puede cancelar operaciones pendientes que dependan de una Caja abierta. Esto es preventivo y no afirma que el flujo actual tenga una operación pendiente de ese tipo. Si en el futuro el cierre afecta una operación, su resultado devuelve `closedCashier` en lugar de éxito o una fecha; se trata como error y no se incluye en Estadísticas. Una cola u otro flujo que espere ese resultado debe manejarlo como error y cerrar su espera. El camino normal de pedidos no debería generar `closedCashier`. Se avisa al administrador que respetar los horarios evita estas cancelaciones y datos operativos erróneos.
+
 El ciclo principal de pedidos conserva los pedidos abiertos y los pedidos pagados. Las colas de preparación y servicio son capas opcionales: solo se crean/consultan cuando el restaurante tiene activa la necesidad correspondiente. Si no están activas, el pedido sigue el flujo normal sin pasar por esas colas.
 
 Flujo acordado como base:

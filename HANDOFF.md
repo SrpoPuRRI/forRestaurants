@@ -1,6 +1,6 @@
 # Traspaso de contexto — Black&White POS
 
-**Actualizado:** 10 de noviembre de 2026
+**Actualizado:** 11 de noviembre de 2026
 **Objetivo:** permitir que otra sesión continúe el trabajo sin repetir descubrimientos ni confundir lo especificado con lo que ya está implementado.
 
 ## Estado rápido
@@ -30,6 +30,17 @@ El usuario quiere un flujo claro y no ambiguo, datos específicos por restaurant
 
 ## Lo último que se implementó
 
+### Prototipos y espacios opcionales (11 de noviembre de 2026)
+
+- CRM ahora tiene un prototipo visual independiente de la base de datos.
+- Delivery muestra un espacio «Próximamente»; el rol Repartidor aún no habilita operaciones.
+- Comprobantes muestra el botón «Configurar sistema de impresión» y un diálogo «Próximamente».
+- Se añadió en el POS la UI de Cocina (colas, marcar pedido/artículo/unidad listo o fuera de stock) y Salón (pisos, grilla, mesas, servicio, edición configurable y sillas por piso). La Barra separada tiene una pantalla informativa: aún no se distribuyen artículos entre Cocina y Barra.
+- La migración local `202611110001_restaurant_workspaces.sql` añade tablas/RPC con aislamiento por restaurante para pisos, mesas, colas de Cocina/Salón y eventos de progreso. **No está aplicada en Supabase**; los workspaces no funcionarán en el entorno remoto hasta aplicar las migraciones pendientes y verificar las funciones.
+- La cola se limpia al abrir Cocina y elimina pedidos completados con más de dos días; no hay proceso programado en servidor. El alta/pago del pedido heredado y su entrada a cola son llamadas separadas, no una transacción única.
+- La UI de permisos sigue usando únicamente los roles heredados Administrador y Empleado. Los roles globales/múltiples y los permisos individuales Cocinero, Mesero, Portero, etc., aún no están implementados; por tanto, no tratar estas pantallas como autorización final por puesto.
+- El mapa es funcional como prototipo operativo, pero la unión de mesas conserva las mesas y sus números como grupo visual (no crea una mesa física consolidada). El flujo de una mesa con cuenta abierta asociada aún requiere definir el vínculo persistente.
+
 El commit `b7563c8` contiene:
 
 - Pantalla **Configuración**, solo visible para cuentas con rol `admin`.
@@ -57,16 +68,18 @@ No presentar las siguientes opciones como funcionalidades de operación listas:
 
 - **Pagos:** se guardan preferencias manuales por método. La modalidad automática está desactivada en UI porque no hay proveedor integrado. El checkout actual sigue usando el modelo antiguo (Yape/efectivo); no lee la configuración nueva ni admite todos los métodos.
 - **Límite mínimo/máximo y pedidos correctivos/devoluciones:** valores y permisos por rol se guardan, pero el flujo/RPC de pedidos no los aplica.
-- **Rankings:** la visibilidad usa la nueva configuración, pero los datos se consultan desde el modelo operativo heredado. Ranking por categoría requiere que los pedidos multi-restaurante guarden relaciones con categorías del nuevo catálogo.
+- **Rankings:** la visibilidad usa la configuración existente, pero los datos se consultan desde el modelo operativo heredado. Tras adoptar la clasificación de Kffe’to (categorías, grupos o etiquetas), la base aún debe guardar el tipo elegido y sus permisos; los pedidos multi-restaurante deben guardar sus relaciones con catálogo.
 - **Catálogo:** se añadió al repositorio un catálogo multi-restaurante inspirado en Kffe’to (productos, categorías, etiquetas, variantes, agregados y disponibilidad por sede), con RLS y UI. `is_active` indica si se puede vender; los registros fuera de stock siguen visibles y muestran un diálogo al intentar agregarlos. Admin administra Catálogo y Empleado puede cambiar disponibilidad desde el menú por una operación de servidor limitada. Falta aplicar la migración `202611100001_restaurant_catalog.sql` a Supabase. Los interruptores de agregados, grupos y promociones aún no gobiernan esos flujos; las promociones no tienen editor ni aplicación al cobro.
 - **Notas:** lectura/escritura y visibilidad administrativa están implementadas. No se ha construido reinicio manual ni automático. El campo modo/intervalo se guarda; la nota no se borra porque faltan fecha exacta, retención y archivo/historial definidos.
-- **Estadísticas por jornada:** la spec requiere limitar empleados a su día laboral y conservar acceso hasta terminar turnos que cruzan medianoche; revisar y completar al migrar el modelo de horarios/asistencia.
+- **Estadísticas y caja:** la especificación sigue las métricas de Kffe’to y agrupa la interfaz por la fecha de apertura de Caja. Caja tiene estado booleano y un registro mensual por restaurante organizado por fecha, turno y timestamps de apertura/cierre. Solo hay un periodo por turno; cerrar manualmente exige contraseña y solo el administrador puede reabrir, eliminando la marca de cierre del JSON. El fin del turno no cierra Caja: muestra un aviso y permite seguir cobrando. Un proceso automático, aun sin cuentas iniciadas, cierra Caja a menos de cinco minutos del cambio al siguiente turno. Esto es preventivo para operaciones pendientes futuras, no significa que hoy haya una; si un flujo afectado devuelve `closedCashier`, es un error y no cuenta en Estadísticas. Se avisa al administrador que respete los horarios. Cada turno obtiene sus pagos consultando sus periodos de Caja. Configuración de Estadísticas puede mostrar separadores visuales sin alterar movimientos o cálculos. Falta definir qué retención tiene el JSON al reiniciar cada mes; cada movimiento conserva su timestamp real.
 
 La pantalla de Configuración advierte que cobro, promociones y límites necesitan migración del flujo operativo multi-restaurante. Mantener esa transparencia.
 
 ## Bloqueo de producto antes de incorporar clientes
 
 `supabase/README.md` documenta la condición principal: `orders`, `open_orders` y RPC financieras/asistencia siguen sin un modelo uniforme `restaurant_id` con RLS multi-tenant verificada. La migración del catálogo aislado ya está en el repositorio, pero aún no aplicada al proyecto Supabase. La tabla de restaurantes/cuentas/roles tiene base compartida; eso no aísla automáticamente pedidos ni pagos. **No conectar clientes reales ni usar sus operaciones hasta completar y verificar ese aislamiento.**
+
+El primer restaurante de prueba con Cocina/Salón también depende de aplicar las migraciones de catálogo y workspaces. Incluso después, debe probarse con datos aislados: el modelo de pedidos heredado y el esquema de roles siguen siendo bloqueos conocidos para validar un restaurante completo.
 
 El siguiente trabajo de arquitectura debería definir/migrar primero:
 

@@ -1,6 +1,5 @@
 // Configuración operativa del restaurante, persistida en columnas y tablas de dominio.
 export default function createRestaurantSettings({ supabase, state, esc, toast, render }) {
-  let receiptFormat = null;
   const methods = [
     { key: "cash", label: "Efectivo", manual: true, automatic: false },
     { key: "yape", label: "Yape", manual: true, automatic: true },
@@ -13,6 +12,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     "rankings_employees_enabled", "rankings_same_for_all_roles", "order_minimum_enabled", "order_minimum_admin",
     "order_minimum_employees", "order_maximum_enabled", "order_maximum_admin", "order_maximum_employees",
     "corrections_admin", "corrections_employees", "catalog_addons_enabled", "catalog_category_groups_enabled", "catalog_promotions_enabled",
+    "delivery_kitchen_after_virtual_payment", "salon_waiter_map_edit", "salon_host_map_edit", "salon_show_seats", "kitchen_has_separate_bar",
   ];
   const defaults = {
     employee_note_reset_mode: "manual", employee_note_reset_days: 30,
@@ -22,6 +22,8 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     order_maximum_enabled: false, order_maximum_amount: null, order_maximum_admin: true, order_maximum_employees: false,
     corrections_admin: true, corrections_employees: false,
     catalog_addons_enabled: false, catalog_category_groups_enabled: false, catalog_promotions_enabled: false,
+    kitchen_entry_mode: "paid", salon_entry_mode: "paid", delivery_kitchen_after_virtual_payment: false, kitchen_has_separate_bar: false,
+    salon_waiter_map_edit: false, salon_host_map_edit: false, salon_show_seats: false,
   };
   const roleDefaults = (role) => ({ restaurant_id: state.restaurantId, role_id: role.id, rankings_products: false, rankings_variants: false, rankings_addons: false, rankings_categories: false, order_minimum_allowed: false, order_maximum_allowed: false, corrections_allowed: false });
   const check = (key, label, value, extra = "") => `<label class="settings-check"><input type="checkbox" data-setting="${key}" ${value ? "checked" : ""} ${extra}><span>${label}</span></label>`;
@@ -30,26 +32,40 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   async function load() {
     if (!supabase || !state.restaurantId) return;
     state.settingsLoading = true;
-    const [restaurant, roles, payments, roleSettings, receipt] = await Promise.all([
+    const [restaurant, roles, payments, roleSettings] = await Promise.all([
       supabase.from("restaurants").select(`${Object.keys(defaults).join(",")},needs`).eq("id", state.restaurantId).single(),
       supabase.from("roles").select("id,key,name").eq("restaurant_id", state.restaurantId).order("name"),
       supabase.from("restaurant_payment_methods").select("method_key,enabled,manual_enabled,automatic_enabled").eq("restaurant_id", state.restaurantId),
       supabase.from("restaurant_role_settings").select("*").eq("restaurant_id", state.restaurantId),
-      supabase.from("restaurant_receipt_templates").select("format").eq("restaurant_id", state.restaurantId).maybeSingle(),
     ]);
-    const error = restaurant.error || roles.error || payments.error || roleSettings.error || receipt.error;
+    const error = restaurant.error || roles.error || payments.error || roleSettings.error;
     state.settingsError = error?.message || "";
     state.restaurantSettings = { ...defaults, ...(restaurant.data || {}) };
     state.restaurantNeeds = restaurant.data?.needs || [];
     state.settingRoles = roles.data || [];
     state.paymentSettings = Object.fromEntries((payments.data || []).map((row) => [row.method_key, row]));
     state.roleSettings = Object.fromEntries((roleSettings.data || []).map((row) => [row.role_id, row]));
-    receiptFormat = receipt.data?.format || null;
     state.settingsLoading = false;
   }
 
   function roleChecks(fieldName, selected = []) {
     return `<div class="settings-role-list">${(state.settingRoles || []).filter((role) => role.key !== "admin").map((role) => check(`${fieldName}:${role.id}`, esc(role.name), selected.includes(role.id))).join("") || '<span class="meta">No hay roles de empleado configurados.</span>'}</div>`;
+  }
+  async function configureFloorSeats() {
+    const { data: floors, error } = await supabase.from("salon_floors").select("id,name,grid_rows,grid_columns,row_sizes,column_sizes,seat_count").order("sort_order");
+    if (error) throw error;
+    if (!floors?.length) {
+      toast("Crea al menos un piso en Salón antes de activar el total de sillas.");
+      return false;
+    }
+    return new Promise((resolve, reject) => {
+      const dialog = document.createElement("dialog"); dialog.className = "password-dialog salon-dialog";
+      dialog.innerHTML = `<form method="dialog"><div class="panel-title">Sillas por piso</div><p class="meta">Indica el total de sillas de cada piso. Solo se mostrarán como referencia en el mapa.</p>${floors.map((floor) => `<label class="dialog-label">${esc(floor.name)}<input type="number" min="0" max="500" required name="seat_${floor.id}" value="${floor.seat_count ?? 0}"></label>`).join("")}<p class="password-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="submit" class="btn primary">Guardar sillas</button></div></form>`;
+      document.body.appendChild(dialog); const form=dialog.querySelector("form"); let result=false; dialog.showModal();
+      dialog.querySelector("[data-cancel]").onclick=()=>dialog.close();
+      form.onsubmit=async(event)=>{event.preventDefault();const button=form.querySelector('[type="submit"]');button.disabled=true;const fields=new FormData(form);try{const {error:saveError}=await supabase.rpc("salon_save_seat_counts",{p_updates:floors.map((floor)=>({floor_id:floor.id,seat_count:Number(fields.get(`seat_${floor.id}`))}))});if(saveError)throw saveError;result=true;dialog.close();}catch(saveError){form.querySelector(".password-error").textContent=saveError.message||"No se pudieron guardar los totales.";button.disabled=false;}};
+      dialog.addEventListener("close",()=>{dialog.remove();resolve(result);});
+    });
   }
   function renderPage() {
     if (state.settingsLoading) return '<section class="panel"><div class="empty">Cargando configuración…</div></section>';
@@ -63,8 +79,9 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       return `<details class="settings-role"><summary>${esc(role.name)} <span class="meta">Editar permisos</span></summary><div class="settings-checks">${check(`role:${role.id}:rankings_products`, "Productos más vendidos", rs.rankings_products)}${check(`role:${role.id}:rankings_variants`, "Variantes más vendidas", rs.rankings_variants)}${check(`role:${role.id}:rankings_addons`, "Agregados más vendidos", rs.rankings_addons)}${check(`role:${role.id}:rankings_categories`, "Categorías más vendidas", rs.rankings_categories)}${check(`role:${role.id}:order_minimum_allowed`, "Puede aplicar pedido mínimo", rs.order_minimum_allowed)}${check(`role:${role.id}:order_maximum_allowed`, "Puede aplicar pedido máximo", rs.order_maximum_allowed)}${check(`role:${role.id}:corrections_allowed`, "Puede crear pedidos correctivos/devoluciones", rs.corrections_allowed)}</div></details>`;
     }).join("");
     const showRoles = (v.rankings_employees_enabled && !v.rankings_same_for_all_roles) || v.order_minimum_employees || v.order_maximum_employees || v.corrections_employees;
-    const receiptSection = (state.restaurantNeeds || []).includes("receipts") ? `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Comprobantes</div><div class="meta">Personaliza el formato que usarán los dispositivos de impresión.</div></div></div><div class="settings-form-grid"><label class="settings-field">Formato JSON<input id="receipt-format-file" type="file" accept="application/json,.json"></label><button class="rowaction" type="button" id="download-receipt-format">Descargar ejemplo</button></div><p class="meta">${receiptFormat ? `Formato guardado: ${esc(receiptFormat.header || "Comprobante")}` : "Aún no hay un formato guardado."} El ancho, encabezado, pie y densidad se guardan por restaurante.</p></section>` : "";
-    return `<section class="page-head"><div><div class="eyebrow">Administración</div><h1>Configuración</h1><p class="desc">Ajustes de las secciones fijas de tu restaurante.</p></div><button class="btn primary" id="save-restaurant-settings">Guardar cambios</button></section>${state.settingsError ? `<div class="inline-error" role="alert">${esc(state.settingsError)}</div>` : ""}<div class="settings-notice"><strong>Alcance de esta versión</strong><span>Los ajustes se guardan por restaurante. El cobro, las promociones y los límites aún requieren la migración del flujo operativo multi-restaurante para aplicarse a los pedidos.</span></div><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Métodos de pago</div><div class="meta">Activa los métodos que tu negocio recibe.</div></div></div><div class="settings-options">${paymentCards}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cuentas</div><div class="meta">Nota personal de cada empleado.</div></div></div><div class="settings-form-grid"><label class="settings-field">Reinicio de la nota<select data-setting="employee_note_reset_mode"><option value="manual" ${v.employee_note_reset_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${v.employee_note_reset_mode === "automatic" ? "selected" : ""}>Automático</option></select></label><label class="settings-field">Intervalo<select data-setting="employee_note_reset_days" ${v.employee_note_reset_mode !== "automatic" ? "disabled" : ""}>${[7,15,30].map((day) => `<option value="${day}" ${Number(v.employee_note_reset_days) === day ? "selected" : ""}>Cada ${day} días</option>`).join("")}</select></label></div><p class="meta">La nota no se borrará automáticamente hasta definir archivo, retención y fecha de reinicio.</p></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Estadísticas</div><div class="meta">Configura rankings visibles por rol.</div></div></div><div class="settings-checks">${check("rankings_enabled", "Habilitar rankings", v.rankings_enabled)}${check("rankings_products", "Productos más vendidos", v.rankings_products)}${check("rankings_variants", "Variantes más vendidas", v.rankings_variants)}${check("rankings_addons", "Agregados más vendidos", v.rankings_addons)}${check("rankings_categories", "Categorías más vendidas", v.rankings_categories, "disabled title='Disponible cuando el catálogo multi-restaurante esté migrado'")}${check("rankings_employees_enabled", "Empleados ven rankings", v.rankings_employees_enabled)}${check("rankings_same_for_all_roles", "Mismo conjunto para todos los roles", v.rankings_same_for_all_roles, v.rankings_employees_enabled ? "" : "disabled")}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Flujo de pedidos</div><div class="meta">Los límites y permisos se guardan para el restaurante.</div></div></div><div class="settings-form-grid">${check("order_minimum_enabled", "Usar importe mínimo", v.order_minimum_enabled)}${field("order_minimum_amount", "Importe mínimo (S/)", v.order_minimum_amount, v.order_minimum_enabled ? "required" : "disabled")}${check("order_minimum_admin", "Aplicar al administrador", v.order_minimum_admin)}${check("order_minimum_employees", "Aplicar a empleados", v.order_minimum_employees)}${check("order_maximum_enabled", "Usar importe máximo", v.order_maximum_enabled)}${field("order_maximum_amount", "Importe máximo (S/)", v.order_maximum_amount, v.order_maximum_enabled ? "required" : "disabled")}${check("order_maximum_admin", "Aplicar al administrador", v.order_maximum_admin)}${check("order_maximum_employees", "Aplicar a empleados", v.order_maximum_employees)}${check("corrections_admin", "Administrador puede crear pedidos correctivos/devoluciones", v.corrections_admin)}${check("corrections_employees", "Habilitar pedidos correctivos/devoluciones a empleados", v.corrections_employees)}</div><div class="settings-role-list" id="settings-role-options" ${showRoles ? "" : "hidden"}><strong>Permisos por rol</strong>${roleRows}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Catálogo</div><div class="meta">Activa las herramientas que el restaurante necesita.</div></div></div><div class="settings-checks">${check("catalog_addons_enabled", "Agregados", v.catalog_addons_enabled)}${check("catalog_category_groups_enabled", "Grupos de categorías", v.catalog_category_groups_enabled)}${check("catalog_promotions_enabled", "Promociones", v.catalog_promotions_enabled)}</div><p class="meta">La administración y aplicación de promociones se habilitará junto con la migración del catálogo y el cobro.</p></section>${receiptSection}`;
+    const receiptSection = (state.restaurantNeeds || []).includes("receipts") ? `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Comprobantes</div><div class="meta">Configura el sistema de impresión del restaurante.</div></div></div><button class="btn secondary" type="button" id="configure-printing">Configurar sistema de impresión</button></section>` : "";
+    const moduleSettings = ((state.restaurantNeeds || []).includes("kitchen") || (state.restaurantNeeds || []).includes("salon") || ((state.restaurantNeeds || []).includes("delivery") && (state.restaurantNeeds || []).includes("kitchen"))) ? `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cierre de pedidos por Cocina y Salón</div><div class="meta">Estos ajustes aparecen solo para las necesidades activas.</div></div></div>${(state.restaurantNeeds || []).includes("kitchen") ? `${check("kitchen_has_separate_bar", "Tengo una barra separada de la cocina", v.kitchen_has_separate_bar)}<label class="settings-field">Cocina integra pedidos desde<select data-setting="kitchen_entry_mode"><option value="open" ${v.kitchen_entry_mode === "open" ? "selected" : ""}>Pedido abierto</option><option value="paid" ${v.kitchen_entry_mode === "paid" ? "selected" : ""}>Pedido pagado</option></select></label>` : ""}${(state.restaurantNeeds || []).includes("salon") ? `<label class="settings-field">Salón integra pedidos desde<select data-setting="salon_entry_mode"><option value="open" ${v.salon_entry_mode === "open" ? "selected" : ""}>Pedido abierto</option><option value="paid" ${v.salon_entry_mode === "paid" ? "selected" : ""}>Pedido pagado</option></select></label><div class="settings-checks">${check("salon_waiter_map_edit", "Mesero puede editar el mapa", v.salon_waiter_map_edit)}${check("salon_host_map_edit", "Portero puede editar el mapa", v.salon_host_map_edit)}${check("salon_show_seats", "Mostrar cantidad de sillas por piso", v.salon_show_seats)}</div><p class="meta">Define las sillas dentro de cada piso en el mapa. Es una referencia visual; no se editan posiciones de sillas.</p>` : ""}${(state.restaurantNeeds || []).includes("delivery") && (state.restaurantNeeds || []).includes("kitchen") ? check("delivery_kitchen_after_virtual_payment", "Delivery entra a Cocina cuando se confirma su pago virtual", v.delivery_kitchen_after_virtual_payment) : ""}</section>` : "";
+    return `<section class="page-head"><div><div class="eyebrow">Administración</div><h1>Configuración</h1><p class="desc">Ajustes de las secciones fijas de tu restaurante.</p></div><button class="btn primary" id="save-restaurant-settings">Guardar cambios</button></section>${state.settingsError ? `<div class="inline-error" role="alert">${esc(state.settingsError)}</div>` : ""}<div class="settings-notice"><strong>Alcance de esta versión</strong><span>Los ajustes se guardan por restaurante. El cobro, las promociones y los límites aún requieren la migración del flujo operativo multi-restaurante para aplicarse a los pedidos.</span></div><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Métodos de pago</div><div class="meta">Activa los métodos que tu negocio recibe.</div></div></div><div class="settings-options">${paymentCards}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cuentas</div><div class="meta">Nota personal de cada empleado.</div></div></div><div class="settings-form-grid"><label class="settings-field">Reinicio de la nota<select data-setting="employee_note_reset_mode"><option value="manual" ${v.employee_note_reset_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${v.employee_note_reset_mode === "automatic" ? "selected" : ""}>Automático</option></select></label><label class="settings-field">Intervalo<select data-setting="employee_note_reset_days" ${v.employee_note_reset_mode !== "automatic" ? "disabled" : ""}>${[7,15,30].map((day) => `<option value="${day}" ${Number(v.employee_note_reset_days) === day ? "selected" : ""}>Cada ${day} días</option>`).join("")}</select></label></div><p class="meta">La nota no se borrará automáticamente hasta definir archivo, retención y fecha de reinicio.</p></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Estadísticas</div><div class="meta">Configura rankings visibles por rol.</div></div></div><div class="settings-checks">${check("rankings_enabled", "Habilitar rankings", v.rankings_enabled)}${check("rankings_products", "Productos más vendidos", v.rankings_products)}${check("rankings_variants", "Variantes más vendidas", v.rankings_variants)}${check("rankings_addons", "Agregados más vendidos", v.rankings_addons)}${check("rankings_categories", "Categorías más vendidas", v.rankings_categories, "disabled title='Disponible cuando el catálogo multi-restaurante esté migrado'")}${check("rankings_employees_enabled", "Empleados ven rankings", v.rankings_employees_enabled)}${check("rankings_same_for_all_roles", "Mismo conjunto para todos los roles", v.rankings_same_for_all_roles, v.rankings_employees_enabled ? "" : "disabled")}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Flujo de pedidos</div><div class="meta">Los límites y permisos se guardan para el restaurante.</div></div></div><div class="settings-form-grid">${check("order_minimum_enabled", "Usar importe mínimo", v.order_minimum_enabled)}${field("order_minimum_amount", "Importe mínimo (S/)", v.order_minimum_amount, v.order_minimum_enabled ? "required" : "disabled")}${check("order_minimum_admin", "Aplicar al administrador", v.order_minimum_admin)}${check("order_minimum_employees", "Aplicar a empleados", v.order_minimum_employees)}${check("order_maximum_enabled", "Usar importe máximo", v.order_maximum_enabled)}${field("order_maximum_amount", "Importe máximo (S/)", v.order_maximum_amount, v.order_maximum_enabled ? "required" : "disabled")}${check("order_maximum_admin", "Aplicar al administrador", v.order_maximum_admin)}${check("order_maximum_employees", "Aplicar a empleados", v.order_maximum_employees)}${check("corrections_admin", "Administrador puede crear pedidos correctivos/devoluciones", v.corrections_admin)}${check("corrections_employees", "Habilitar pedidos correctivos/devoluciones a empleados", v.corrections_employees)}</div><div class="settings-role-list" id="settings-role-options" ${showRoles ? "" : "hidden"}><strong>Permisos por rol</strong>${roleRows}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Catálogo</div><div class="meta">Activa las herramientas que el restaurante necesita.</div></div></div><div class="settings-checks">${check("catalog_addons_enabled", "Agregados", v.catalog_addons_enabled)}${check("catalog_category_groups_enabled", "Grupos de categorías", v.catalog_category_groups_enabled)}${check("catalog_promotions_enabled", "Promociones", v.catalog_promotions_enabled)}</div><p class="meta">La administración y aplicación de promociones se habilitará junto con la migración del catálogo y el cobro.</p></section>${moduleSettings}${receiptSection}`;
   }
   async function save() {
     const button = document.getElementById("save-restaurant-settings");
@@ -80,6 +97,10 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       if (v.order_minimum_enabled && (v.order_minimum_amount == null || v.order_minimum_amount < 0)) throw new Error("Indica un importe mínimo válido.");
       if (v.order_maximum_enabled && (v.order_maximum_amount == null || v.order_maximum_amount < 0)) throw new Error("Indica un importe máximo válido.");
       if (v.order_minimum_enabled && v.order_maximum_enabled && Number(v.order_minimum_amount) > Number(v.order_maximum_amount)) throw new Error("El importe mínimo no puede superar al máximo.");
+      if (v.salon_show_seats && !state.restaurantSettings?.salon_show_seats && (state.restaurantNeeds || []).includes("salon")) {
+        const confirmed = await configureFloorSeats();
+        if (!confirmed) { button.disabled = false; return; }
+      }
       const restaurantResult = await supabase.from("restaurants").update(v).eq("id", state.restaurantId);
       if (restaurantResult.error) throw restaurantResult.error;
       for (const method of methods) {
@@ -113,23 +134,13 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   }
   function bind() {
     document.getElementById("save-restaurant-settings")?.addEventListener("click", save);
-    document.getElementById("download-receipt-format")?.addEventListener("click", () => {
-      const example = { schema_version: 1, header: "BLACK&WHITE POS", footer: "Gracias por tu compra", paper_width: 384, feed_px: 120, density: 3 };
-      const url = URL.createObjectURL(new Blob([JSON.stringify(example, null, 2)], { type: "application/json" }));
-      const link = document.createElement("a"); link.href = url; link.download = "formato-comprobante-black-white.json"; link.click(); URL.revokeObjectURL(url);
-    });
-    document.getElementById("receipt-format-file")?.addEventListener("change", async (event) => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      try {
-        if (file.size > 16384) throw new Error("El formato debe pesar menos de 16 KB.");
-        const format = JSON.parse(await file.text());
-        if (format.schema_version !== 1 || typeof format.header !== "string" || format.header.length > 120 || typeof format.footer !== "string" || format.footer.length > 120 || Number(format.paper_width) !== 384 || !Number.isInteger(Number(format.density)) || Number(format.density) < 1 || Number(format.density) > 7 || !Number.isInteger(Number(format.feed_px)) || Number(format.feed_px) < 0 || Number(format.feed_px) > 2000) throw new Error("Formato inválido. Revisa encabezado, pie, ancho 384, avance y densidad de 1 a 7.");
-        const { error } = await supabase.from("restaurant_receipt_templates").upsert({ restaurant_id: state.restaurantId, format, updated_at: new Date().toISOString() }, { onConflict: "restaurant_id" });
-        if (error) throw error;
-        receiptFormat = format; toast("Formato de comprobante guardado."); render();
-      } catch (error) { toast(error.message || "No se pudo guardar el formato."); }
-      finally { event.target.value = ""; }
+    document.getElementById("configure-printing")?.addEventListener("click", () => {
+      const dialog = document.createElement("dialog");
+      dialog.className = "password-dialog";
+      dialog.innerHTML = `<div class="panel-title">Sistema de impresión</div><p>Próximamente</p><p class="meta">La configuración de impresión estará disponible en una próxima versión.</p><div class="dialog-actions"><button class="btn primary" type="button">Entendido</button></div>`;
+      document.body.appendChild(dialog); dialog.showModal();
+      dialog.querySelector("button").onclick = () => dialog.close();
+      dialog.addEventListener("close", () => dialog.remove());
     });
     methods.forEach((method) => document.querySelector(`[data-setting="payment:${method.key}:enabled"]`)?.addEventListener("change", (event) => {
       const manual = document.querySelector(`[data-setting="payment:${method.key}:manual"]`);

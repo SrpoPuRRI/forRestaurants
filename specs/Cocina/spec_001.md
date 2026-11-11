@@ -1,15 +1,15 @@
 # Black&White POS — Cocina 001
 
-**Estado:** Borrador inicial  
+**Estado:** Especificación parcial; UI y migración local implementadas, pendientes de aplicar y verificar en Supabase  
 **Tipo:** Pestaña opcional por restaurante e independiente de Salón.
 
 ## Propósito
 
 Mostrar y coordinar la preparación de pedidos con el equipo de cocina.
 
-## Alcance por especificar
+## Alcance
 
-- Pantalla KDS con pedidos y artículos por preparar.
+- Pantalla KDS con cola de pedidos y artículos/unidades por preparar.
 - Estaciones de producción y reglas para enrutar artículos.
 - Prioridad, tiempos, pausas, notas y estados de preparación.
 - Pedidos de salón, mostrador, para llevar y delivery.
@@ -25,7 +25,7 @@ Mostrar y coordinar la preparación de pedidos con el equipo de cocina.
 - Configuración de impresoras y formatos no pertenece a Catálogo; se definirá en Configuración.
 - El flujo de impresión de Kffe’to POS no se hereda por defecto.
 
-## Propuesta inicial: cola y marcado de preparación
+## Cola y marcado de preparación implementados localmente
 
 La cola de Cocina debe conservar la referencia al pedido original y un registro de qué partes ya están listas. La granularidad debe permitir operar de estas tres formas, incluso dentro del mismo pedido:
 
@@ -38,6 +38,8 @@ En la interfaz se muestra la lista de artículos del pedido y una acción destac
 Al marcar una parte como lista, se registra una marca de tiempo para ese pedido, artículo o unidad. La cola guarda también cuándo se incorporó el pedido a Cocina. Cuando el 100 % de las unidades del pedido esté listo, el pedido pasa a completado en Cocina y se registra la hora de finalización.
 
 **Listo en Cocina** y **Entregado en Salón** son estados diferentes. Completar la preparación no debe registrar automáticamente que el mesero ya entregó el pedido. Si Salón está activo, el pedido listo puede pasar a su cola de servicio según el flujo configurado.
+
+La cola local guarda el pedido original, el progreso por unidad y eventos con actor/fecha. Cocina integra pedidos abiertos o pagados según Configuración. Los completados se borran al abrir Cocina si tienen más de dos días; falta un borrado programado en servidor. El inventario no se gestiona: la disponibilidad es un estado de venta y el personal puede declarar una unidad o producto fuera de stock. La distribución de productos entre Cocina y Barra está pendiente.
 
 ## Propuesta inicial: productos fuera de stock
 

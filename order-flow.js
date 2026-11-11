@@ -6,6 +6,7 @@ export default function createOrderFlow({
   toast,
   money,
   esc,
+  workspaces,
 }) {
   const data = {
     loading: false,
@@ -679,7 +680,7 @@ export default function createOrderFlow({
       ? locationSelect("order-location", currentLocationId())
       : `<span class="select site-static">${esc(currentLocationName())}</span>`;
     const orderHeader = active
-      ? `<div class="order-head"><div class="order-title">${isOpenOrder() ? `Pedido compartido · ${esc(data.activeOpen.operator_name || "Equipo")}` : "Pedido nuevo"}</div><div class="tools">${adminSite}<button type="button" class="icon note-icon ${active.note ? "has-note" : ""}" id="order-note-button" title="Administrar notas" aria-label="Administrar notas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.75h7l4 4v12.5H7a2 2 0 0 1-2-2v-12.5a2 2 0 0 1 2-2Z"/><path d="M14 4v4h4M8.5 12h7M8.5 15.5h7"/></svg>${active.note ? '<i aria-hidden="true"></i>' : ""}</button></div></div>`
+      ? `<div class="order-head"><div class="order-title">${isOpenOrder() ? `Pedido compartido · ${esc(data.activeOpen.operator_name || "Equipo")}` : "Pedido nuevo"}${state.orderTableLabel ? ` · ${esc(state.orderTableLabel)}` : ""}</div><div class="tools">${adminSite}<button type="button" class="icon note-icon ${active.note ? "has-note" : ""}" id="order-note-button" title="Administrar notas" aria-label="Administrar notas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3.75h7l4 4v12.5H7a2 2 0 0 1-2-2v-12.5a2 2 0 0 1-2-2Z"/><path d="M14 4v4h4M8.5 12h7M8.5 15.5h7"/></svg>${active.note ? '<i aria-hidden="true"></i>' : ""}</button></div></div>`
       : "";
     const openCards = data.openOrders.length
       ? data.openOrders
@@ -1342,6 +1343,7 @@ export default function createOrderFlow({
             p_yape_percent: universalize ? 0 : percent,
           };
           let result;
+          const sourceOpenOrderId = isOpenOrder() ? data.activeOpen.id : null;
           if (isOpenOrder()) {
             const currentOpen = data.activeOpen;
             const saveResult = await supabase.rpc("update_open_order", {
@@ -1368,9 +1370,13 @@ export default function createOrderFlow({
           }
           if (result.error) throw result.error;
           const paidOrderId = result.data?.order_id;
+          const paidQueueOrder = { id: paidOrderId, kind: "paid", location_id: orderNow.location_id || currentLocationId(), table_label: state.orderTableLabel, note: orderNow.note || "", items: orderNow.items };
+          if (paidOrderId && workspaces?.has("kitchen") && (state.restaurantSettings?.kitchen_entry_mode === "paid" || !sourceOpenOrderId)) await workspaces.enqueueOrder("kitchen", paidQueueOrder);
+          if (paidOrderId && !workspaces?.has("kitchen") && workspaces?.has("salon") && (state.restaurantSettings?.salon_entry_mode === "paid" || !sourceOpenOrderId)) await workspaces.enqueueOrder("salon", paidQueueOrder);
           d.close();
           data.activeDraft = null;
           data.activeOpen = null;
+          state.orderTableId = null; state.orderTableLabel = "";
           await refreshOpenOrders(false);
           render();
           if (requestPrint) {
@@ -1631,6 +1637,8 @@ export default function createOrderFlow({
       revision: 1,
       operator_name: state.user,
     };
+    if (workspaces?.has("kitchen") && state.restaurantSettings?.kitchen_entry_mode === "open") await workspaces.enqueueOrder("kitchen", { id, kind: "open", location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: data.activeDraft?.items || [] });
+    else if (workspaces?.has("salon") && !workspaces?.has("kitchen") && state.restaurantSettings?.salon_entry_mode === "open") await workspaces.enqueueOrder("salon", { id, kind: "open", location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: data.activeOpen.items || [] });
     data.activeDraft = null;
     await refreshOpenOrders(false);
     render();
@@ -1669,6 +1677,8 @@ export default function createOrderFlow({
           break;
         }
         current.revision = Number(revision);
+        if (workspaces?.has("kitchen") && state.restaurantSettings?.kitchen_entry_mode === "open") await workspaces.enqueueOrder("kitchen", { id: current.id, kind: "open", location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: current.items });
+        else if (workspaces?.has("salon") && !workspaces?.has("kitchen") && state.restaurantSettings?.salon_entry_mode === "open") await workspaces.enqueueOrder("salon", { id: current.id, kind: "open", location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: current.items });
       } while (data.saveQueued);
     } finally {
       data.saveBusy = false;
@@ -1755,7 +1765,9 @@ export default function createOrderFlow({
       toast(error.message || "No se pudo cancelar el pedido.");
       return;
     }
+    await workspaces?.cancelOrder(data.activeOpen.id, "open");
     data.activeOpen = null;
+    state.orderTableId = null; state.orderTableLabel = "";
     await refreshOpenOrders(false);
     render();
     toast("Pedido cancelado.");
@@ -3027,6 +3039,7 @@ export default function createOrderFlow({
     bind,
     enter,
     load: loadCatalog,
+    reloadCatalog: loadCatalog,
     cleanup,
     printTicket,
   };
