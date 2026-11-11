@@ -370,15 +370,41 @@ function authEmailForUsername(username) {
 }
 // Carga el perfil y la sede asociados a la cuenta autenticada.
 async function loadAuthenticatedProfile(user) {
+  s.restaurantSuspended = false;
   const { data: profile, error } = await supabase
     .from("accounts")
-    .select("auth_user_id,role_id,username,display_name,location_id,roles!inner(key,name)")
+    .select("auth_user_id,restaurant_id,role_id,username,display_name,location_id,is_active")
     .eq("auth_user_id", user.id)
     .single();
   if (error || !profile)
-    throw new Error(
-      "La cuenta no tiene un perfil de Kffe’to. Contacta al administrador.",
-    );
+    throw new Error("La cuenta no está vinculada a un restaurante activo.");
+  if (!profile.is_active)
+    throw new Error("Esta cuenta está desactivada. Contacta al administrador del restaurante.");
+
+  const { data: restaurant, error: restaurantError } = await supabase
+    .from("restaurants")
+    .select("id,name,status,logo_path")
+    .eq("id", profile.restaurant_id)
+    .maybeSingle();
+  if (restaurantError)
+    throw new Error("No se pudo validar el restaurante. Intenta de nuevo.");
+  if (!restaurant || restaurant.status !== "active") {
+    s.restaurantSuspended = true;
+    return;
+  }
+
+  const { data: role, error: roleError } = await supabase
+    .from("roles")
+    .select("key,name")
+    .eq("id", profile.role_id)
+    .eq("restaurant_id", profile.restaurant_id)
+    .single();
+  if (roleError || !role)
+    throw new Error("No se pudo cargar el rol de esta cuenta.");
+
+  s.restaurantId = restaurant.id;
+  s.restaurantName = restaurant.name || "";
+  s.restaurantLogoPath = restaurant.logo_path || null;
   let site = "Todas las sedes";
   if (profile.location_id) {
     const { data: location, error: locationError } = await supabase
@@ -392,33 +418,14 @@ async function loadAuthenticatedProfile(user) {
   }
   s.username = profile.username;
   s.user = profile.display_name;
-  s.role = profile.roles?.key === "admin" ? "Administrador" : "Empleado";
-  s.roleKey = profile.roles?.key || "employee";
+  s.role = role.key === "admin" ? "Administrador" : "Empleado";
+  s.roleKey = role.key || "employee";
   s.roleId = profile.role_id;
-  s.roleLabel = profile.roles?.name || s.role;
+  s.roleLabel = role.name || s.role;
   s.site = site;
   s.authUserId = profile.auth_user_id;
   s.locationId = profile.location_id;
   await restaurantSettings.load();
-}
-
-// Calls the access gate with the exact Auth JWT returned by Supabase Auth.
-// Keep this as fetch rather than relying on the Functions client's implicit session header.
-async function fetchRestaurantAccess(accessToken) {
-  const response = await fetch(`${SUPABASE_URL}/functions/v1/restaurant-access`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: "{}",
-  });
-  const data = await response.json().catch(() => null);
-  return {
-    data,
-    error: response.ok ? null : new Error(data?.error || `No se pudo validar el restaurante (${response.status}).`),
-  };
 }
 // Valida las credenciales e inicia la sesión del usuario.
 async function submitLogin() {
@@ -444,18 +451,12 @@ async function submitLogin() {
       password,
     });
     if (error) throw new Error("Usuario o contraseña incorrectos.");
-    const { data: access, error: accessError } = await fetchRestaurantAccess(data.session.access_token);
-    if (accessError || !access?.active) {
-      s.restaurantSuspended = !accessError && access?.active === false;
+    await loadAuthenticatedProfile(data.user);
+    if (s.restaurantSuspended) {
       await supabase.auth.signOut();
       render();
-      if (!s.restaurantSuspended) throw new Error("La cuenta no está vinculada a un restaurante activo.");
       return;
     }
-    s.restaurantId = access.restaurant_id;
-    s.restaurantName = access.restaurant_name || "";
-    s.restaurantLogoPath = access.logo_path || null;
-    await loadAuthenticatedProfile(data.user);
     s.page = "orders";
     render();
     orderFlow.enter("orders");
@@ -484,18 +485,8 @@ async function initializeApp() {
   } = await supabase.auth.getSession();
   if (session) {
     try {
-      const { data: access, error } = await fetchRestaurantAccess(session.access_token);
-      if (!error && access?.active === false) {
-        s.restaurantSuspended = true;
-        await supabase.auth.signOut();
-      } else if (error || !access?.active) {
-        await supabase.auth.signOut();
-      } else {
-        s.restaurantId = access.restaurant_id;
-        s.restaurantName = access.restaurant_name || "";
-        s.restaurantLogoPath = access.logo_path || null;
-        await loadAuthenticatedProfile(session.user);
-      }
+      await loadAuthenticatedProfile(session.user);
+      if (s.restaurantSuspended) await supabase.auth.signOut();
     } catch {
       await supabase.auth.signOut();
     }

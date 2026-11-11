@@ -13,7 +13,11 @@ La llamada a Supabase Edge Functions usa ahora explícitamente el bearer del ser
 
 El repo Setter separado (`F:\PROYECTOS\dosMiniProyectos\setter`) tiene como último commit local/remoto `9fa4a9b` (`I should be able to set a logo for a certain restaurant`) y estaba limpio. El formulario de creación acepta logo opcional; contraseña mínima de seis caracteres; Enter abre confirmación y la confirmación separa Cancelar de Aceptar y crear. El formulario de edición de Setter permite cambiar/quitar el logo. El POS también permite al admin del restaurante cambiar/quitar el logo desde Configuración. Los logos se almacenan en el bucket privado `restaurant-assets`, la base conserva `logo_path`, y la interfaz usa URL firmada temporal. Setter y POS son despliegues frontend independientes; la migración/funciones se despliegan desde forRestaurants.
 
-**Estado de trabajo al cambiar de cuenta:** el árbol de forRestaurants y el de Setter estaban limpios; no quedó ningún archivo local sin commit. Esto documenta el estado comprobado en la sesión, no una confirmación de que el último workflow de Supabase haya terminado.
+### Incidente de inicio de sesión (11 de noviembre)
+
+La autenticación con contraseña llegaba a Supabase Auth, pero el login B&W añadía una llamada a `restaurant-access`, que respondía `authentication_required`. Kffe’to carga la cuenta directamente desde `accounts`; B&W ahora sigue ese patrón y resuelve desde el cliente autenticado `accounts` (RLS de cuenta propia), `restaurants` (restaurante activo) y `roles`, sin llamar a `restaurant-access` al iniciar/restaurar sesión. La función queda protegida con `verify_jwt = true` para cualquier otro uso. `index.html` agrega una versión al URL de `app.js` para evitar que el navegador conserve el módulo anterior. Estos cambios requieren publicar el frontend de forRestaurants y confirmar el despliegue Pages; no requieren cambiar el esquema.
+
+**Estado de trabajo al corte de este handoff:** comprobar `git status` y el último commit, porque el fix de inicio de sesión descrito arriba puede estar pendiente de publicar.
 
 ## Estado rápido
 
