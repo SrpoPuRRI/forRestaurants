@@ -3,6 +3,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json" };
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: cors });
 const normalize = (s: string) => s.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const LOGO_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -26,9 +28,58 @@ Deno.serve(async (req) => {
     return reply(403, { error: "platform_operator_required" });
   }
   let body: Record<string, unknown>;
-  try { body = await req.json(); } catch { return reply(400, { error: "invalid_json" }); }
+  let logo: File | null = null;
+  try {
+    if (req.headers.get("content-type")?.includes("multipart/form-data")) {
+      const form = await req.formData();
+      body = Object.fromEntries([...form.entries()].filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+      const candidate = form.get("logo");
+      if (candidate instanceof File && candidate.size > 0) logo = candidate;
+    } else {
+      body = await req.json();
+    }
+  } catch { return reply(400, { error: "invalid_request_body" }); }
   const action = String(body.action ?? "");
   const restaurantId = String(body.restaurant_id ?? "");
+  if (action === "logo_urls") {
+    const ids = [...new Set(Array.isArray(body.restaurant_ids) ? body.restaurant_ids.map(String).filter((id) => /^[0-9a-f-]{36}$/i.test(id)) : [])];
+    if (!ids.length) return reply(200, { logos: {} });
+    const { data: rows, error } = await db.from("restaurants").select("id,logo_path").in("id", ids);
+    if (error) return reply(400, { error: error.message });
+    const paths = (rows || []).map((row) => row.logo_path).filter((path): path is string => typeof path === "string" && ids.some((id) => path.startsWith(`${id}/`)));
+    if (!paths.length) return reply(200, { logos: {} });
+    const { data: signed, error: signError } = await db.storage.from("restaurant-assets").createSignedUrls(paths, 3600);
+    if (signError) return reply(400, { error: signError.message });
+    const byPath = new Map((signed || []).map((item) => [item.path, item.signedUrl]));
+    return reply(200, { logos: Object.fromEntries((rows || []).map((row) => [row.id, byPath.get(row.logo_path) || ""])) });
+  }
+  if (action === "update_restaurant") {
+    const name = String(body.name ?? "").trim();
+    const removeLogo = body.remove_logo === "true";
+    if (!restaurantId || !name)
+      return reply(400, { error: "invalid_restaurant_details" });
+    if (logo && (!LOGO_MIME_TYPES.has(logo.type) || logo.size > MAX_LOGO_BYTES)) return reply(400, { error: "logo_must_be_png_jpeg_webp_or_svg_under_5mb" });
+    if (logo && removeLogo) return reply(400, { error: "choose_logo_or_remove_logo" });
+    const { data: current, error: readError } = await db.from("restaurants").select("id,logo_path").eq("id", restaurantId).maybeSingle();
+    if (readError || !current) return reply(404, { error: readError?.message || "restaurant_not_found" });
+    let logoPath: string | null | undefined;
+    if (logo) {
+      logoPath = `${restaurantId}/logo/${crypto.randomUUID()}`;
+      const { error: uploadError } = await db.storage.from("restaurant-assets").upload(logoPath, logo, { contentType: logo.type, cacheControl: "3600", upsert: false });
+      if (uploadError) return reply(400, { error: uploadError.message });
+    } else if (removeLogo) {
+      logoPath = null;
+    }
+    const update: Record<string, unknown> = { name, updated_at: new Date().toISOString() };
+    if (logoPath !== undefined) update.logo_path = logoPath;
+    const { error: updateError } = await db.from("restaurants").update(update).eq("id", restaurantId);
+    if (updateError) {
+      if (logoPath) await db.storage.from("restaurant-assets").remove([logoPath]);
+      return reply(400, { error: updateError.message });
+    }
+    if (current.logo_path && current.logo_path !== logoPath && (logo || removeLogo)) await db.storage.from("restaurant-assets").remove([current.logo_path]);
+    return reply(200, { success: true, logo_path: logoPath === undefined ? current.logo_path : logoPath });
+  }
   if (action === "set_status") {
     if (!restaurantId || !["active", "deactivated"].includes(String(body.status))) return reply(400, { error: "invalid_status_request" });
     const { error } = await db.from("restaurants").update({ status: body.status, updated_at: new Date().toISOString() }).eq("id", restaurantId);
@@ -39,7 +90,7 @@ Deno.serve(async (req) => {
     const displayName = String(body.display_name ?? "").trim();
     const password = String(body.password ?? "");
     const roleName = String(body.role_name ?? "");
-    if (!restaurantId || !/^[a-z0-9._-]{1,49}$/.test(username) || !displayName || password.length < 10) return reply(400, { error: "valid_restaurant_username_name_and_password_required_min_10" });
+    if (!restaurantId || !/^[a-z0-9._-]{1,49}$/.test(username) || !displayName || password.length < 6) return reply(400, { error: "valid_restaurant_username_name_and_password_required_min_6" });
     const { data: restaurant } = await db.from("restaurants").select("id,status").eq("id", restaurantId).maybeSingle();
     if (!restaurant || restaurant.status !== "active") return reply(400, { error: "restaurant_not_active" });
     const { data: role } = await db.from("roles").select("id,name,key").eq("restaurant_id", restaurantId).eq("name", roleName).maybeSingle();

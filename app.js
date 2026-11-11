@@ -149,6 +149,9 @@ const s = {
   role: "Administrador",
   roleLabel: "Administrador",
   restaurantId: null,
+  restaurantName: "",
+  restaurantLogoPath: null,
+  restaurantLogoUrl: null,
   site: "Centro",
   page: "orders",
   category: "Todos",
@@ -431,6 +434,8 @@ async function submitLogin() {
       return;
     }
     s.restaurantId = access.restaurant_id;
+    s.restaurantName = access.restaurant_name || "";
+    s.restaurantLogoPath = access.logo_path || null;
     await loadAuthenticatedProfile(data.user);
     s.page = "orders";
     render();
@@ -468,6 +473,8 @@ async function initializeApp() {
         await supabase.auth.signOut();
       } else {
         s.restaurantId = access.restaurant_id;
+        s.restaurantName = access.restaurant_name || "";
+        s.restaurantLogoPath = access.logo_path || null;
         await loadAuthenticatedProfile(session.user);
       }
     } catch {
@@ -1510,6 +1517,14 @@ function render() {
   applyDeviceClasses();
   let root = $("#app");
   root.innerHTML = s.user ? shell() : login();
+  if (s.restaurantLogoUrl && s.user) {
+    document.querySelectorAll(".sidebar-brand img,.mobile-brand img").forEach((image) => {
+      image.src = s.restaurantLogoUrl;
+      image.alt = s.restaurantName ? `Logo de ${s.restaurantName}` : "Logo del restaurante";
+      image.style.objectFit = "contain";
+      image.style.borderRadius = "10px";
+    });
+  }
   bind();
   requestAnimationFrame(adaptNewOrderButton);
 }
