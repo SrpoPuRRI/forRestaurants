@@ -16,5 +16,8 @@ verify_jwt = true
 verify_jwt = true
 
 [functions.restaurant-access]
-verify_jwt = true
+# This function validates the user's bearer token itself with auth.getUser().
+# Disable the gateway check so browser CORS OPTIONS preflights reach its handler;
+# the preflight has no user Authorization header.
+verify_jwt = false
 
