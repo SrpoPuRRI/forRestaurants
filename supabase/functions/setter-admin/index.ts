@@ -17,7 +17,12 @@ Deno.serve(async (req) => {
   const caller = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data: { user }, error: authError } = await caller.auth.getUser(token);
   if (authError || !user) return reply(401, { error: "invalid_session" });
-  const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const db = createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    // The Edge Function also creates a caller client with the operator JWT.
+    // Pin this client's Authorization header so Storage always uses service_role.
+    global: { headers: { Authorization: `Bearer ${serviceKey}` } },
+  });
   const { data: operator, error: operatorError } = await caller.from("platform_operators").select("auth_user_id").eq("auth_user_id", user.id).maybeSingle();
   if (operatorError) {
     console.error("platform_operator_lookup_failed", operatorError.message);
@@ -66,7 +71,10 @@ Deno.serve(async (req) => {
     if (logo) {
       logoPath = `${restaurantId}/logo/${crypto.randomUUID()}`;
       const { error: uploadError } = await db.storage.from("restaurant-assets").upload(logoPath, logo, { contentType: logo.type, cacheControl: "3600", upsert: false });
-      if (uploadError) return reply(400, { error: uploadError.message });
+      if (uploadError) {
+        console.error("setter_restaurant_logo_upload_failed", { restaurantId, code: uploadError.name, message: uploadError.message });
+        return reply(400, { error: `logo_storage_upload_failed: ${uploadError.message}` });
+      }
     } else if (removeLogo) {
       logoPath = null;
     }
@@ -75,7 +83,8 @@ Deno.serve(async (req) => {
     const { error: updateError } = await db.from("restaurants").update(update).eq("id", restaurantId);
     if (updateError) {
       if (logoPath) await db.storage.from("restaurant-assets").remove([logoPath]);
-      return reply(400, { error: updateError.message });
+      console.error("setter_restaurant_update_failed", { restaurantId, code: updateError.code, message: updateError.message });
+      return reply(400, { error: `restaurant_update_failed: ${updateError.message}` });
     }
     if (current.logo_path && current.logo_path !== logoPath && (logo || removeLogo)) await db.storage.from("restaurant-assets").remove([current.logo_path]);
     return reply(200, { success: true, logo_path: logoPath === undefined ? current.logo_path : logoPath });

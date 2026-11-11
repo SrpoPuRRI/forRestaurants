@@ -20,7 +20,10 @@ Deno.serve(async (req) => {
   const caller = createClient(url, anon, { global: { headers: { Authorization: `Bearer ${token}` } } });
   const { data: { user }, error: userError } = await caller.auth.getUser(token);
   if (userError || !user) return reply(401, { error: "invalid_session" });
-  const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const admin = createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: `Bearer ${serviceKey}` } },
+  });
   const { data: operator, error: operatorError } = await caller.from("platform_operators").select("auth_user_id").eq("auth_user_id", user.id).maybeSingle();
   if (operatorError) {
     console.error("platform_operator_lookup_failed", operatorError.message);
