@@ -1971,13 +1971,14 @@ body{color:var(--ink);background:#f4f1ea}
 .option-row.option-unavailable{opacity:.68;border-color:#e9d6d2}
 .option-row.option-unavailable span{color:#a2483a}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline-color:var(--gold)}
-.sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 8px 18px;border-bottom:1px solid var(--line)}
-.sidebar-brand img{width:39px;height:39px;flex:none}
-.sidebar-brand-name{font:800 13px Manrope,system-ui,sans-serif;letter-spacing:.075em;color:var(--ink)}
-.sidebar-brand-sub{margin-top:4px;font-size:8px;font-weight:700;letter-spacing:.16em;color:var(--muted)}
+.restaurant-brand{display:flex;align-items:center;gap:12px;min-width:0;color:var(--ink)}
+.sidebar-brand{padding:0 8px 18px;border-bottom:1px solid var(--line)}
+.restaurant-brand-mark{display:block;flex:0 0 88px;width:88px;height:72px;max-width:88px;object-fit:contain;border:1px solid var(--line);border-radius:13px;background:var(--white);padding:3px}
+.restaurant-brand-fallback{display:grid;place-items:center;background:var(--cream);color:var(--coffee);font:800 22px Manrope,system-ui,sans-serif;letter-spacing:-.04em}
+.restaurant-brand-name{display:-webkit-box;min-width:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow-wrap:anywhere;font:700 16px/1.2 Manrope,system-ui,sans-serif;letter-spacing:-.025em;color:var(--ink)}
 .login-brand{margin-bottom:20px}.login-brand img{display:block;width:min(100%,285px);height:auto}
 .mobile-brand{display:none}
-@media(max-width:780px){.mobile-brand{display:flex;align-items:center;gap:8px;font:800 13px Manrope,system-ui,sans-serif;letter-spacing:.07em;color:var(--ink)}.mobile-brand img{width:35px;height:35px}.topbar{background:#f8f6f1}}
+@media(max-width:780px){.mobile-brand{display:flex;flex:0 1 auto;gap:8px;max-width:calc(100vw - 112px)}.mobile-brand .restaurant-brand-mark{flex-basis:56px;width:56px;height:48px;max-width:56px;border-radius:10px;padding:2px}.mobile-brand .restaurant-brand-name{font-size:14px;-webkit-line-clamp:2}.topbar{height:auto;min-height:64px;background:#f8f6f1}}
 body.device-tablet .mobile-nav .nav-icon{font-size:17px}
 body.device-tablet .orders-workspace>.open-section{margin-top:8px}
 body.device-tablet .open-heading{margin-bottom:6px}

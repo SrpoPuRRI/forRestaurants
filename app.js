@@ -561,6 +561,20 @@ function title() {
     delivery: "Delivery",
   }[s.page];
 }
+// Presenta la marca del restaurante después de autenticar la cuenta.
+function restaurantBrandMarkup(placement) {
+  const name = (s.restaurantName || "Restaurante").trim();
+  const initials = name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((word) => word[0] || "")
+    .join("")
+    .toLocaleUpperCase("es");
+  const mark = s.restaurantLogoUrl
+    ? `<img class="restaurant-brand-mark" src="${esc(s.restaurantLogoUrl)}" alt="Logo de ${esc(name)}">`
+    : `<span class="restaurant-brand-mark restaurant-brand-fallback" aria-hidden="true">${esc(initials || "R")}</span>`;
+  return `<div class="restaurant-brand ${placement}" title="${esc(name)}">${mark}<span class="restaurant-brand-name">${esc(name)}</span></div>`;
+}
 // Genera la estructura principal de la aplicación.
 function shell() {
   const today = limaToday(),
@@ -571,7 +585,9 @@ function shell() {
     shownLabel =
       s.page === "stats" ? statistics.headerLabel() : formatDateLong(shownDate);
   return (
-    '<div class="shell"><aside class="sidebar"><div class="sidebar-brand"><img src="/assets/black-white-icon.svg" alt=""><div><div class="sidebar-brand-name">BLACK&WHITE POS</div><div class="sidebar-brand-sub">ESPACIO DE TRABAJO</div></div></div><div><div class="nav-label">Espacio de trabajo</div><nav class="nav">' +
+    '<div class="shell"><aside class="sidebar">' +
+    restaurantBrandMarkup("sidebar-brand") +
+    '<div><div class="nav-label">Espacio de trabajo</div><nav class="nav">' +
     nav(false) +
     '</nav></div><div class="profile"><div class="avatar">' +
     esc(
@@ -588,7 +604,9 @@ function shell() {
     esc(s.roleLabel || s.role) +
     " · " +
     (s.role === "Administrador" ? "Todas las sedes" : s.site) +
-    '</div></div></div></aside><main class="work"><header class="topbar"><div class="mobile-brand"><img src="/assets/black-white-icon.svg" alt=""><span>BLACK&WHITE POS</span></div><div><div class="top-title">' +
+    '</div></div></div></aside><main class="work"><header class="topbar">' +
+    restaurantBrandMarkup("mobile-brand") +
+    '<div><div class="top-title">' +
     title() +
     '</div><div class="top-sub"><span>' +
     shownLabel +
@@ -1527,14 +1545,6 @@ function render() {
   applyDeviceClasses();
   let root = $("#app");
   root.innerHTML = s.user ? shell() : login();
-  if (s.restaurantLogoUrl && s.user) {
-    document.querySelectorAll(".sidebar-brand img,.mobile-brand img").forEach((image) => {
-      image.src = s.restaurantLogoUrl;
-      image.alt = s.restaurantName ? `Logo de ${s.restaurantName}` : "Logo del restaurante";
-      image.style.objectFit = "contain";
-      image.style.borderRadius = "10px";
-    });
-  }
   bind();
   requestAnimationFrame(adaptNewOrderButton);
 }
