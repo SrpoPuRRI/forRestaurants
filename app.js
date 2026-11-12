@@ -2113,10 +2113,7 @@ function changePassword(required = false) {
         s.mustChangePassword = false;
       }
       let toSave = next;
-      await supabase
-        .from("accounts")
-        .update({ passwords: toSave })
-        .eq("auth_user_id", s.authUserId);
+      await supabase.from("accounts").update({ passwords: toSave }).eq("auth_user_id", s.authUserId); 
       d.close();
       toast("Contraseña actualizada.");
       if (required) {
