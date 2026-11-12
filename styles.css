@@ -129,6 +129,14 @@
     font-size:12px
 }
 
+.location-row>span:first-child{display:grid;gap:3px}
+.location-row small{color:var(--muted);font-size:11px}
+.location-hours-list{display:grid;gap:7px;max-height:42dvh;overflow:auto}
+.location-hours-row{display:grid;grid-template-columns:minmax(70px,1fr) minmax(105px,1fr) minmax(92px,1fr) minmax(92px,1fr);align-items:center;gap:7px}
+.location-hours-row strong{font-size:12px}
+.location-hours-row select,.location-hours-row input{min-width:0;width:100%}
+@media(max-width:560px){.location-hours-row{grid-template-columns:1fr 1fr}.location-hours-row strong{grid-column:1/-1}}
+
 .location-actions{
     display:flex;
     align-items:center;

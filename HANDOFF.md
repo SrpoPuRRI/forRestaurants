@@ -47,11 +47,17 @@ Hay dos aplicaciones con límites diferentes:
 
 Las secciones fijas de cada restaurante son **Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración**. Orden de navegación: Cuentas; CRM si está activo; Estadísticas; Delivery si está activo; Flujo de pedidos; Cocina si está activa; Barra inmediatamente después de Cocina si está configurada; Salón si está activo; Catálogo; Configuración siempre al final. Las únicas necesidades opcionales seleccionables en Setter son **CRM (`crm`), Cocina (`kitchen`), Salón (`salon`), Delivery (`delivery`) y Comprobantes (`receipts`)**. No agregar necesidades para pestañas fijas ni reintroducir selector de arquitectura/versiones. Las necesidades y configuraciones determinan qué roles/permisos estarán disponibles en el POS.
 
-**Dirección de roles y necesidades acordada (aún no implementada):** `roles` será un catálogo global, sin `restaurant_id` ni referencias a cuentas. `restaurants` guardará un array de IDs de roles permitidos; `accounts` guardará un array de IDs asignados. No existen roles mixtos predefinidos: una cuenta acumula permisos al asignarle varios roles simples. El administrador podrá añadir o quitar necesidades después del alta desde el POS, sin borrar los datos del restaurante. Quitar una necesidad retira sus roles y accesos; la conservación/reactivación de asignaciones personales al reactivar queda pendiente. Mapeo: Cocina → Cocinero; barra separada → Barista, Bartender y espacio Barra; Salón → Mesero y Portero; CRM → Social Manager; Delivery → Repartidor tras configuraciones pendientes; Comprobantes → sin rol adicional. Si queda alguna necesidad activa aparte de Comprobantes, incluir Cajero; al quitar la última de ellas, quitar Cajero. Sin necesidades operativas o con solo Comprobantes, Empleado representa conceptualmente caja y solo están Administrador y Empleado.
+**Roles y necesidades implementados en código y migración `202611120001_accounts_roles_attendance.sql`:** `roles` es global; `restaurants.available_role_ids` guarda IDs habilitados y `accounts.role_ids` permite varios roles sin mezclas predefinidas. La configuración de necesidades recalcula la disponibilidad, y el backend valida asignaciones y permisos. Cocina → Cocinero; barra separada → Barista/Bartender; Salón → Mesero/Portero; CRM → Social Manager; Delivery → Repartidor; Cajero se habilita si existe una necesidad distinta de Comprobantes. Administrador y Empleado siempre están disponibles. Empleado es exclusivo y hereda la unión de permisos habilitados sin privilegios de administrador. La asignación a una cuenta desactivada por una necesidad retirada pierde efecto al instante; los datos operativos se conservan.
 
 El usuario quiere un flujo claro y no ambiguo, datos específicos por restaurante, permisos aplicados en servidor/RLS además de la interfaz, y que el admin del restaurante configure la operación desde Configuración del POS. La información de cada restaurante debe sentirse propia del cliente.
 
 ## Lo último que se implementó
+
+### Cuentas, roles y asistencia (12 de noviembre de 2026)
+
+La migración `202611120001_accounts_roles_attendance.sql` reemplaza los roles por restaurante y el rol singular por un catálogo global y arrays de IDs; convierte horarios en bloques reutilizables asociados a un restaurante; crea un objeto de asistencia por cuenta y una bitácora de eventos de entrada/salida; actualiza las políticas y permisos de cocina, barra, salón y disponibilidad de catálogo. Cuentas permite asignar roles múltiples, sedes, varios horarios, restablecer contraseña temporal, desactivar/restaurar cuentas y registrar asistencia con controles por ubicación. Las cuatro opciones de asistencia se editan en Configuración. El propietario probará el flujo funcional y pulirá la interfaz.
+
+La primera ejecución se revirtió completa por un nombre incorrecto de una restricción legacy y la segunda por el uso de `min(uuid)`; ambos detalles se corrigieron. La aplicación final tuvo éxito y el historial remoto confirma `202611120001` aplicado. La consulta al restaurante «El Sabor» confirmó disponibles Admin, Empleado, Cajero, Cocinero, Mesero, Portero, Social Manager y Repartidor (Barista/Bartender aparecen al activar barra separada). Su cuenta Admin conserva el rol y ya tiene objeto de asistencia. Las Edge Functions modificadas en el árbol local aún deben publicarse para que el backend de producción use el nuevo modelo.
 
 ### Prototipos y espacios opcionales (11 de noviembre de 2026)
 
@@ -115,7 +121,7 @@ Lee `specs/Database/kffeto_production_reference_001.md` antes de proponer SQL. E
 
 ## Diferencia entre spec y el código actual que hay que resolver
 
-El esquema actual todavía asocia `roles` a cada restaurante mediante `restaurant_id` y `accounts` solo tiene `role_id` singular. Setter crea roles **Administrador** y **Empleado** por restaurante. Esto no implementa la dirección global/multirrol acordada el 10 de noviembre. La migración de roles debe diseñarse después de definir cómo mantener la integridad de las listas de IDs y cómo aplicar los permisos calculados por la app también en servidor/RLS.
+Los detalles restantes de Cuentas son: dirección y horario de atención por sede, turnos nocturnos, historial de sede/horario y de acciones administrativas, y revisión del criterio de Delivery que habilita Repartidor. La nota personal tampoco se reinicia automáticamente hasta decidir su retención. El catálogo global, los roles múltiples y las tablas de asistencia ya están migrados a código; confirmar el estado remoto antes de desplegar las Edge Functions dependientes.
 
 En el árbol local se confirmó que `staff-admin/index.ts` declaraba `schedules` dos veces y ejecutaba dos inserciones de los mismos horarios al crear una cuenta. Se eliminó el bloque duplicado. `deno check` pasó para las cuatro Edge Functions (`setter-create-restaurant`, `setter-admin`, `staff-admin` y `restaurant-access`). La corrección se publicó en el commit `65d482a`; GitHub Actions #10 terminó correctamente y desplegó las Edge Functions.
 
@@ -162,6 +168,12 @@ Detalles recientes del usuario ya reflejados en las specs:
 - Asistencia futura: marcas separadas de entrada/salida, actor y sede efectiva; permisos configurables para uno mismo o compañeros de sede; heatmap calculado de eventos, no persistir colores.
 
 ## Próximos pasos recomendados
+
+### Sitio comercial en GitHub Pages
+
+El usuario decidió preparar un portafolio web para presentar y vender Black&White POS. El plan está en `specs/Portafolio/spec_001.md`. El sitio se desarrollará separado del POS en la carpeta indicada `protfolio/`, se publicará en GitHub Pages y un subdominio de `bnw.cash` redirigirá a la publicación mediante Cloudflare. La página deberá distinguir funciones listas de prototipos/pendientes y revisar contenido, contacto, capturas, adaptación móvil, metadatos y enlaces antes de darla por terminada. Documentar al cierre el repositorio, la URL pública, el subdominio, la regla de redirección y el método de publicación.
+
+Al actualizar este handoff, la carpeta `protfolio/` no aparecía en `F:\PROYECTOS` ni dentro de este repositorio. Confirmar su ubicación antes de empezar a escribir los archivos del sitio; no mezclarlo accidentalmente con el runtime del POS.
 
 1. Revisar la UX en producción de Configuración/Cuentas con una cuenta de prueba, sin cargar datos reales de clientes.
 2. Diseñar e implementar el catálogo global de roles y la asignación multirrol, con permisos calculados desde necesidades/configuración y validados en servidor.

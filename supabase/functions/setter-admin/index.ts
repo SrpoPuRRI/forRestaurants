@@ -100,39 +100,47 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? "");
     const roleName = String(body.role_name ?? "");
     if (!restaurantId || !/^[a-z0-9._-]{1,49}$/.test(username) || !displayName || password.length < 6) return reply(400, { error: "valid_restaurant_username_name_and_password_required_min_6" });
-    const { data: restaurant } = await db.from("restaurants").select("id,status").eq("id", restaurantId).maybeSingle();
+    const { data: restaurant } = await db.from("restaurants").select("id,status,available_role_ids").eq("id", restaurantId).maybeSingle();
     if (!restaurant || restaurant.status !== "active") return reply(400, { error: "restaurant_not_active" });
-    const { data: role } = await db.from("roles").select("id,name,key").eq("restaurant_id", restaurantId).eq("name", roleName).maybeSingle();
-    if (!role) return reply(400, { error: "role_not_enabled_for_restaurant" });
+    const { data: role } = await db.from("roles").select("id,name,key").eq("name", roleName).maybeSingle();
+    if (!role || !(restaurant.available_role_ids || []).includes(role.id)) return reply(400, { error: "role_not_enabled_for_restaurant" });
     const schedules = Array.isArray(body.schedules) ? body.schedules as Array<{weekday:number;starts_at:string;ends_at:string}> : [];
-    if (role.key !== "admin" && (!schedules.length || schedules.some(s => !Number.isInteger(Number(s.weekday)) || Number(s.weekday)<0 || Number(s.weekday)>6 || !s.starts_at || !s.ends_at || s.starts_at>=s.ends_at)))
-      return reply(400, { error: "employee_requires_valid_work_schedule" });
     const { data: location } = body.location_id ? await db.from("locations").select("id").eq("id", body.location_id).eq("restaurant_id", restaurantId).maybeSingle() : { data: null };
+    if (role.key !== "admin" && (!body.location_id || !location || !schedules.length || schedules.some(s => !Number.isInteger(Number(s.weekday)) || Number(s.weekday)<0 || Number(s.weekday)>6 || !s.starts_at || !s.ends_at || s.starts_at>=s.ends_at)))
+      return reply(400, { error: "employee_requires_valid_work_schedule" });
     if (body.location_id && !location) return reply(400, { error: "location_not_in_restaurant" });
     const baseEmail = Deno.env.get("AUTH_EMAIL_BASE")?.toLowerCase();
     if (!baseEmail || !baseEmail.includes("@")) return reply(500, { error: "server_auth_email_not_configured" });
     const [local, domain] = baseEmail.split("@");
+    const scheduleIds: string[] = [];
+    for (const schedule of schedules) {
+      const block = { weekday: Number(schedule.weekday), starts_at: schedule.starts_at, ends_at: schedule.ends_at };
+      const { data: existing } = await db.from("account_schedules").select("id").eq("restaurant_id", restaurantId).match(block).maybeSingle();
+      if (existing?.id) { scheduleIds.push(existing.id); continue; }
+      const { data: inserted, error: scheduleError } = await db.from("account_schedules").insert({ restaurant_id: restaurantId, ...block }).select("id").single();
+      if (scheduleError || !inserted?.id) return reply(400, { error: scheduleError?.message ?? "schedule_insert_failed" });
+      scheduleIds.push(inserted.id);
+    }
     const { data: created, error: createError } = await db.auth.admin.createUser({ email: `${local}+k-${username}@${domain}`, password, email_confirm: true, user_metadata: { account_type: "restaurant", username } });
     if (createError || !created.user) return reply(409, { error: createError?.message ?? "auth_user_creation_failed" });
-    const { error: insertError } = await db.from("accounts").insert({ auth_user_id: created.user.id, restaurant_id: restaurantId, role_id: role.id, username, display_name: displayName, location_id: location?.id ?? null });
+    const { error: insertError } = await db.from("accounts").insert({ auth_user_id: created.user.id, restaurant_id: restaurantId, role_ids: [role.id], schedule_ids: scheduleIds, username, display_name: displayName, location_id: location?.id ?? null });
     if (insertError) { await db.auth.admin.deleteUser(created.user.id); return reply(400, { error: insertError.message }); }
-    if (schedules.length) {
-      const { error } = await db.from("account_schedules").insert(schedules.map(s => ({ auth_user_id: created.user!.id, weekday: Number(s.weekday), starts_at: s.starts_at, ends_at: s.ends_at })));
-      if (error) { await db.auth.admin.deleteUser(created.user.id); return reply(400, { error: error.message }); }
-    }
     return reply(201, { auth_user_id: created.user.id, username, role: role.name });
   }
   if (action === "delete_account") {
     const accountId = String(body.auth_user_id ?? "");
-    const { data: target } = await db.from("accounts").select("auth_user_id,role_id,roles!inner(key)").eq("auth_user_id", accountId).eq("restaurant_id", restaurantId).maybeSingle();
+    const { data: target } = await db.from("accounts").select("auth_user_id,role_ids,is_active").eq("auth_user_id", accountId).eq("restaurant_id", restaurantId).maybeSingle();
     if (!target) return reply(404,{error:"account_not_found"});
-    if ((target.roles as any)?.key === "admin") {
-      const { count } = await db.from("accounts").select("auth_user_id", { count:"exact", head:true }).eq("restaurant_id",restaurantId).eq("is_active",true).eq("role_id",target.role_id);
-      if ((count ?? 0) < 2) return reply(400,{error:"restaurant_must_keep_one_active_admin"});
+    const { data: adminRole } = await db.from("roles").select("id").eq("key", "admin").maybeSingle();
+    if (adminRole && (target.role_ids || []).includes(adminRole.id)) {
+      const { data: admins } = await db.from("accounts").select("auth_user_id,role_ids").eq("restaurant_id",restaurantId).eq("is_active",true);
+      if ((admins || []).filter((account) => account.auth_user_id !== accountId && (account.role_ids || []).includes(adminRole.id)).length < 1)
+        return reply(400,{error:"restaurant_must_keep_one_active_admin"});
     }
     const { error } = await db.from("accounts").update({ is_active: false }).eq("auth_user_id", accountId).eq("restaurant_id", restaurantId);
     if (error) return reply(400, { error: error.message });
-    await db.auth.admin.updateUserById(accountId, { ban_duration: "876000h" });
+    const { error: banError } = await db.auth.admin.updateUserById(accountId, { ban_duration: "876000h" });
+    if (banError) { await db.from("accounts").update({ is_active: true }).eq("auth_user_id", accountId); return reply(400, { error: banError.message }); }
     return reply(200, { success: true });
   }
   return reply(400, { error: "unknown_action" });

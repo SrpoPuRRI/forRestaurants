@@ -16,6 +16,7 @@ Este directorio contiene las especificaciones del producto y decisiones que guí
 - [Catálogo](Cat%C3%A1logo/spec_001.md)
 - [Configuración](Configuraci%C3%B3n/spec_001.md)
 - [Decisiones pendientes por flujo](Pendientes%20por%20definir/spec_001.md): preguntas abiertas que debemos resolver antes de implementar cada módulo.
+- [Portafolio web](Portafolio/spec_001.md): alcance y publicación del sitio comercial de Black&White POS en GitHub Pages y su subdominio.
 
 ## Regla de producto acordada
 

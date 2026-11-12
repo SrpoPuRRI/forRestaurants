@@ -2,3 +2,4 @@
 supaSecret.txt
 .env
 .env.*
+supabase/.temp/

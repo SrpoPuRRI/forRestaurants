@@ -1,6 +1,6 @@
 # Black&White POS — Cuentas 001
 
-**Estado:** Borrador inicial  
+**Estado:** Primera implementación en código y migración 202611120001; UI por probar por el propietario.
 **Tipo:** Sección fija para todos los restaurantes. La autenticación es infraestructura base.
 
 ## Propósito
@@ -9,7 +9,7 @@ Gestionar las personas que pueden operar un restaurante y las acciones que permi
 
 ## Decisión de disponibilidad
 
-Cuentas siempre está disponible y no se configura como una necesidad opcional. Los roles son un catálogo global de la app; el POS calcula sus permisos a partir de los roles asignados, las necesidades del restaurante y las opciones que el administrador guarda en Configuración. Las preferencias de asistencia descritas abajo no definen el modelo de registros de asistencia, que queda pendiente de discusión.
+Cuentas siempre está disponible y no se configura como una necesidad opcional. Los roles son un catálogo global; las necesidades y configuraciones determinan qué roles están disponibles y cada cuenta puede acumular roles simples. El POS controla la navegación y la base valida las acciones protegidas. La migración convierte las cuentas y roles existentes en este modelo.
 
 ## Roles acordados
 
@@ -33,17 +33,19 @@ El catálogo global `roles` no pertenece a restaurantes ni a cuentas y no debe t
 
 Ejemplo: Setter crea el restaurante con la necesidad **Cocina**; quedan disponibles **Cocinero** y **Cajero**, porque existe una necesidad distinta de Comprobantes. En Cuentas, el administrador puede asignar ambos roles a la misma persona. Si además activa «Tengo una barra separada de la cocina», quedan disponibles Barista y Bartender y aparece el espacio de trabajo Barra.
 
-## Alcance por especificar
+## Alcance implementado en primera versión
 
-- Perfil, alta, edición, suspensión y baja de cuentas del restaurante.
-- Roles, permisos por módulo y asignación de sede.
+- Perfil, alta, edición, baja de acceso y restauración de cuentas del restaurante.
+- Roles múltiples, permisos por módulo y asignación de sede.
 - Las necesidades y configuraciones del restaurante determinan los IDs de roles habilitados que guarda `restaurants`; Cuentas permite asignar a cada cuenta uno o varios de esos roles en `accounts`.
 - El administrador del restaurante puede añadir o quitar necesidades opcionales después de crear el restaurante, sin recrearlo. La edición controla disponibilidad de módulos y roles; no borra registros existentes ni los mueve a otro restaurante.
-- Cada sede puede tener una dirección opcional y un horario de atención.
-- Cada empleado puede tener asignado uno o más horarios de entrada y salida.
-- Invitación o contraseña temporal y cambio de contraseña.
-- Historial de acciones administrativas y sesiones.
-- Restricciones de administración de cuenta para proteger al último administrador.
+- Cada sede puede tener una dirección opcional y horario semanal; un día puede estar abierto, cerrado o sin definir.
+- Cada empleado puede tener asignado uno o más bloques reutilizables de horario.
+- El administrador puede establecer una contraseña temporal de al menos seis caracteres; la persona debe cambiarla al siguiente inicio de sesión.
+- Las cuentas se desactivan sin borrar su historial y pueden restaurarse.
+- Las operaciones administrativas protegen al último administrador activo.
+
+El alta todavía usa una contraseña inicial definida por el administrador, no invitación por correo. No hay un historial general de acciones administrativas ni sesiones.
 
 ## Nota personal de fin de mes
 
@@ -54,18 +56,18 @@ Cada empleado tiene una nota de texto asociada a su cuenta para apuntar informac
 
 El criterio temporal exacto para contar el intervalo, la hora de ejecución y qué ocurre con el contenido al reiniciar (borrado, archivo o historial) aún no están decididos. La interfaz no debe borrar contenido hasta definir y documentar ese comportamiento.
 
-## Propuesta de asistencia y salida
+## Modelo de asistencia y salida
 
-**Estado: pendiente de discusión; no representa un modelo aprobado ni implementado.** El esquema actual de Black&White no tiene una tabla de registros de asistencia. Las columnas `attendance_*` de `restaurants` solo guardan preferencias para permitir ciertas acciones; no guardan marcas de entrada/salida. Tampoco existe `accounts.assistance_id`.
+**Estado: modelo acordado e implementado en la migración 202611120001; falta la prueba funcional del propietario.** La tabla `attendance_records` guarda cada marca como evento, y `attendance_objects` agrupa el historial de cada empleado. `accounts.assistance_id` se crea al crear la cuenta y se backfill para las cuentas existentes. Cada registro conserva restaurante, sede, tipo de evento, hora efectiva, hora de registro, quién lo registró, método y motivo de corrección cuando corresponda.
 
-### Propuesta de agrupación por empleado
+### Agrupación por empleado
 
 El propietario propone dos entidades compartidas por todos los restaurantes:
 
 - `attendance_objects`: un objeto de asistencia asociado a un empleado, al que apunta la cuenta. Se crea al crear la cuenta del empleado, aunque todavía no existan marcas. Sirve como identificador desacoplado del historial de asistencia de esa persona.
 - `attendance_records`: tabla común con todas las marcas de todos los restaurantes. Cada registro pertenece a un `attendance_object`; un objeto puede tener varios registros.
 
-Cardinalidad acordada: cada cuenta de empleado apunta a un objeto de asistencia, creado junto con la cuenta; ese objeto agrupa cero o muchas marcas. La implementación deberá mantener coherentes la creación de ambos registros. En particular, no se añadirá una segunda referencia redundante al empleado sin definir cómo impedir inconsistencias entre ambos vínculos. Cada marca deberá poder determinar su restaurante y sede efectivos para aplicar aislamiento y permisos.
+Cardinalidad: cada cuenta apunta a un objeto de asistencia creado al insertar la cuenta; el objeto agrupa cero o muchas marcas. Cada marca conserva su restaurante y sede efectivos. La creación automática y la lectura protegida por restaurante están implementadas.
 
 El mapa de calor será una vista calculada a partir de marcas reales de entrada y salida; no se guardará un color como dato principal ni se asignará un mapa independiente al usuario. La fuente de verdad debe ser un registro de asistencia relacionado con la cuenta, restaurante, sede y turno. Debe conservar la fecha laboral, las horas efectivas de entrada/salida, quién hizo cada marca y por qué método. JSONB puede guardar metadatos variables o el detalle de auditoría, pero las relaciones y horas consultables deben quedar en columnas explícitas para filtrar y calcular el calendario con fiabilidad. Si el volumen lo requiere, se podrá añadir una vista materializada o resumen mensual regenerable.
 
@@ -78,23 +80,23 @@ Un empleado sin compañeros podrá marcar su propia entrada/salida si la opción
 
 El Administrador puede marcar entrada/salida usando la hora actual o registrar una corrección manual. La corrección manual solo permitirá ayer o hoy, capturará la hora y guardará por separado la hora efectiva y quién/cuándo registró la corrección. Si el turno cruza medianoche, la interfaz permite elegir ayer u hoy para la marca correspondiente; en un turno de un solo día solo solicita hora.
 
-Un horario que cruza medianoche debe indicar explícitamente el desplazamiento del día de salida o fechas de inicio/fin. La restricción actual `starts_at < ends_at` en la migración inicial no permite turnos nocturnos y necesita revisarse antes de implementar esta propuesta.
+Los horarios asignados son bloques reutilizables en `account_schedules`; la cuenta guarda una lista `schedule_ids` y puede tener varios bloques. La restricción actual `starts_at < ends_at` no permite turnos nocturnos. La interfaz de Cuenta no ofrece turnos que cruzan medianoche todavía.
 
-## Propuesta de historial de asignaciones
+## Pendiente: historial de asignaciones
 
 `accounts.location_id` representa la sede principal vigente, pero no basta para reconstruir la sede de una fecha pasada. Se propone conservar asignaciones con vigencia o por turno, para soportar cobertura temporal de un día y poder responder en qué sede debía marcar asistencia una persona en una fecha anterior. Los horarios asignados también deben poder asociarse a una sede y tener vigencia. Debe registrarse cuándo la cuenta fue activada/desactivada para interpretar fechas históricas.
 
 ### Horarios y relación con cuentas
 
-Actualmente `account_schedules` guarda un horario por fila y lo relaciona mediante `auth_user_id`; por lo tanto, ya permite varias filas/horarios para una misma cuenta. No existe una entidad de horarios reutilizables. Se propone revisar el modelo para usar una entidad de horarios y una relación de asignación a cuentas, identificadas con el ID de cuenta; el detalle físico (incluido si se almacena una lista en `accounts` o una tabla de relación) queda por decidir. No confundir horarios asignados con los registros efectivos de asistencia.
+La migración convierte `account_schedules` en bloques reutilizables asociados al restaurante; cada cuenta conserva varios IDs de bloque en `schedule_ids`. No confundir horarios asignados con los registros efectivos de asistencia. La edición del bloque reutilizable, su vigencia histórica y los turnos nocturnos quedan pendientes.
 
 ### Pedidos abiertos y pedidos pagados
 
 El esquema actual de Black&White no tiene `open_orders` ni una entidad de pedidos pagados. Se propone definir ambas. El pedido pagado debe conservar el conjunto de información que Kffe’to guarda en `orders`, `order_items` y `order_item_addons`: cabecera, líneas, agregados y snapshots históricos. Falta decidir si ese detalle se almacena en una entidad agregada o en tablas relacionadas; no copiar el esquema de Kffe’to por defecto.
 
-## Pendiente de decisión
+## Pendiente de decisión y prueba
 
-Definir si la fuente principal será una fila por turno con columnas de entrada/salida más eventos JSON de auditoría, o una bitácora de eventos append-only. En ambos casos el mapa mensual se deriva de las marcas y del horario vigente; no se acepta editar o borrar silenciosamente una marca histórica.
+La fuente de verdad es una bitácora de eventos: una fila por marca efectiva. Las marcas existentes no se editan ni eliminan desde la interfaz; las correcciones manuales agregan un nuevo evento de hoy o ayer con motivo. El mapa mensual se deriva de esas marcas. Falta probar transiciones, correcciones históricas y la presentación del calendario con datos reales.
 
 ## Reglas compartidas
 
@@ -105,4 +107,4 @@ Definir si la fuente principal será una fila por turno con columnas de entrada/
 
 ## Pendientes
 
-Definir el catálogo y los IDs globales de roles, cómo se almacenan/validan las listas de roles habilitados y asignados, qué permisos concretos aporta cada rol base, qué capacidades cruzadas se configuran, recuperación de acceso, política de contraseñas y casos de usuarios con varias membresías. Discutir y aprobar por separado el modelo de registros de asistencia.
+En la primera implementación quedan por completar dirección y horario de atención de cada sede, turnos que cruzan medianoche, historial de asignaciones de sede/horarios y el historial general de acciones administrativas/sesiones. Delivery requiere definir la configuración que habilita Repartidor en la interfaz. La nota personal sigue sin reinicio automático hasta acordar retención. El administrador puede corregir asistencias de hoy o ayer; falta validar estos casos en la UI.

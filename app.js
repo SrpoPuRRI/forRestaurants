@@ -171,6 +171,13 @@ const s = {
   restaurantSuspended: false,
   roleKey: "employee",
   roleId: null,
+  roleIds: [],
+  roleKeys: [],
+  availableRoleIds: [],
+  availableRoles: [],
+  mustChangePassword: false,
+  showInactiveAccounts: false,
+  attendanceRecords: [],
   restaurantSettings: null,
   restaurantNeeds: [],
   orderTableId: null,
@@ -281,6 +288,17 @@ function formatDateLong(value) {
   }).format(new Date(y, m - 1, d));
 }
 
+function limaDateOf(value) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(value));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 const statistics = createStatistics({
   supabase,
   state: s,
@@ -373,7 +391,7 @@ async function loadAuthenticatedProfile(user) {
   s.restaurantSuspended = false;
   const { data: profile, error } = await supabase
     .from("accounts")
-    .select("auth_user_id,restaurant_id,role_id,username,display_name,location_id,is_active")
+    .select("auth_user_id,restaurant_id,role_ids,assistance_id,username,display_name,location_id,is_active,must_change_password")
     .eq("auth_user_id", user.id)
     .single();
   if (error || !profile)
@@ -383,7 +401,7 @@ async function loadAuthenticatedProfile(user) {
 
   const { data: restaurant, error: restaurantError } = await supabase
     .from("restaurants")
-    .select("id,name,status,logo_path")
+    .select("id,name,status,logo_path,needs,available_role_ids")
     .eq("id", profile.restaurant_id)
     .maybeSingle();
   if (restaurantError)
@@ -393,17 +411,21 @@ async function loadAuthenticatedProfile(user) {
     return;
   }
 
-  const { data: role, error: roleError } = await supabase
+  const roleIds = Array.isArray(profile.role_ids) ? profile.role_ids : [];
+  const { data: roles, error: roleError } = await supabase
     .from("roles")
-    .select("key,name")
-    .eq("id", profile.role_id)
-    .eq("restaurant_id", profile.restaurant_id)
-    .single();
-  if (roleError || !role)
+    .select("id,key,name,permissions")
+    .in("id", roleIds);
+  if (roleError || !roles?.length)
     throw new Error("No se pudo cargar el rol de esta cuenta.");
+  const roleKeys = roles.map((role) => role.key);
+  const isAdmin = roleKeys.includes("admin");
 
   s.restaurantId = restaurant.id;
   s.restaurantName = restaurant.name || "";
+  s.restaurantNeeds = restaurant.needs || [];
+  s.availableRoleIds = restaurant.available_role_ids || [];
+  s.availableRoles = [];
   s.restaurantLogoPath = restaurant.logo_path || null;
   let site = "Todas las sedes";
   if (profile.location_id) {
@@ -418,10 +440,13 @@ async function loadAuthenticatedProfile(user) {
   }
   s.username = profile.username;
   s.user = profile.display_name;
-  s.role = role.key === "admin" ? "Administrador" : "Empleado";
-  s.roleKey = role.key || "employee";
-  s.roleId = profile.role_id;
-  s.roleLabel = role.name || s.role;
+  s.role = isAdmin ? "Administrador" : "Empleado";
+  s.roleKey = isAdmin ? "admin" : roleKeys.includes("employee") ? "employee" : (roleKeys[0] || "employee");
+  s.roleIds = roleIds;
+  s.roleKeys = roleKeys;
+  s.roleId = roleIds[0] || null;
+  s.roleLabel = roles.map((role) => role.name).join(" · ") || s.role;
+  s.mustChangePassword = profile.must_change_password === true;
   s.site = site;
   s.authUserId = profile.auth_user_id;
   s.locationId = profile.location_id;
@@ -457,6 +482,12 @@ async function submitLogin() {
       render();
       return;
     }
+    if (s.mustChangePassword) {
+      s.page = "account";
+      render();
+      changePassword(true);
+      return;
+    }
     s.page = "orders";
     render();
     orderFlow.enter("orders");
@@ -487,11 +518,13 @@ async function initializeApp() {
     try {
       await loadAuthenticatedProfile(session.user);
       if (s.restaurantSuspended) await supabase.auth.signOut();
+      else if (s.mustChangePassword) s.page = "account";
     } catch {
       await supabase.auth.signOut();
     }
   }
   render();
+  if (s.user && s.mustChangePassword) changePassword(true);
   if (s.user) orderFlow.enter(s.page);
   supabase.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT" && s.user) {
@@ -509,19 +542,51 @@ async function initializeApp() {
     }
   });
 }
-// Genera los botones de navegación según el rol y la vista actual.
+function hasWorkspaceAccess(workspace) {
+  const keys = new Set(s.roleKeys || []);
+  if (keys.has("admin") || keys.has("employee")) return true;
+  const rolesByWorkspace = {
+    orders: ["cashier"],
+    kitchen: ["cook"],
+    bar: ["barista", "bartender"],
+    salon: ["waiter", "host"],
+    crm: ["social_manager"],
+    delivery: ["courier"],
+  };
+  return (rolesByWorkspace[workspace] || []).some((key) => keys.has(key));
+}
+
+function defaultWorkspaceForAccount() {
+  for (const workspace of ["orders", "crm", "delivery", "kitchen", "bar", "salon", "account"]) {
+    if (workspace === "account" || hasWorkspaceAccess(workspace)) return workspace;
+  }
+  return "account";
+}
+
+function canOpenWorkspace(page) {
+  if (page === "catalog" || page === "settings") return s.role === "Administrador";
+  const requiredNeed = { crm: "crm", delivery: "delivery", kitchen: "kitchen", bar: "kitchen", salon: "salon" }[page];
+  if (requiredNeed && !(s.restaurantNeeds || []).includes(requiredNeed)) return false;
+  return ["orders", "crm", "delivery", "kitchen", "bar", "salon"].includes(page)
+    ? hasWorkspaceAccess(page)
+    : true;
+}
+
+// Genera los botones de navegación según los permisos de los roles asignados.
 function nav(m) {
   const needs = s.restaurantNeeds || [];
   const list = [["account", "", "Cuenta"]];
-  if (needs.includes("crm")) list.push(["crm", "◎", "CRM"]);
+  if (needs.includes("crm") && hasWorkspaceAccess("crm")) list.push(["crm", "◎", "CRM"]);
   list.push(["stats", "", "Estadísticas"]);
-  if (needs.includes("delivery")) list.push(["delivery", "↗", "Delivery"]);
-  list.push(["orders", "＋", m ? "Pedidos" : "Flujo de pedidos"]);
-  if (needs.includes("kitchen")) {
+  if (needs.includes("delivery") && hasWorkspaceAccess("delivery")) list.push(["delivery", "↗", "Delivery"]);
+  if (hasWorkspaceAccess("orders")) list.push(["orders", "＋", m ? "Pedidos" : "Flujo de pedidos"]);
+  if (needs.includes("kitchen") && hasWorkspaceAccess("kitchen")) {
     list.push(["kitchen", "▦", "Cocina"]);
-    if (s.restaurantSettings?.kitchen_has_separate_bar) list.push(["bar", "◉", "Barra"]);
   }
-  if (needs.includes("salon")) list.push(["salon", "⌂", "Salón"]);
+  if (needs.includes("kitchen") && s.restaurantSettings?.kitchen_has_separate_bar && hasWorkspaceAccess("bar")) {
+    list.push(["bar", "◉", "Barra"]);
+  }
+  if (needs.includes("salon") && hasWorkspaceAccess("salon")) list.push(["salon", "⌂", "Salón"]);
   if (s.role === "Administrador") {
     list.push(["catalog", "▤", "Catálogo"]);
     list.push(["settings", "⚙", "Configuración"]);
@@ -755,58 +820,82 @@ function orders() {
 }
 // Carga las cuentas, sedes y datos de asistencia desde Supabase.
 async function loadAccounts() {
-  if (!supabase || (s.role !== "Administrador" && s.role !== "Empleado"))
-    return;
+  if (!supabase || !s.restaurantId) return;
   s.accountsLoading = true;
   s.accountsError = "";
   const today = limaToday();
   if (s.role === "Administrador" && !s.accountDate) s.accountDate = today;
   render();
-  const [accountsResult, locationsResult, schedulesResult, rolesResult, notesResult] = await Promise.all([
-    supabase.from("accounts").select("auth_user_id,username,display_name,role_id,location_id,roles!inner(key,name),locations(name)").eq("is_active", true).order("display_name"),
-    supabase.from("locations").select("id,name").eq("is_active", true).order("name"),
-    supabase.from("account_schedules").select("auth_user_id,weekday,starts_at,ends_at"),
-    supabase.from("roles").select("id,key,name,permissions").order("name"),
+  const [accountsResult, locationsResult, schedulesResult, rolesResult, notesResult, attendanceResult] = await Promise.all([
+    supabase.from("accounts").select("auth_user_id,restaurant_id,username,display_name,role_ids,schedule_ids,assistance_id,location_id,is_active,locations(name)").eq("restaurant_id", s.restaurantId).order("display_name"),
+    supabase.from("locations").select("id,name,address,location_hours(weekday,opens_at,closes_at,closed)").eq("is_active", true).order("name"),
+    supabase.from("account_schedules").select("id,restaurant_id,weekday,starts_at,ends_at").eq("restaurant_id", s.restaurantId),
+    supabase.from("roles").select("id,key,name,permissions,sort_order").order("sort_order"),
     supabase.from("employee_notes").select("auth_user_id,note,updated_at").eq("restaurant_id", s.restaurantId),
+    supabase.from("attendance_records").select("id,assistance_id,location_id,event_type,occurred_at,recorded_at,method,correction_reason").eq("restaurant_id", s.restaurantId).order("occurred_at", { ascending: false }),
   ]);
   s.accountsLoading = false;
-  if (accountsResult.error || locationsResult.error) {
+  const loadError = [accountsResult, locationsResult, schedulesResult, rolesResult, notesResult, attendanceResult].find((result) => result.error)?.error;
+  if (loadError) {
     s.accountsError =
-      "No se pudieron cargar las cuentas. Revisa la conexión y los permisos.";
+      "No se pudieron cargar las cuentas y asistencias. Revisa que la migración de Cuentas esté aplicada y que la sesión tenga permisos.";
     s.accounts = [];
     s.locations = [];
     render();
     return;
   }
-  const scheduleByUser = new Map();
-  for (const item of schedulesResult.data || []) {
-    const list = scheduleByUser.get(item.auth_user_id) || [];
-    list.push(item);
-    scheduleByUser.set(item.auth_user_id, list);
+  const schedulesById = new Map((schedulesResult.data || []).map((item) => [item.id, item]));
+  const roleById = new Map((rolesResult.data || []).map((item) => [item.id, item]));
+  const eventsByObject = new Map();
+  for (const event of attendanceResult.data || []) {
+    const list = eventsByObject.get(event.assistance_id) || [];
+    list.push(event);
+    eventsByObject.set(event.assistance_id, list);
   }
-  s.accounts = (accountsResult.data || []).map((a) => ({
-    auth_user_id: a.auth_user_id,
-    username: a.username,
-    display_name: a.display_name,
-    role: a.roles?.key || "employee",
-    role_name: a.roles?.name || "Empleado",
-    location_id: a.location_id,
-    site: a.locations?.name || "Todas las sedes",
-    attendance: false,
-    attendance_location: "",
-    schedules: scheduleByUser.get(a.auth_user_id) || [],
-  }));
+  const allowedRoles = new Set(s.availableRoleIds || []);
   s.locations = locationsResult.data || [];
-  s.availableRoles = rolesResult.data || [];
+  s.availableRoles = (rolesResult.data || []).filter((role) => allowedRoles.has(role.id));
+  const accountRows = (accountsResult.data || []).filter((item) =>
+    item.is_active || (s.role === "Administrador" && s.showInactiveAccounts)
+  );
+  s.accounts = accountRows.map((a) => {
+    const roleIds = Array.isArray(a.role_ids) ? a.role_ids : [];
+    const accountRoles = roleIds.map((id) => roleById.get(id)).filter(Boolean);
+    const events = (eventsByObject.get(a.assistance_id) || []).sort((x, y) =>
+      new Date(y.occurred_at).getTime() - new Date(x.occurred_at).getTime()
+    );
+    const dateEvents = events.filter((event) => limaDateOf(event.occurred_at) === (s.accountDate || today));
+    const latest = dateEvents[0];
+    const presentEvent = dateEvents.find((event) => event.event_type === "check_in");
+    return {
+      auth_user_id: a.auth_user_id,
+      username: a.username,
+      display_name: a.display_name,
+      role_ids: roleIds,
+      role_keys: accountRoles.map((role) => role.key),
+      role: accountRoles.some((role) => role.key === "admin") ? "admin" : accountRoles.some((role) => role.key === "employee") ? "employee" : (accountRoles[0]?.key || "employee"),
+      role_name: accountRoles.map((role) => role.name).join(" · ") || "Empleado",
+      location_id: a.location_id,
+      site: a.locations?.name || "Todas las sedes",
+      is_active: a.is_active,
+      assistance_id: a.assistance_id,
+      attendance: Boolean(presentEvent && (!latest || latest.event_type === "check_in")),
+      attendance_ever: Boolean(presentEvent),
+      attendance_status: latest?.event_type || null,
+      attendance_location: (s.locations || []).find((location) => location.id === latest?.location_id)?.name || "",
+      schedules: (Array.isArray(a.schedule_ids) ? a.schedule_ids : []).map((id) => schedulesById.get(id)).filter(Boolean),
+    };
+  });
   s.employeeNotes = notesResult.data || [];
-  s.accountDataDates = [today];
+  s.attendanceRecords = attendanceResult.data || [];
+  s.accountDataDates = [...new Set([today, ...(attendanceResult.data || []).map((event) => limaDateOf(event.occurred_at))])].sort();
   render();
 }
 // Genera la vista de administración de cuentas y asistencia.
 function account() {
   const emp = s.role === "Empleado",
     list = s.accounts,
-    adminCount = list.filter((a) => a.role === "admin").length,
+    adminCount = list.filter((a) => a.role === "admin" && a.is_active).length,
     today = limaToday(),
     accountDate = s.accountDate || today,
     isHistorical = s.role === "Administrador" && accountDate !== today,
@@ -819,21 +908,33 @@ function account() {
     .map((a) => {
       const self = a.auth_user_id === s.authUserId,
         role = a.role_name || (a.role === "admin" ? "Administrador" : "Empleado"),
+        sameLocation = Boolean(s.locationId && a.location_id === s.locationId),
+        attendanceEvent = a.attendance ? "check_out" : "check_in",
+        canMarkAttendance = a.is_active && !isHistorical && (
+          s.role === "Administrador" ||
+          (self && (attendanceEvent === "check_in"
+            ? s.restaurantSettings?.attendance_check_in_self
+            : s.restaurantSettings?.attendance_check_out_self)) ||
+          (!self && sameLocation && (attendanceEvent === "check_in"
+            ? s.restaurantSettings?.attendance_check_in_peer_at_location
+            : s.restaurantSettings?.attendance_check_out_peer_at_location))
+        ),
         canDelete =
           !isHistorical &&
+          a.is_active &&
           s.role === "Administrador" &&
           (a.role !== "admin" || self),
         deleteDisabled = self && adminCount < 2,
         attendanceAction =
-          !isHistorical &&
-          !a.attendance &&
-          (s.role === "Administrador" || !self)
+          canMarkAttendance
             ? '<button class="rowaction" data-mark-attendance="' +
               a.auth_user_id +
-              '">Marcar presente</button>'
+              '" data-attendance-event="' + attendanceEvent + '">' +
+              (attendanceEvent === "check_in" ? "Marcar entrada" : "Marcar salida") +
+              "</button>"
             : "",
         editAction =
-          !isHistorical && s.role === "Administrador"
+          !isHistorical && s.role === "Administrador" && a.is_active
             ? '<button class="rowaction" data-edit-account="' +
               a.auth_user_id +
               '">Editar</button>'
@@ -847,6 +948,9 @@ function account() {
               : "") +
             ">Eliminar</button>"
           : "",
+        restoreAction = !a.is_active && s.role === "Administrador"
+          ? '<button class="rowaction" data-restore-account="' + a.auth_user_id + '">Reactivar</button>'
+          : "",
         initials = a.display_name
           .split(" ")
           .filter(Boolean)
@@ -854,32 +958,37 @@ function account() {
           .join("")
           .slice(0, 2)
           .toUpperCase(),
-        attendanceText = a.attendance
-          ? (isHistorical ? "Vino ese día" : "Presente") +
-            (a.attendance_location ? " · " + esc(a.attendance_location) : "")
-          : "Pendiente";
+        attendanceText = isHistorical
+          ? (a.attendance_ever ? "Vino ese día" : "Sin marca")
+          : a.attendance
+            ? "Presente"
+            : a.attendance_status === "check_out"
+              ? "Salió" + (a.attendance_location ? " · " + esc(a.attendance_location) : "")
+              : "Pendiente";
       return (
         '<tr><td><div class="personcell"><span class="mini">' +
         esc(initials) +
         "</span><span><strong>" +
         esc(a.display_name) +
+        (!a.is_active ? ' <span class="meta">(desactivada)</span>' : "") +
         (self ? ' <span class="meta">(tú)</span>' : "") +
         '</strong><br><span class="meta">@' +
         esc(a.username) +
         '</span></span></div></td><td><span class="roletag ' +
-        (a.role !== "admin" ? "employeetag" : "") +
+            (a.role !== "admin" ? "employeetag" : "") +
         '">' +
         role +
         "</span></td><td>" +
         esc(a.site) +
         '</td><td><span class="badge ' +
-        (a.attendance ? "present-badge" : "") +
+        ((isHistorical ? a.attendance_ever : a.attendance) ? "present-badge" : "") +
         '">' +
         attendanceText +
         '</span></td><td><div class="account-row-actions">' +
         attendanceAction +
         editAction +
         deleteAction +
+        restoreAction +
         "</div></td></tr>"
       );
     })
@@ -903,6 +1012,11 @@ function account() {
           : "Consulta de hoy") +
         '</span><button class="btn secondary" id="edit-account-date">Elegir fecha</button></div>'
       : "";
+  const inactiveToggle = s.role === "Administrador"
+    ? '<button class="btn secondary" id="toggle-inactive-accounts">' +
+      (s.showInactiveAccounts ? "Ver cuentas activas" : "Ver cuentas desactivadas") +
+      "</button>"
+    : "";
   return (
     '<section class="page-head"><div><div class="eyebrow">Perfil y equipo</div><h1>' +
     (emp ? "Tu cuenta y equipo" : "Cuentas y equipo") +
@@ -910,7 +1024,7 @@ function account() {
     dateControl +
     (emp
       ? ""
-      : '<button class="btn secondary" id="manage-sites">Gestionar sedes</button><button class="btn primary" id="create-account">＋ Crear cuenta</button>') +
+      : inactiveToggle + '<button class="btn secondary" id="manage-sites">Gestionar sedes</button><button class="btn primary" id="create-account">＋ Crear cuenta</button>') +
     '<button class="btn secondary" id="change-password">Cambiar contraseña</button></div></section><div class="metrics account-metrics"><article class="metric"><div class="metric-label">Mi perfil</div><div class="metric-value" style="font-size:17px">' +
     esc(s.user) +
     '</div><div class="metric-foot neutral">' +
@@ -922,7 +1036,7 @@ function account() {
     '</div></article><article class="metric"><div class="metric-label">' +
     presentLabel +
     '</div><div class="metric-value">' +
-    list.filter((a) => a.attendance).length +
+    list.filter((a) => isHistorical ? a.attendance_ever : a.attendance).length +
     "/" +
     list.length +
     '</div></article></div><section class="panel"><div class="panel-head"><div><div class="panel-title">' +
@@ -933,7 +1047,7 @@ function account() {
       : "") +
     "</div></div>" +
     body +
-    `</section>${emp ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Mi nota del mes</div><div class="meta">Anota información útil para el cierre de mes.</div></div><button class="btn secondary" id="save-employee-note">Guardar nota</button></div><textarea id="employee-note" maxlength="5000" placeholder="Escribe una nota para recordar…">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.note || "")}</textarea><div class="meta">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.updated_at ? `Última edición: ${formatDateLong(limaToday())}` : "Aún no hay una nota guardada.")}</div></section>` : s.role === "Administrador" ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Notas del equipo</div><div class="meta">Notas personales que cada empleado mantiene para el cierre de mes.</div></div></div><div class="notes-team-list">${list.filter((a) => a.role !== "admin").map((a) => { const note = (s.employeeNotes || []).find((x) => x.auth_user_id === a.auth_user_id)?.note; return `<div class="notes-team-row"><strong>${esc(a.display_name)}</strong><span class="roletag employeetag">${esc(a.role_name)}</span><p>${note ? esc(note) : '<span class="meta">Sin nota registrada</span>'}</p></div>`; }).join("") || '<div class="empty">No hay empleados.</div>'}</div></section>` : ""}`
+    `</section>${emp ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Mi nota del mes</div><div class="meta">Anota información útil para el cierre de mes.</div></div><button class="btn secondary" id="save-employee-note">Guardar nota</button></div><textarea id="employee-note" maxlength="5000" placeholder="Escribe una nota para recordar…">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.note || "")}</textarea><div class="meta">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.updated_at ? `Última edición: ${formatDateLong(limaDateOf((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId).updated_at))}` : "Aún no hay una nota guardada.")}</div></section>` : s.role === "Administrador" ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Notas del equipo</div><div class="meta">Notas personales que cada empleado mantiene para el cierre de mes.</div></div></div><div class="notes-team-list">${list.filter((a) => a.role !== "admin").map((a) => { const note = (s.employeeNotes || []).find((x) => x.auth_user_id === a.auth_user_id)?.note; return `<div class="notes-team-row"><strong>${esc(a.display_name)}</strong><span class="roletag employeetag">${esc(a.role_name)}</span><p>${note ? esc(note) : '<span class="meta">Sin nota registrada</span>'}</p></div>`; }).join("") || '<div class="empty">No hay empleados.</div>'}</div></section>` : ""}`
   );
 }
 // Abre el diálogo para seleccionar la fecha de asistencia.
@@ -1027,52 +1141,93 @@ function accountDateDialog() {
   d.showModal();
   d.addEventListener("close", () => d.remove());
 }
+function accountRoleOptionsMarkup(selectedIds = []) {
+  const selected = new Set(selectedIds);
+  return `<div class="account-role-options">${(s.availableRoles || []).map((role) =>
+    `<label class="settings-check"><input type="checkbox" name="role_ids" value="${esc(role.id)}" data-account-role-key="${esc(role.key)}" ${selected.has(role.id) ? "checked" : ""}><span>${esc(role.name)}${role.key === "employee" ? " · todos los permisos del restaurante" : ""}</span></label>`
+  ).join("")}</div>`;
+}
+
+function bindAccountRoleOptions(form) {
+  const options = [...form.querySelectorAll('[name="role_ids"]')];
+  options.forEach((input) => input.addEventListener("change", () => {
+    const special = ["admin", "employee"].includes(input.dataset.accountRoleKey);
+    if (input.checked && special) options.forEach((other) => { if (other !== input) other.checked = false; });
+    else if (input.checked) options.filter((other) => ["admin", "employee"].includes(other.dataset.accountRoleKey)).forEach((other) => { other.checked = false; });
+  }));
+}
+
+function accountScheduleRowMarkup(schedule = {}) {
+  const weekdays = [[1,"Lunes"],[2,"Martes"],[3,"Miércoles"],[4,"Jueves"],[5,"Viernes"],[6,"Sábado"],[0,"Domingo"]];
+  return `<div class="schedule-row"><select name="workday">${weekdays.map(([value,label]) => `<option value="${value}" ${Number(schedule.weekday) === value ? "selected" : ""}>${label}</option>`).join("")}</select><input type="time" name="workstart" value="${esc(String(schedule.starts_at || "").slice(0,5))}"><input type="time" name="workend" value="${esc(String(schedule.ends_at || "").slice(0,5))}"><button type="button" class="rowaction" data-remove-schedule aria-label="Quitar horario">×</button></div>`;
+}
+
+function bindAccountScheduleRows(form) {
+  const rows = form.querySelector("#work-schedule-rows");
+  form.querySelector("#add-work-schedule")?.addEventListener("click", () => rows.insertAdjacentHTML("beforeend", accountScheduleRowMarkup()));
+  rows?.addEventListener("click", (event) => {
+    if (event.target.closest("[data-remove-schedule]") && rows.querySelectorAll(".schedule-row").length > 1) event.target.closest(".schedule-row").remove();
+  });
+}
+
+function collectAccountSchedules(form) {
+  const rows = [...form.querySelectorAll("#work-schedule-rows .schedule-row")];
+  const schedules = rows.map((row) => ({
+    weekday: Number(row.querySelector('[name="workday"]').value),
+    starts_at: row.querySelector('[name="workstart"]').value,
+    ends_at: row.querySelector('[name="workend"]').value,
+  }));
+  return {
+    schedules: schedules.filter((item) => item.starts_at && item.ends_at),
+    hasIncompleteRows: schedules.some((item) => Boolean(item.starts_at) !== Boolean(item.ends_at)),
+  };
+}
+
+function isAdminRoleSelection(roleIds) {
+  return (s.availableRoles || []).some((role) => role.key === "admin" && roleIds.includes(role.id));
+}
+
 // Abre el formulario para editar una cuenta existente.
 function editAccountDialog(account) {
   const d = document.createElement("dialog");
   d.className = "password-dialog account-dialog";
-  const isAdmin = account.role === "admin";
-  const roleOptions = (s.availableRoles || []).map((r) => '<option value="' + esc(r.key) + '" ' + (r.key === account.role ? "selected" : "") + '>' + esc(r.name) + "</option>").join("");
-  d.innerHTML =
-    '<form method="dialog"><div class="panel-title">Editar cuenta</div><label class="dialog-label">Nombre visible<input name="display_name" maxlength="100" required value="' +
-    esc(account.display_name) +
-    '"></label><label class="dialog-label">Tipo de cuenta<select name="role" id="edit-account-role">' + roleOptions + '</select></label><label class="dialog-label" id="edit-account-location-wrap">Sede<select name="location_id" id="edit-account-location">' +
-    s.locations
-      .map(
-        (l) =>
-          '<option value="' +
-          l.id +
-          '" ' +
-          (l.id === account.location_id ? "selected" : "") +
-          ">" +
-          esc(l.name) +
-          "</option>",
-      )
-      .join("") +
-    '</select></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="save-account" value="save">Guardar cambios</button></div></form>';
+  const schedules = account.schedules?.length ? account.schedules : [{}];
+  d.innerHTML = `<form method="dialog"><div class="panel-title">Editar cuenta</div><label class="dialog-label">Nombre visible<input name="display_name" maxlength="100" required value="${esc(account.display_name)}"></label><fieldset class="dialog-label"><legend>Roles y permisos</legend>${accountRoleOptionsMarkup(account.role_ids || [])}</fieldset><label class="dialog-label" id="edit-account-location-wrap">Sede<select name="location_id" id="edit-account-location"><option value="">Sin sede</option>${s.locations.map((location) => `<option value="${esc(location.id)}" ${location.id === account.location_id ? "selected" : ""}>${esc(location.name)}</option>`).join("")}</select></label><div class="dialog-label" id="edit-account-schedules-wrap"><span>Horarios de trabajo</span><div id="work-schedule-rows">${schedules.map((schedule) => accountScheduleRowMarkup(schedule)).join("")}</div><button type="button" class="btn small" id="add-work-schedule">＋ Agregar horario</button></div><button type="button" class="btn secondary" id="reset-account-password">Restablecer contraseña</button><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="save-account" value="save">Guardar cambios</button></div></form>`;
   document.body.appendChild(d);
   const f = d.querySelector("form"),
-    role = f.querySelector("#edit-account-role"),
     wrap = f.querySelector("#edit-account-location-wrap"),
     site = f.querySelector("#edit-account-location"),
+    scheduleWrap = f.querySelector("#edit-account-schedules-wrap"),
     save = f.querySelector("#save-account");
   const updateFields = () => {
-    wrap.hidden = role.value === "admin";
-    site.required = role.value !== "admin";
+    const roleIds = [...f.querySelectorAll('[name="role_ids"]:checked')].map((input) => input.value);
+    const selectedAdmin = isAdminRoleSelection(roleIds);
+    wrap.hidden = selectedAdmin;
+    site.required = !selectedAdmin;
+    scheduleWrap.hidden = selectedAdmin;
   };
-  role.addEventListener("change", updateFields);
+  bindAccountRoleOptions(f);
+  f.querySelectorAll('[name="role_ids"]').forEach((input) => input.addEventListener("change", updateFields));
+  bindAccountScheduleRows(f);
   updateFields();
+  f.querySelector("#reset-account-password").addEventListener("click", () => resetAccountPasswordDialog(account));
   d.showModal();
   f.addEventListener("submit", async (e) => {
     if (e.submitter?.id !== "save-account") return;
     e.preventDefault();
     const err = f.querySelector(".password-error"),
-      name = new FormData(f).get("display_name").trim();
+      name = new FormData(f).get("display_name").trim(),
+      roleIds = [...f.querySelectorAll('[name="role_ids"]:checked')].map((input) => input.value),
+      adminSelected = isAdminRoleSelection(roleIds),
+      scheduleResult = collectAccountSchedules(f);
     err.textContent = "";
     if (!name) {
       err.textContent = "Escribe el nombre de la cuenta.";
       return;
     }
+    if (!roleIds.length) { err.textContent = "Selecciona al menos un rol."; return; }
+    if (!adminSelected && !site.value) { err.textContent = "Selecciona una sede para la cuenta."; return; }
+    if (!adminSelected && (scheduleResult.hasIncompleteRows || !scheduleResult.schedules.length)) { err.textContent = "Completa al menos un horario de entrada y salida."; return; }
     save.disabled = true;
     try {
       const { data, error } = await supabase.functions.invoke("staff-admin", {
@@ -1080,8 +1235,9 @@ function editAccountDialog(account) {
           action: "update",
           auth_user_id: account.auth_user_id,
           display_name: name,
-          role: role.value,
-          location_id: role.value !== "admin" ? site.value : null,
+          role_ids: roleIds,
+          location_id: adminSelected ? null : site.value,
+          schedules: adminSelected ? [] : scheduleResult.schedules,
         },
       });
       if (error || data?.error)
@@ -1097,25 +1253,42 @@ function editAccountDialog(account) {
   });
   d.addEventListener("close", () => d.remove());
 }
+
+function resetAccountPasswordDialog(account) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "password-dialog";
+  dialog.innerHTML = `<form method="dialog"><div class="panel-title">Restablecer contraseña</div><p class="meta">Al iniciar sesión de nuevo, la persona deberá elegir una contraseña nueva.</p><label class="dialog-label">Contraseña temporal<input name="password" type="password" minlength="6" autocomplete="new-password" required></label><label class="dialog-label">Repite la contraseña<input name="confirm" type="password" minlength="6" autocomplete="new-password" required></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="confirm-reset-password" value="save">Restablecer</button></div></form>`;
+  document.body.appendChild(dialog);
+  const form = dialog.querySelector("form");
+  dialog.showModal();
+  form.addEventListener("submit", async (event) => {
+    if (event.submitter?.id !== "confirm-reset-password") return;
+    event.preventDefault();
+    const values = new FormData(form), password = String(values.get("password")), confirm = String(values.get("confirm"));
+    const error = form.querySelector(".password-error"), button = form.querySelector("#confirm-reset-password");
+    error.textContent = "";
+    if (password !== confirm) { error.textContent = "Las contraseñas no coinciden."; return; }
+    button.disabled = true;
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke("staff-admin", {
+        body: { action: "reset_password", auth_user_id: account.auth_user_id, password },
+      });
+      if (invokeError || data?.error) throw new Error(data?.error || invokeError?.message || "No se pudo restablecer la contraseña.");
+      dialog.close();
+      toast("Contraseña temporal guardada. Debe cambiarla al volver a ingresar.");
+    } catch (requestError) {
+      error.textContent = requestError.message || "No se pudo restablecer la contraseña.";
+    } finally { if (button.isConnected) button.disabled = false; }
+  });
+  dialog.addEventListener("close", () => dialog.remove());
+}
+
 // Abre el diálogo para registrar la asistencia de una cuenta.
-function markAttendanceDialog(account) {
+function markAttendanceDialog(account, eventType) {
   const d = document.createElement("dialog");
   d.className = "password-dialog";
-  d.innerHTML =
-    '<form method="dialog"><div class="panel-title">Asistencia de administrador</div><p class="meta">Elige la sede a la que asistió hoy. Se registrará una sola sede para esta fecha.</p><label class="dialog-label">Sede<select name="location_id" required>' +
-    s.locations
-      .map(
-        (l, i) =>
-          '<option value="' +
-          l.id +
-          '" ' +
-          (i === 0 ? "selected" : "") +
-          ">" +
-          esc(l.name) +
-          "</option>",
-      )
-      .join("") +
-    '</select></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="confirm-admin-attendance" value="save">Marcar asistencia</button></div></form>';
+  const preferredLocation = account.location_id || s.locations[0]?.id;
+  d.innerHTML = `<form method="dialog"><div class="panel-title">Registrar ${eventType === "check_in" ? "entrada" : "salida"}</div><p class="meta">Puedes usar la hora actual o registrar una corrección de hoy o ayer.</p><label class="dialog-label">Sede<select name="location_id" required>${s.locations.map((location) => `<option value="${esc(location.id)}" ${location.id === preferredLocation ? "selected" : ""}>${esc(location.name)}</option>`).join("")}</select></label><label class="dialog-label">Hora efectiva (opcional)<input type="datetime-local" name="event_at"><span class="meta">Déjala vacía para registrar ahora. Si eliges una hora, explica la corrección.</span></label><label class="dialog-label">Motivo de corrección<textarea name="correction_reason" maxlength="500" placeholder="Obligatorio al registrar una hora anterior"></textarea></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="confirm-admin-attendance" value="save">Registrar marca</button></div></form>`;
   document.body.appendChild(d);
   const f = d.querySelector("form");
   d.showModal();
@@ -1124,24 +1297,28 @@ function markAttendanceDialog(account) {
     e.preventDefault();
     const btn = f.querySelector("#confirm-admin-attendance"),
       err = f.querySelector(".password-error"),
-      locationId = new FormData(f).get("location_id");
+      fields = new FormData(f),
+      locationId = fields.get("location_id"),
+      localDateTime = String(fields.get("event_at") || ""),
+      reason = String(fields.get("correction_reason") || "").trim();
+    if (localDateTime && !reason) { err.textContent = "Escribe el motivo de la corrección."; return; }
     btn.disabled = true;
     const { error } = await supabase.rpc("mark_attendance", {
       p_staff_profile_id: account.auth_user_id,
       p_location_id: locationId,
+      p_event_type: eventType,
+      p_event_at: localDateTime ? new Date(localDateTime).toISOString() : null,
+      p_correction_reason: localDateTime ? reason : null,
     });
     btn.disabled = false;
     if (error) {
-      err.textContent =
-        error.code === "23505"
-          ? "La asistencia ya fue marcada hoy."
-          : error.message || "No se pudo marcar la asistencia.";
+      err.textContent = error.message || "No se pudo registrar la asistencia.";
       return;
     }
     d.close();
     await loadAccounts();
     toast(
-      "Asistencia marcada en " +
+      "Marca registrada en " +
         s.locations.find((x) => x.id === locationId)?.name +
         ".",
     );
@@ -1149,73 +1326,51 @@ function markAttendanceDialog(account) {
   d.addEventListener("close", () => d.remove());
 }
 // Guarda o actualiza la asistencia de un miembro del personal.
-async function markAttendance(staffId) {
+async function markAttendance(staffId, eventType = "check_in") {
   const account = s.accounts.find((a) => a.auth_user_id === staffId);
   if (!account) return;
-  if (s.role === "Administrador" && account.role === "admin") {
+  if (s.role === "Administrador") {
     if (!s.locations.length) {
       toast("Primero crea una sede.");
       return;
     }
-    markAttendanceDialog(account);
+    markAttendanceDialog(account, eventType);
     return;
   }
   const { error } = await supabase.rpc("mark_attendance", {
     p_staff_profile_id: staffId,
     p_location_id: account.location_id,
+    p_event_type: eventType,
   });
   if (error) {
-    toast(
-      error.code === "23505"
-        ? "La asistencia ya fue marcada hoy."
-        : error.message || "No se pudo marcar la asistencia.",
-    );
+    toast(error.message || "No se pudo marcar la asistencia.");
     return;
   }
   await loadAccounts();
-  toast("Asistencia marcada.");
+  toast(eventType === "check_in" ? "Entrada registrada." : "Salida registrada.");
 }
 // Abre el formulario para crear una nueva cuenta de personal.
 function createAccountDialog() {
   const d = document.createElement("dialog");
   d.className = "password-dialog account-dialog";
-  const roleOptions = (s.availableRoles || []).map((r) => '<option value="' + esc(r.key) + '">' + esc(r.name) + "</option>").join("");
-  d.innerHTML =
-    '<form method="dialog"><div class="panel-title">Crear cuenta</div><p class="meta">La persona iniciará sesión con el usuario y la contraseña que asignes.</p><label class="dialog-label">Nombre completo<input name="display_name" maxlength="100" required autocomplete="name" placeholder="Ej. Ana Morales"></label><label class="dialog-label">Nombre de usuario<input name="username" maxlength="49" required autocomplete="off" placeholder="Ej. ana.morales"><span class="meta">Sin espacios; se guardará en minúsculas y sin tildes.</span></label><label class="dialog-label">Tipo de cuenta<select name="role" id="new-account-role">' + roleOptions + '</select></label><label class="dialog-label" id="new-account-location-wrap">Sede<select name="location_id" id="new-account-location">' +
-    s.locations
-      .map(
-        (l, i) =>
-          '<option value="' +
-          l.id +
-          '" ' +
-          (i === 0 ? "selected" : "") +
-          ">" +
-          esc(l.name) +
-          "</option>",
-      )
-      .join("") +
-    '</select><span class="meta" id="no-locations-message" ' +
-    (s.locations.length ? "hidden" : "") +
-    '>Primero crea una sede con “Gestionar sedes”.</span></label><label class="dialog-label">Contraseña inicial<input name="password" type="password" minlength="10" required autocomplete="new-password" placeholder="Mínimo 10 caracteres"></label><label class="dialog-label">Horarios de trabajo<div id="work-schedule-rows"><div class="schedule-row"><select name="workday"><option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option><option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option><option value="0">Domingo</option></select><input type="time" name="workstart"><input type="time" name="workend"></div></div><button type="button" class="btn small" id="add-work-schedule">＋ Agregar horario</button></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="submit-new-account" value="save" ' +
-    (s.locations.length ? "" : "disabled") +
-    ">Crear cuenta</button></div></form>";
+  d.innerHTML = `<form method="dialog"><div class="panel-title">Crear cuenta</div><p class="meta">La persona iniciará sesión con el usuario y la contraseña que asignes.</p><label class="dialog-label">Nombre completo<input name="display_name" maxlength="100" required autocomplete="name" placeholder="Ej. Ana Morales"></label><label class="dialog-label">Nombre de usuario<input name="username" maxlength="49" required autocomplete="off" placeholder="Ej. ana.morales"><span class="meta">Sin espacios; se guardará en minúsculas y sin tildes.</span></label><fieldset class="dialog-label"><legend>Roles y permisos</legend>${accountRoleOptionsMarkup()}</fieldset><label class="dialog-label" id="new-account-location-wrap">Sede<select name="location_id" id="new-account-location"><option value="">Seleccionar sede</option>${s.locations.map((location) => `<option value="${esc(location.id)}">${esc(location.name)}</option>`).join("")}</select><span class="meta" id="no-locations-message" ${s.locations.length ? "hidden" : ""}>Primero crea una sede con “Gestionar sedes”.</span></label><label class="dialog-label">Contraseña inicial<input name="password" type="password" minlength="6" required autocomplete="new-password" placeholder="Mínimo 6 caracteres"></label><div class="dialog-label" id="new-account-schedules-wrap"><span>Horarios de trabajo</span><div id="work-schedule-rows">${accountScheduleRowMarkup()}</div><button type="button" class="btn small" id="add-work-schedule">＋ Agregar horario</button></div><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="submit-new-account" value="save">Crear cuenta</button></div></form>`;
   document.body.appendChild(d);
   const form = d.querySelector("form"),
-    role = form.querySelector("#new-account-role"),
     locationWrap = form.querySelector("#new-account-location-wrap"),
     locationSelect = form.querySelector("#new-account-location"),
+    scheduleWrap = form.querySelector("#new-account-schedules-wrap"),
     submit = form.querySelector("#submit-new-account");
   const syncRole = () => {
-    const employee = role.value !== "admin";
-    locationWrap.hidden = !employee;
-    submit.disabled = employee && !s.locations.length;
+    const roleIds = [...form.querySelectorAll('[name="role_ids"]:checked')].map((input) => input.value);
+    const adminSelected = isAdminRoleSelection(roleIds);
+    locationWrap.hidden = adminSelected;
+    scheduleWrap.hidden = adminSelected;
+    locationSelect.required = !adminSelected;
+    submit.disabled = !roleIds.length || (!adminSelected && !s.locations.length);
   };
-  role.addEventListener("change", syncRole);
-  form.querySelector("#add-work-schedule").addEventListener("click", () => form.querySelector("#work-schedule-rows").insertAdjacentHTML("beforeend", form.querySelector("#work-schedule-rows .schedule-row").outerHTML));
-  if (!s.locations.length) {
-    locationSelect.disabled = true;
-    locationWrap.hidden = false;
-  }
+  bindAccountRoleOptions(form);
+  form.querySelectorAll('[name="role_ids"]').forEach((input) => input.addEventListener("change", syncRole));
+  bindAccountScheduleRows(form);
   syncRole();
   d.showModal();
   form.addEventListener("submit", async (e) => {
@@ -1223,19 +1378,22 @@ function createAccountDialog() {
     e.preventDefault();
     const data = new FormData(form),
       error = form.querySelector(".password-error"),
-      username = normalizeUsername(data.get("username"));
+      username = normalizeUsername(data.get("username")),
+      roleIds = [...form.querySelectorAll('[name="role_ids"]:checked')].map((input) => input.value),
+      adminSelected = isAdminRoleSelection(roleIds),
+      scheduleResult = collectAccountSchedules(form);
     error.textContent = "";
     if (!/^[a-z0-9._-]{1,49}$/.test(username)) {
       error.textContent =
         "El usuario debe tener hasta 49 caracteres: letras, números, punto, guion o guion bajo.";
       return;
     }
-    if (role.value !== "admin" && !data.get("location_id")) {
+    if (!roleIds.length) { error.textContent = "Selecciona al menos un rol."; return; }
+    if (!adminSelected && !data.get("location_id")) {
       error.textContent = "Crea o selecciona una sede para el empleado.";
       return;
     }
-    const workdays = [...form.querySelectorAll('[name="workday"]')], workstarts = [...form.querySelectorAll('[name="workstart"]')], workends = [...form.querySelectorAll('[name="workend"]')], schedules = workdays.map((x, i) => ({ weekday: Number(x.value), starts_at: workstarts[i].value, ends_at: workends[i].value })).filter(x => x.starts_at && x.ends_at);
-    if (role.value !== "admin" && (!schedules.length || schedules.length !== workdays.length)) { error.textContent = "Asigna entrada y salida a cada horario del empleado."; return; }
+    if (!adminSelected && (scheduleResult.hasIncompleteRows || !scheduleResult.schedules.length)) { error.textContent = "Asigna entrada y salida a cada horario del empleado."; return; }
     submit.disabled = true;
     try {
       const { data: result, error: invokeError } =
@@ -1244,11 +1402,10 @@ function createAccountDialog() {
             action: "create",
             display_name: data.get("display_name"),
             username,
-            role: role.value,
-            location_id:
-              role.value !== "admin" ? data.get("location_id") : null,
+            role_ids: roleIds,
+            location_id: !adminSelected ? data.get("location_id") : null,
             password: data.get("password"),
-            schedules,
+            schedules: adminSelected ? [] : scheduleResult.schedules,
           },
         });
       if (invokeError)
@@ -1264,8 +1421,7 @@ function createAccountDialog() {
     } catch (err) {
       error.textContent = err.message || "No se pudo crear la cuenta.";
     } finally {
-      if (submit.isConnected)
-        submit.disabled = role.value !== "admin" && !s.locations.length;
+      if (submit.isConnected) syncRole();
     }
   });
   d.addEventListener("close", () => d.remove());
@@ -1278,11 +1434,11 @@ function manageLocationsDialog() {
     const rows = s.locations
       .map(
         (l) =>
-          '<div class="location-row"><strong>' +
+          '<div class="location-row"><span><strong>' +
           esc(l.name) +
-          '</strong><span class="location-actions"><button type="button" class="rowaction" data-rename-location="' +
+          '</strong><small>' + esc(l.address || "Sin dirección") + '</small></span><span class="location-actions"><button type="button" class="rowaction" data-rename-location="' +
           l.id +
-          '">Renombrar</button><button type="button" class="rowaction danger-action" data-delete-location="' +
+          '">Editar</button><button type="button" class="rowaction danger-action" data-delete-location="' +
           l.id +
           '">Eliminar</button></span></div>',
       )
@@ -1292,12 +1448,12 @@ function manageLocationsDialog() {
       (rows || '<div class="empty">Aún no hay sedes.</div>') +
       '</div><div class="dialog-actions"><button class="btn secondary" value="close">Cerrar</button><button type="button" class="btn primary" id="open-create-location">＋ Crear sede</button></div></form>';
     d.querySelector("#open-create-location").onclick = () =>
-      createLocationDialog();
+      editLocationDialog();
     d.querySelectorAll("[data-rename-location]").forEach(
       (b) =>
         (b.onclick = () => {
           const l = s.locations.find((x) => x.id === b.dataset.renameLocation);
-          if (l) renameLocationDialog(l);
+          if (l) editLocationDialog(l);
         }),
     );
     d.querySelectorAll("[data-delete-location]").forEach(
@@ -1313,83 +1469,83 @@ function manageLocationsDialog() {
   d.showModal();
   d.addEventListener("close", () => d.remove());
 }
-// Abre el formulario para crear una nueva sede.
-function createLocationDialog() {
-  const d = document.createElement("dialog");
-  d.className = "password-dialog";
-  d.innerHTML =
-    '<form method="dialog"><div class="panel-title">Crear sede</div><label class="dialog-label">Nombre de la sede<input name="name" maxlength="80" required placeholder="Ej. Centro"></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="add-location" value="save">Crear sede</button></div></form>';
-  document.body.appendChild(d);
-  const f = d.querySelector("form");
-  d.showModal();
-  f.addEventListener("submit", async (e) => {
-    if (e.submitter?.id !== "add-location") return;
-    e.preventDefault();
-    const name = new FormData(f).get("name").trim(),
-      err = f.querySelector(".password-error"),
-      btn = f.querySelector("#add-location");
-    if (!name) {
-      err.textContent = "Escribe el nombre de la sede.";
-      return;
-    }
-    btn.disabled = true;
-    const { error } = await supabase.from("locations").insert({ name, restaurant_id: s.restaurantId });
-    btn.disabled = false;
-    if (error) {
-      err.textContent =
-        error.code === "23505"
-          ? "Ya existe una sede con ese nombre."
-          : "No se pudo crear la sede.";
-      return;
-    }
-    d.close();
-    const manager = document.querySelector("dialog.account-dialog");
-    if (manager?.open) manager.close();
-    await loadAccounts();
-    toast("Sede creada.");
-    manageLocationsDialog();
-  });
-  d.addEventListener("close", () => d.remove());
+const locationWeekdays = [[1,"Lunes"],[2,"Martes"],[3,"Miércoles"],[4,"Jueves"],[5,"Viernes"],[6,"Sábado"],[0,"Domingo"]];
+function locationHoursMarkup(location) {
+  const byDay = new Map((location?.location_hours || []).map((item) => [Number(item.weekday), item]));
+  return locationWeekdays.map(([weekday, label]) => {
+    const item = byDay.get(weekday), mode = item ? (item.closed ? "closed" : "open") : "unset";
+    return `<div class="schedule-row location-hours-row"><strong>${label}</strong><select name="hour_mode" data-weekday="${weekday}"><option value="unset" ${mode === "unset" ? "selected" : ""}>Sin definir</option><option value="open" ${mode === "open" ? "selected" : ""}>Abierto</option><option value="closed" ${mode === "closed" ? "selected" : ""}>Cerrado</option></select><input aria-label="Apertura ${label}" type="time" name="opens_at" value="${esc(String(item?.opens_at || "").slice(0,5))}" ${mode === "open" ? "required" : "disabled"}><input aria-label="Cierre ${label}" type="time" name="closes_at" value="${esc(String(item?.closes_at || "").slice(0,5))}" ${mode === "open" ? "required" : "disabled"}></div>`;
+  }).join("");
 }
-// Abre el formulario para cambiar el nombre de una sede.
-function renameLocationDialog(location) {
+
+// Crea o edita los datos y el horario semanal de una sede.
+function editLocationDialog(location = null) {
   const d = document.createElement("dialog");
-  d.className = "password-dialog";
-  d.innerHTML =
-    '<form method="dialog"><div class="panel-title">Renombrar sede</div><label class="dialog-label">Nombre<input name="name" maxlength="80" required value="' +
-    esc(location.name) +
-    '"></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="save-location-name" value="save">Guardar nombre</button></div></form>';
+  d.className = "password-dialog account-dialog";
+  d.innerHTML = `<form method="dialog"><div class="panel-title">${location ? "Editar sede" : "Crear sede"}</div><label class="dialog-label">Nombre de la sede<input name="name" maxlength="80" required placeholder="Ej. Centro" value="${esc(location?.name || "")}"></label><label class="dialog-label">Dirección (opcional)<input name="address" maxlength="250" value="${esc(location?.address || "")}" placeholder="Calle, distrito"></label><fieldset class="dialog-label"><legend>Horario semanal</legend><p class="meta">Puedes dejar un día sin definir, marcarlo cerrado o indicar su horario.</p><div class="location-hours-list">${locationHoursMarkup(location)}</div></fieldset><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="save-location" value="save">${location ? "Guardar cambios" : "Crear sede"}</button></div></form>`;
   document.body.appendChild(d);
   const f = d.querySelector("form");
+  const syncHours = (select) => {
+    const row = select.closest(".location-hours-row"), enabled = select.value === "open";
+    row.querySelectorAll('input[name="opens_at"],input[name="closes_at"]').forEach((input) => { input.disabled = !enabled; input.required = enabled; });
+  };
+  f.querySelectorAll('[name="hour_mode"]').forEach((select) => {
+    select.addEventListener("change", () => syncHours(select));
+    syncHours(select);
+  });
   d.showModal();
   f.addEventListener("submit", async (e) => {
-    if (e.submitter?.id !== "save-location-name") return;
+    if (e.submitter?.id !== "save-location") return;
     e.preventDefault();
-    const name = new FormData(f).get("name").trim(),
+    const values = new FormData(f), name = String(values.get("name") || "").trim(),
       err = f.querySelector(".password-error"),
-      btn = f.querySelector("#save-location-name");
+      btn = f.querySelector("#save-location"),
+      address = String(values.get("address") || "").trim(),
+      hours = [...f.querySelectorAll(".location-hours-row")].flatMap((row) => {
+        const mode = row.querySelector('[name="hour_mode"]').value;
+        if (mode === "unset") return [];
+        return [{ location_id: location?.id, weekday: Number(row.querySelector('[name="hour_mode"]').dataset.weekday), opens_at: mode === "open" ? row.querySelector('[name="opens_at"]').value : null, closes_at: mode === "open" ? row.querySelector('[name="closes_at"]').value : null, closed: mode === "closed" }];
+      });
     if (!name) {
       err.textContent = "Escribe el nombre de la sede.";
       return;
     }
     btn.disabled = true;
-    const { error } = await supabase
-      .from("locations")
-      .update({ name })
-      .eq("id", location.id);
+    let locationId = location?.id, locationError;
+    if (location) {
+      const result = await supabase.from("locations").update({ name, address: address || null }).eq("id", location.id);
+      locationError = result.error;
+    } else {
+      const result = await supabase.from("locations").insert({ name, address: address || null, restaurant_id: s.restaurantId }).select("id").single();
+      locationError = result.error;
+      locationId = result.data?.id;
+    }
+    if (!locationError && locationId) {
+      const existingDays = (location?.location_hours || []).map((item) => Number(item.weekday));
+      const selectedDays = hours.map((item) => item.weekday);
+      const removedDays = existingDays.filter((day) => !selectedDays.includes(day));
+      if (hours.length) {
+        const result = await supabase.from("location_hours").upsert(hours.map((item) => ({ ...item, location_id: locationId })), { onConflict: "location_id,weekday" });
+        locationError = result.error;
+      }
+      if (!locationError && removedDays.length) {
+        const result = await supabase.from("location_hours").delete().eq("location_id", locationId).in("weekday", removedDays);
+        locationError = result.error;
+      }
+    }
     btn.disabled = false;
-    if (error) {
+    if (locationError || !locationId) {
       err.textContent =
-        error.code === "23505"
+        locationError?.code === "23505"
           ? "Ya existe una sede con ese nombre."
-          : "No se pudo renombrar la sede.";
+          : "No se pudieron guardar todos los datos de la sede. Revisa la conexión y vuelve a intentar.";
       return;
     }
     d.close();
     const manager = document.querySelector("dialog.account-dialog");
     if (manager?.open) manager.close();
     await loadAccounts();
-    toast("Sede renombrada.");
+    toast(location ? "Sede actualizada." : "Sede creada.");
     manageLocationsDialog();
   });
   d.addEventListener("close", () => d.remove());
@@ -1427,7 +1583,7 @@ async function deleteLocation(location) {
 // Abre el diálogo para confirmar la eliminación de una cuenta.
 function deleteAccountDialog(account) {
   const self = account.auth_user_id === s.authUserId,
-    adminCount = s.accounts.filter((a) => a.role === "admin").length;
+    adminCount = s.accounts.filter((a) => a.role === "admin" && a.is_active).length;
   if (account.role === "admin" && !self) {
     toast("No puedes eliminar a otro administrador.");
     return;
@@ -1484,12 +1640,13 @@ function deleteAccountDialog(account) {
 }
 
 // Procesa el cambio de contraseña de la cuenta actual.
-function changePassword() {
+function changePassword(required = false) {
   const d = document.createElement("dialog");
   d.className = "password-dialog";
   d.innerHTML =
-    '<form method="dialog"><div class="panel-title">Cambiar contraseña</div><p class="meta">Confirma tu contraseña actual y escribe una nueva.</p><label class="dialog-label">Contraseña actual<input name="old" type="password" required autocomplete="current-password"></label><label class="dialog-label">Contraseña nueva<input name="next" type="password" required autocomplete="new-password"></label><label class="dialog-label">Repite la contraseña nueva<input name="confirm" type="password" required autocomplete="new-password"></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="save-password" value="save">Guardar</button></div></form>';
+    `<form method="dialog"><div class="panel-title">${required ? "Elige una nueva contraseña" : "Cambiar contraseña"}</div><p class="meta">${required ? "El administrador restableció tu acceso. Elige una contraseña nueva para continuar." : "Confirma tu contraseña actual y escribe una nueva."}</p>${required ? "" : '<label class="dialog-label">Contraseña actual<input name="old" type="password" required autocomplete="current-password"></label>'}<label class="dialog-label">Contraseña nueva<input name="next" type="password" minlength="6" required autocomplete="new-password"></label><label class="dialog-label">Repite la contraseña nueva<input name="confirm" type="password" minlength="6" required autocomplete="new-password"></label><p class="password-error" role="alert"></p><div class="dialog-actions">${required ? "" : '<button class="btn secondary" value="cancel" formnovalidate>Cancelar</button>'}<button class="btn primary" id="save-password" value="save">Guardar</button></div></form>`;
   document.body.appendChild(d);
+  if (required) d.addEventListener("cancel", (event) => event.preventDefault());
   d.showModal();
   d.querySelector("form").addEventListener("submit", async (e) => {
     if (!e.submitter || e.submitter.id !== "save-password") return;
@@ -1506,6 +1663,10 @@ function changePassword() {
       error.textContent = "Las contraseñas nuevas no coinciden.";
       return;
     }
+    if (String(next).length < 6) {
+      error.textContent = "La contraseña debe tener al menos 6 caracteres.";
+      return;
+    }
     if (next === old) {
       error.textContent = "Elige una contraseña diferente a la actual.";
       return;
@@ -1516,18 +1677,23 @@ function changePassword() {
     }
     button.disabled = true;
     try {
-      const email = authEmailForUsername(s.username);
-      const { error: verifyError } = await supabase.auth.signInWithPassword({
-        email,
-        password: old,
-      });
-      if (verifyError) throw new Error("La contraseña actual no es correcta.");
+      if (!required) {
+        const email = authEmailForUsername(s.username);
+        const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: old });
+        if (verifyError) throw new Error("La contraseña actual no es correcta.");
+      }
       const { error: updateError } = await supabase.auth.updateUser({
         password: next,
       });
       if (updateError) throw updateError;
+      if (required) {
+        const { error: clearError } = await supabase.rpc("clear_own_password_change_requirement");
+        if (clearError) throw clearError;
+        s.mustChangePassword = false;
+      }
       d.close();
       toast("Contraseña actualizada.");
+      if (required) { s.page = "orders"; render(); orderFlow.enter("orders"); }
     } catch (error) {
       d.querySelector(".password-error").textContent =
         error.message || "No se pudo cambiar la contraseña.";
@@ -1544,7 +1710,7 @@ function render() {
     root.innerHTML = '<main class="login"><section class="login-card" style="max-width:760px;padding:64px 36px"><img src="/assets/black-white-logo.svg" alt="Black&White POS" style="width:min(320px,80%);margin-bottom:38px"><div class="eyebrow">Acceso no disponible</div><h1 style="font-size:clamp(30px,6vw,58px);margin:14px 0">Tu restaurante ha sido dado de baja</h1><p>Contacta con el equipo de Black&amp;White para revisar el estado de tu servicio.</p></section></main>';
     return;
   }
-  if (s.page === "catalog" && s.role !== "Administrador") s.page = "orders";
+  if (s.user && !canOpenWorkspace(s.page)) s.page = defaultWorkspaceForAccount();
   applyDeviceClasses();
   let root = $("#app");
   root.innerHTML = s.user ? shell() : login();
@@ -1735,7 +1901,7 @@ function bind() {
   document
     .querySelectorAll("[data-mark-attendance]")
     .forEach(
-      (b) => (b.onclick = () => markAttendance(b.dataset.markAttendance)),
+      (b) => (b.onclick = () => markAttendance(b.dataset.markAttendance, b.dataset.attendanceEvent)),
     );
   document.querySelectorAll("[data-edit-account]").forEach(
     (b) =>
@@ -1755,10 +1921,34 @@ function bind() {
         if (a) deleteAccountDialog(a);
       }),
   );
+  document.querySelectorAll("[data-restore-account]").forEach((button) => {
+    button.onclick = async () => {
+      const account = s.accounts.find((item) => item.auth_user_id === button.dataset.restoreAccount);
+      if (account) await restoreAccount(account);
+    };
+  });
+  $("#toggle-inactive-accounts")?.addEventListener("click", () => {
+    s.showInactiveAccounts = !s.showInactiveAccounts;
+    loadAccounts();
+  });
   $("#create-account")?.addEventListener("click", createAccountDialog);
   $("#manage-sites")?.addEventListener("click", manageLocationsDialog);
   $("#change-password")?.addEventListener("click", changePassword);
   $("#edit-account-date")?.addEventListener("click", accountDateDialog);
+}
+
+async function restoreAccount(account) {
+  const confirmed = await confirmInApp("Reactivar cuenta", `¿Devolver el acceso a ${account.display_name} (@${account.username})?`, "Reactivar");
+  if (!confirmed) return;
+  const { data, error } = await supabase.functions.invoke("staff-admin", {
+    body: { action: "restore", auth_user_id: account.auth_user_id },
+  });
+  if (error || data?.error) {
+    toast(data?.error || "No se pudo reactivar la cuenta.");
+    return;
+  }
+  await loadAccounts();
+  toast("Cuenta reactivada.");
 }
 // Agrega un producto o movimiento al pedido activo.
 function add(id) {
