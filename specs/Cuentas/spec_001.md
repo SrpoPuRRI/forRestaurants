@@ -45,11 +45,12 @@ Ejemplo: Setter crea el restaurante con la necesidad **Cocina**; quedan disponib
 - Setter pide una sede principal al crear el restaurante. Todo restaurante existente sin sede recibe **Sede principal**; el administrador puede crear más sedes desde Cuentas y no puede eliminar la última.
 - Cada empleado puede tener asignado uno o más bloques reutilizables de horario.
 - Cada horario debe indicar día, entrada y salida; la salida debe ser posterior a la entrada y los bloques del mismo día no se pueden cruzar.
-- El administrador puede establecer una contraseña temporal de al menos seis caracteres; la persona debe cambiarla al siguiente inicio de sesión.
+- El administrador puede establecer una contraseña temporal de al menos seis caracteres; la persona debe cambiarla al siguiente inicio de sesión y confirmar esa contraseña temporal como contraseña actual.
+- Cambiar contraseña siempre requiere verificar primero la contraseña actual, incluso cuando se exige cambiar una contraseña temporal. La nueva contraseña se guarda mediante Supabase Auth; las tablas de la aplicación no almacenan contraseñas en texto plano ni hashes propios.
 - Las cuentas se desactivan sin borrar su historial y no se restauran desde la interfaz.
 - Las operaciones administrativas protegen al último administrador activo.
 
-El alta todavía usa una contraseña inicial definida por el administrador, no invitación por correo. No hay un historial general de acciones administrativas ni sesiones.
+El alta todavía usa una contraseña inicial definida por el administrador, no invitación por correo. No hay un historial general de acciones administrativas ni sesiones. No se crea una columna de contraseña en `accounts`: Supabase Auth administra las credenciales y permite actualizar o restablecer contraseñas sin revelar la contraseña anterior.
 
 ## Nota personal de fin de mes
 

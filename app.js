@@ -207,16 +207,44 @@ const $ = (x) => document.querySelector(x),
 let newOrderResizeFrame = 0;
 let deviceFormFactors = null;
 const TABLET_RESOLUTION_FALLBACK = [
-  [1032, 1376], [1376, 1032], [1032, 1244], [1032, 1319],
-  [1376, 946], [1376, 975],
-  [768, 1024], [1024, 768], [744, 1133], [1133, 744],
-  [810, 1080], [1080, 810], [820, 1180], [1180, 820],
-  [834, 1112], [1112, 834], [834, 1194], [1194, 834],
-  [1024, 1366], [1366, 1024], [800, 1280], [1280, 800],
-  [753, 1205], [1205, 753], [800, 1340], [1340, 800],
-  [962, 601], [601, 962], [600, 960], [960, 600],
-  [600, 1024], [1024, 600], [800, 1232], [1232, 800],
-  [853, 1280], [1280, 853], [800, 1216], [1216, 800],
+  [1032, 1376],
+  [1376, 1032],
+  [1032, 1244],
+  [1032, 1319],
+  [1376, 946],
+  [1376, 975],
+  [768, 1024],
+  [1024, 768],
+  [744, 1133],
+  [1133, 744],
+  [810, 1080],
+  [1080, 810],
+  [820, 1180],
+  [1180, 820],
+  [834, 1112],
+  [1112, 834],
+  [834, 1194],
+  [1194, 834],
+  [1024, 1366],
+  [1366, 1024],
+  [800, 1280],
+  [1280, 800],
+  [753, 1205],
+  [1205, 753],
+  [800, 1340],
+  [1340, 800],
+  [962, 601],
+  [601, 962],
+  [600, 960],
+  [960, 600],
+  [600, 1024],
+  [1024, 600],
+  [800, 1232],
+  [1232, 800],
+  [853, 1280],
+  [1280, 853],
+  [800, 1216],
+  [1216, 800],
 ];
 window.addEventListener("resize", () => {
   cancelAnimationFrame(newOrderResizeFrame);
@@ -294,7 +322,9 @@ function limaDateOf(value) {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(new Date(value));
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return `${values.year}-${values.month}-${values.day}`;
 }
 
@@ -390,13 +420,17 @@ async function loadAuthenticatedProfile(user) {
   s.restaurantSuspended = false;
   const { data: profile, error } = await supabase
     .from("accounts")
-    .select("auth_user_id,restaurant_id,role_ids,assistance_id,username,display_name,location_id,is_active,must_change_password")
+    .select(
+      "auth_user_id,restaurant_id,role_ids,assistance_id,username,display_name,location_id,is_active,must_change_password",
+    )
     .eq("auth_user_id", user.id)
     .single();
   if (error || !profile)
     throw new Error("La cuenta no está vinculada a un restaurante activo.");
   if (!profile.is_active)
-    throw new Error("Esta cuenta está desactivada. Contacta al administrador del restaurante.");
+    throw new Error(
+      "Esta cuenta está desactivada. Contacta al administrador del restaurante.",
+    );
 
   const { data: restaurant, error: restaurantError } = await supabase
     .from("restaurants")
@@ -440,7 +474,11 @@ async function loadAuthenticatedProfile(user) {
   s.username = profile.username;
   s.user = profile.display_name;
   s.role = isAdmin ? "Administrador" : "Empleado";
-  s.roleKey = isAdmin ? "admin" : roleKeys.includes("employee") ? "employee" : (roleKeys[0] || "employee");
+  s.roleKey = isAdmin
+    ? "admin"
+    : roleKeys.includes("employee")
+      ? "employee"
+      : roleKeys[0] || "employee";
   s.roleIds = roleIds;
   s.roleKeys = roleKeys;
   s.roleId = roleIds[0] || null;
@@ -556,16 +594,33 @@ function hasWorkspaceAccess(workspace) {
 }
 
 function defaultWorkspaceForAccount() {
-  for (const workspace of ["orders", "crm", "delivery", "kitchen", "bar", "salon", "account"]) {
-    if (workspace === "account" || hasWorkspaceAccess(workspace)) return workspace;
+  for (const workspace of [
+    "orders",
+    "crm",
+    "delivery",
+    "kitchen",
+    "bar",
+    "salon",
+    "account",
+  ]) {
+    if (workspace === "account" || hasWorkspaceAccess(workspace))
+      return workspace;
   }
   return "account";
 }
 
 function canOpenWorkspace(page) {
-  if (page === "catalog" || page === "settings") return s.role === "Administrador";
-  const requiredNeed = { crm: "crm", delivery: "delivery", kitchen: "kitchen", bar: "kitchen", salon: "salon" }[page];
-  if (requiredNeed && !(s.restaurantNeeds || []).includes(requiredNeed)) return false;
+  if (page === "catalog" || page === "settings")
+    return s.role === "Administrador";
+  const requiredNeed = {
+    crm: "crm",
+    delivery: "delivery",
+    kitchen: "kitchen",
+    bar: "kitchen",
+    salon: "salon",
+  }[page];
+  if (requiredNeed && !(s.restaurantNeeds || []).includes(requiredNeed))
+    return false;
   return ["orders", "crm", "delivery", "kitchen", "bar", "salon"].includes(page)
     ? hasWorkspaceAccess(page)
     : true;
@@ -575,17 +630,25 @@ function canOpenWorkspace(page) {
 function nav(m) {
   const needs = s.restaurantNeeds || [];
   const list = [["account", "", "Cuenta"]];
-  if (needs.includes("crm") && hasWorkspaceAccess("crm")) list.push(["crm", "◎", "CRM"]);
+  if (needs.includes("crm") && hasWorkspaceAccess("crm"))
+    list.push(["crm", "◎", "CRM"]);
   list.push(["stats", "", "Estadísticas"]);
-  if (needs.includes("delivery") && hasWorkspaceAccess("delivery")) list.push(["delivery", "↗", "Delivery"]);
-  if (hasWorkspaceAccess("orders")) list.push(["orders", "＋", m ? "Pedidos" : "Flujo de pedidos"]);
+  if (needs.includes("delivery") && hasWorkspaceAccess("delivery"))
+    list.push(["delivery", "↗", "Delivery"]);
+  if (hasWorkspaceAccess("orders"))
+    list.push(["orders", "＋", m ? "Pedidos" : "Flujo de pedidos"]);
   if (needs.includes("kitchen") && hasWorkspaceAccess("kitchen")) {
     list.push(["kitchen", "▦", "Cocina"]);
   }
-  if (needs.includes("kitchen") && s.restaurantSettings?.kitchen_has_separate_bar && hasWorkspaceAccess("bar")) {
+  if (
+    needs.includes("kitchen") &&
+    s.restaurantSettings?.kitchen_has_separate_bar &&
+    hasWorkspaceAccess("bar")
+  ) {
     list.push(["bar", "◉", "Barra"]);
   }
-  if (needs.includes("salon") && hasWorkspaceAccess("salon")) list.push(["salon", "⌂", "Salón"]);
+  if (needs.includes("salon") && hasWorkspaceAccess("salon"))
+    list.push(["salon", "⌂", "Salón"]);
   if (s.role === "Administrador") {
     list.push(["catalog", "▤", "Catálogo"]);
     list.push(["settings", "⚙", "Configuración"]);
@@ -697,9 +760,9 @@ function page() {
         ? statistics.render()
         : s.page === "settings" && s.role === "Administrador"
           ? restaurantSettings.render()
-        : ["crm", "kitchen", "bar", "salon", "delivery"].includes(s.page)
-          ? workspaces.render(s.page)
-        : account();
+          : ["crm", "kitchen", "bar", "salon", "delivery"].includes(s.page)
+            ? workspaces.render(s.page)
+            : account();
 }
 // Genera la vista del flujo de pedidos y sus productos disponibles.
 function orders() {
@@ -825,16 +888,57 @@ async function loadAccounts() {
   const today = limaToday();
   if (s.role === "Administrador" && !s.accountDate) s.accountDate = today;
   render();
-  const [accountsResult, locationsResult, schedulesResult, rolesResult, notesResult, attendanceResult] = await Promise.all([
-    supabase.from("accounts").select("auth_user_id,restaurant_id,username,display_name,role_ids,schedule_ids,assistance_id,location_id,is_active,locations(name)").eq("restaurant_id", s.restaurantId).order("display_name"),
-    supabase.from("locations").select("id,name,address,location_hours(weekday,opens_at,closes_at,closed)").eq("is_active", true).order("name"),
-    supabase.from("account_schedules").select("id,restaurant_id,weekday,starts_at,ends_at").eq("restaurant_id", s.restaurantId),
-    supabase.from("roles").select("id,key,name,permissions,sort_order").order("sort_order"),
-    supabase.from("employee_notes").select("auth_user_id,note,updated_at").eq("restaurant_id", s.restaurantId),
-    supabase.from("attendance_records").select("id,assistance_id,location_id,event_type,occurred_at,recorded_at,method,correction_reason").eq("restaurant_id", s.restaurantId).order("occurred_at", { ascending: false }),
+  const [
+    accountsResult,
+    locationsResult,
+    schedulesResult,
+    rolesResult,
+    notesResult,
+    attendanceResult,
+  ] = await Promise.all([
+    supabase
+      .from("accounts")
+      .select(
+        "auth_user_id,restaurant_id,username,display_name,role_ids,schedule_ids,assistance_id,location_id,is_active,locations(name)",
+      )
+      .eq("restaurant_id", s.restaurantId)
+      .order("display_name"),
+    supabase
+      .from("locations")
+      .select(
+        "id,name,address,location_hours(weekday,opens_at,closes_at,closed)",
+      )
+      .eq("is_active", true)
+      .order("name"),
+    supabase
+      .from("account_schedules")
+      .select("id,restaurant_id,weekday,starts_at,ends_at")
+      .eq("restaurant_id", s.restaurantId),
+    supabase
+      .from("roles")
+      .select("id,key,name,permissions,sort_order")
+      .order("sort_order"),
+    supabase
+      .from("employee_notes")
+      .select("auth_user_id,note,updated_at")
+      .eq("restaurant_id", s.restaurantId),
+    supabase
+      .from("attendance_records")
+      .select(
+        "id,assistance_id,location_id,event_type,occurred_at,recorded_at,method,correction_reason",
+      )
+      .eq("restaurant_id", s.restaurantId)
+      .order("occurred_at", { ascending: false }),
   ]);
   s.accountsLoading = false;
-  const loadError = [accountsResult, locationsResult, schedulesResult, rolesResult, notesResult, attendanceResult].find((result) => result.error)?.error;
+  const loadError = [
+    accountsResult,
+    locationsResult,
+    schedulesResult,
+    rolesResult,
+    notesResult,
+    attendanceResult,
+  ].find((result) => result.error)?.error;
   if (loadError) {
     s.accountsError =
       "No se pudieron cargar las cuentas y asistencias. Revisa que la migración de Cuentas esté aplicada y que la sesión tenga permisos.";
@@ -843,8 +947,12 @@ async function loadAccounts() {
     render();
     return;
   }
-  const schedulesById = new Map((schedulesResult.data || []).map((item) => [item.id, item]));
-  const roleById = new Map((rolesResult.data || []).map((item) => [item.id, item]));
+  const schedulesById = new Map(
+    (schedulesResult.data || []).map((item) => [item.id, item]),
+  );
+  const roleById = new Map(
+    (rolesResult.data || []).map((item) => [item.id, item]),
+  );
   const eventsByObject = new Map();
   for (const event of attendanceResult.data || []) {
     const list = eventsByObject.get(event.assistance_id) || [];
@@ -853,39 +961,67 @@ async function loadAccounts() {
   }
   const allowedRoles = new Set(s.availableRoleIds || []);
   s.locations = locationsResult.data || [];
-  s.availableRoles = (rolesResult.data || []).filter((role) => allowedRoles.has(role.id));
-  const accountRows = (accountsResult.data || []).filter((item) => item.is_active);
+  s.availableRoles = (rolesResult.data || []).filter((role) =>
+    allowedRoles.has(role.id),
+  );
+  const accountRows = (accountsResult.data || []).filter(
+    (item) => item.is_active,
+  );
   s.accounts = accountRows.map((a) => {
     const roleIds = Array.isArray(a.role_ids) ? a.role_ids : [];
     const accountRoles = roleIds.map((id) => roleById.get(id)).filter(Boolean);
-    const events = (eventsByObject.get(a.assistance_id) || []).sort((x, y) =>
-      new Date(y.occurred_at).getTime() - new Date(x.occurred_at).getTime()
+    const events = (eventsByObject.get(a.assistance_id) || []).sort(
+      (x, y) =>
+        new Date(y.occurred_at).getTime() - new Date(x.occurred_at).getTime(),
     );
-    const dateEvents = events.filter((event) => limaDateOf(event.occurred_at) === (s.accountDate || today));
+    const dateEvents = events.filter(
+      (event) => limaDateOf(event.occurred_at) === (s.accountDate || today),
+    );
     const latest = dateEvents[0];
-    const presentEvent = dateEvents.find((event) => event.event_type === "check_in");
+    const presentEvent = dateEvents.find(
+      (event) => event.event_type === "check_in",
+    );
     return {
       auth_user_id: a.auth_user_id,
       username: a.username,
       display_name: a.display_name,
       role_ids: roleIds,
       role_keys: accountRoles.map((role) => role.key),
-      role: accountRoles.some((role) => role.key === "admin") ? "admin" : accountRoles.some((role) => role.key === "employee") ? "employee" : (accountRoles[0]?.key || "employee"),
-      role_name: accountRoles.map((role) => role.name).join(" · ") || "Empleado",
+      role: accountRoles.some((role) => role.key === "admin")
+        ? "admin"
+        : accountRoles.some((role) => role.key === "employee")
+          ? "employee"
+          : accountRoles[0]?.key || "employee",
+      role_name:
+        accountRoles.map((role) => role.name).join(" · ") || "Empleado",
       location_id: a.location_id,
       site: a.locations?.name || "Todas las sedes",
       is_active: a.is_active,
       assistance_id: a.assistance_id,
-      attendance: Boolean(presentEvent && (!latest || latest.event_type === "check_in")),
+      attendance: Boolean(
+        presentEvent && (!latest || latest.event_type === "check_in"),
+      ),
       attendance_ever: Boolean(presentEvent),
       attendance_status: latest?.event_type || null,
-      attendance_location: (s.locations || []).find((location) => location.id === latest?.location_id)?.name || "",
-      schedules: (Array.isArray(a.schedule_ids) ? a.schedule_ids : []).map((id) => schedulesById.get(id)).filter(Boolean),
+      attendance_location:
+        (s.locations || []).find(
+          (location) => location.id === latest?.location_id,
+        )?.name || "",
+      schedules: (Array.isArray(a.schedule_ids) ? a.schedule_ids : [])
+        .map((id) => schedulesById.get(id))
+        .filter(Boolean),
     };
   });
   s.employeeNotes = notesResult.data || [];
   s.attendanceRecords = attendanceResult.data || [];
-  s.accountDataDates = [...new Set([today, ...(attendanceResult.data || []).map((event) => limaDateOf(event.occurred_at))])].sort();
+  s.accountDataDates = [
+    ...new Set([
+      today,
+      ...(attendanceResult.data || []).map((event) =>
+        limaDateOf(event.occurred_at),
+      ),
+    ]),
+  ].sort();
   render();
 }
 // Genera la vista de administración de cuentas y asistencia.
@@ -904,32 +1040,41 @@ function account() {
   const rows = list
     .map((a) => {
       const self = a.auth_user_id === s.authUserId,
-        role = a.role_name || (a.role === "admin" ? "Administrador" : "Empleado"),
+        role =
+          a.role_name || (a.role === "admin" ? "Administrador" : "Empleado"),
         sameLocation = Boolean(s.locationId && a.location_id === s.locationId),
         attendanceEvent = a.attendance ? "check_out" : "check_in",
-        canMarkAttendance = a.is_active && !isHistorical && (
-          s.role === "Administrador" ||
-          (self && (attendanceEvent === "check_in"
-            ? s.restaurantSettings?.attendance_check_in_self
-            : s.restaurantSettings?.attendance_check_out_self)) ||
-          (!self && sameLocation && (attendanceEvent === "check_in"
-            ? s.restaurantSettings?.attendance_check_in_peer_at_location
-            : s.restaurantSettings?.attendance_check_out_peer_at_location))
-        ),
+        canMarkAttendance =
+          a.is_active &&
+          !isHistorical &&
+          (s.role === "Administrador" ||
+            (self &&
+              (attendanceEvent === "check_in"
+                ? s.restaurantSettings?.attendance_check_in_self
+                : s.restaurantSettings?.attendance_check_out_self)) ||
+            (!self &&
+              sameLocation &&
+              (attendanceEvent === "check_in"
+                ? s.restaurantSettings?.attendance_check_in_peer_at_location
+                : s.restaurantSettings
+                    ?.attendance_check_out_peer_at_location))),
         canDelete =
           !isHistorical &&
           a.is_active &&
           s.role === "Administrador" &&
           (a.role !== "admin" || self),
         deleteDisabled = self && adminCount < 2,
-        attendanceAction =
-          canMarkAttendance
-            ? '<button class="rowaction" data-mark-attendance="' +
-              a.auth_user_id +
-              '" data-attendance-event="' + attendanceEvent + '">' +
-              (attendanceEvent === "check_in" ? "Marcar entrada" : "Marcar salida") +
-              "</button>"
-            : "",
+        attendanceAction = canMarkAttendance
+          ? '<button class="rowaction" data-mark-attendance="' +
+            a.auth_user_id +
+            '" data-attendance-event="' +
+            attendanceEvent +
+            '">' +
+            (attendanceEvent === "check_in"
+              ? "Marcar entrada"
+              : "Marcar salida") +
+            "</button>"
+          : "",
         editAction =
           !isHistorical && s.role === "Administrador" && a.is_active
             ? '<button class="rowaction" data-edit-account="' +
@@ -953,11 +1098,16 @@ function account() {
           .slice(0, 2)
           .toUpperCase(),
         attendanceText = isHistorical
-          ? (a.attendance_ever ? "Vino ese día" : "Sin marca")
+          ? a.attendance_ever
+            ? "Vino ese día"
+            : "Sin marca"
           : a.attendance
             ? "Presente"
             : a.attendance_status === "check_out"
-              ? "Salió" + (a.attendance_location ? " · " + esc(a.attendance_location) : "")
+              ? "Salió" +
+                (a.attendance_location
+                  ? " · " + esc(a.attendance_location)
+                  : "")
               : "Pendiente";
       return (
         '<tr><td><div class="personcell"><span class="mini">' +
@@ -969,13 +1119,15 @@ function account() {
         '</strong><br><span class="meta">@' +
         esc(a.username) +
         '</span></span></div></td><td><span class="roletag ' +
-            (a.role !== "admin" ? "employeetag" : "") +
+        (a.role !== "admin" ? "employeetag" : "") +
         '">' +
         role +
         "</span></td><td>" +
         esc(a.site) +
         '</td><td><span class="badge ' +
-        ((isHistorical ? a.attendance_ever : a.attendance) ? "present-badge" : "") +
+        ((isHistorical ? a.attendance_ever : a.attendance)
+          ? "present-badge"
+          : "") +
         '">' +
         attendanceText +
         '</span></td><td><div class="account-row-actions">' +
@@ -1024,7 +1176,8 @@ function account() {
     '</div></article><article class="metric"><div class="metric-label">' +
     presentLabel +
     '</div><div class="metric-value">' +
-    list.filter((a) => isHistorical ? a.attendance_ever : a.attendance).length +
+    list.filter((a) => (isHistorical ? a.attendance_ever : a.attendance))
+      .length +
     "/" +
     list.length +
     '</div></article></div><section class="panel"><div class="panel-head"><div><div class="panel-title">' +
@@ -1035,7 +1188,23 @@ function account() {
       : "") +
     "</div></div>" +
     body +
-    `</section>${emp ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Mi nota del mes</div><div class="meta">Anota información útil para el cierre de mes.</div></div><button class="btn secondary" id="save-employee-note">Guardar nota</button></div><textarea id="employee-note" maxlength="5000" placeholder="Escribe una nota para recordar…">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.note || "")}</textarea><div class="meta">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.updated_at ? `Última edición: ${formatDateLong(limaDateOf((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId).updated_at))}` : "Aún no hay una nota guardada.")}</div></section>` : s.role === "Administrador" ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Notas del equipo</div><div class="meta">Notas personales que cada empleado mantiene para el cierre de mes.</div></div></div><div class="notes-team-list">${list.filter((a) => a.role !== "admin").map((a) => { const note = (s.employeeNotes || []).find((x) => x.auth_user_id === a.auth_user_id)?.note; return `<div class="notes-team-row"><strong>${esc(a.display_name)}</strong><span class="roletag employeetag">${esc(a.role_name)}</span><p>${note ? esc(note) : '<span class="meta">Sin nota registrada</span>'}</p></div>`; }).join("") || '<div class="empty">No hay empleados.</div>'}</div></section>` : ""}`
+    `</section>${
+      emp
+        ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Mi nota del mes</div><div class="meta">Anota información útil para el cierre de mes.</div></div><button class="btn secondary" id="save-employee-note">Guardar nota</button></div><textarea id="employee-note" maxlength="5000" placeholder="Escribe una nota para recordar…">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.note || "")}</textarea><div class="meta">${esc((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId)?.updated_at ? `Última edición: ${formatDateLong(limaDateOf((s.employeeNotes || []).find((x) => x.auth_user_id === s.authUserId).updated_at))}` : "Aún no hay una nota guardada.")}</div></section>`
+        : s.role === "Administrador"
+          ? `<section class="panel personal-note-panel"><div class="panel-head"><div><div class="panel-title">Notas del equipo</div><div class="meta">Notas personales que cada empleado mantiene para el cierre de mes.</div></div></div><div class="notes-team-list">${
+              list
+                .filter((a) => a.role !== "admin")
+                .map((a) => {
+                  const note = (s.employeeNotes || []).find(
+                    (x) => x.auth_user_id === a.auth_user_id,
+                  )?.note;
+                  return `<div class="notes-team-row"><strong>${esc(a.display_name)}</strong><span class="roletag employeetag">${esc(a.role_name)}</span><p>${note ? esc(note) : '<span class="meta">Sin nota registrada</span>'}</p></div>`;
+                })
+                .join("") || '<div class="empty">No hay empleados.</div>'
+            }</div></section>`
+          : ""
+    }`
   );
 }
 // Abre el diálogo para seleccionar la fecha de asistencia.
@@ -1131,10 +1300,24 @@ function accountDateDialog() {
 }
 function accountRoleSelectorMarkup(selectedIds = []) {
   const selected = new Set(selectedIds),
-    selectedRoles = (s.availableRoles || []).filter((role) => selected.has(role.id)),
-    mode = selectedRoles.some((role) => role.key === "admin") ? "admin" : selectedRoles.some((role) => role.key === "employee") ? "employee" : "custom",
+    selectedRoles = (s.availableRoles || []).filter((role) =>
+      selected.has(role.id),
+    ),
+    mode = selectedRoles.some((role) => role.key === "admin")
+      ? "admin"
+      : selectedRoles.some((role) => role.key === "employee")
+        ? "employee"
+        : "custom",
     role = (key) => (s.availableRoles || []).find((item) => item.key === key);
-  return `<label class="dialog-label account-role-mode">Tipo de cuenta<select name="role_mode"><option value="admin" ${mode === "admin" ? "selected" : ""}>Administrador</option><option value="employee" ${mode === "employee" ? "selected" : ""}>Empleado</option><option value="custom" ${mode === "custom" ? "selected" : ""}>Ninguna de las anteriores</option></select></label><div class="account-custom-roles" ${mode === "custom" ? "" : "hidden"}><p class="meta">Selecciona uno o más permisos para combinar sus funciones.</p><div class="account-role-options">${(s.availableRoles || []).filter((item) => !["admin", "employee"].includes(item.key)).map((item) => `<label class="account-role-option"><input type="checkbox" name="custom_role_ids" value="${esc(item.id)}" ${selected.has(item.id) ? "checked" : ""}><span>${esc(item.name)}</span></label>`).join("")}</div></div>`;
+  return `<label class="dialog-label account-role-mode">Tipo de cuenta<select name="role_mode"><option value="admin" ${mode === "admin" ? "selected" : ""}>Administrador</option><option value="employee" ${mode === "employee" ? "selected" : ""}>Empleado</option><option value="custom" ${mode === "custom" ? "selected" : ""}>Ninguna de las anteriores</option></select></label><div class="account-custom-roles" ${mode === "custom" ? "" : "hidden"}><p class="meta">Selecciona uno o más permisos para combinar sus funciones.</p><div class="account-role-options">${(
+    s.availableRoles || []
+  )
+    .filter((item) => !["admin", "employee"].includes(item.key))
+    .map(
+      (item) =>
+        `<label class="account-role-option"><input type="checkbox" name="custom_role_ids" value="${esc(item.id)}" ${selected.has(item.id) ? "checked" : ""}><span>${esc(item.name)}</span></label>`,
+    )
+    .join("")}</div></div>`;
 }
 
 function selectedAccountRoleIds(form) {
@@ -1143,7 +1326,9 @@ function selectedAccountRoleIds(form) {
     const id = (s.availableRoles || []).find((role) => role.key === mode)?.id;
     return id ? [id] : [];
   }
-  return [...form.querySelectorAll('[name="custom_role_ids"]:checked')].map((input) => input.value);
+  return [...form.querySelectorAll('[name="custom_role_ids"]:checked')].map(
+    (input) => input.value,
+  );
 }
 
 function bindAccountRoleSelector(form, onChange = () => {}) {
@@ -1154,28 +1339,48 @@ function bindAccountRoleSelector(form, onChange = () => {}) {
     onChange();
   };
   select.addEventListener("change", update);
-  form.querySelectorAll('[name="custom_role_ids"]').forEach((input) => input.addEventListener("change", onChange));
+  form
+    .querySelectorAll('[name="custom_role_ids"]')
+    .forEach((input) => input.addEventListener("change", onChange));
   update();
 }
 
 function accountScheduleRowMarkup(schedule = {}) {
-  const weekdays = [[1,"Lunes"],[2,"Martes"],[3,"Miércoles"],[4,"Jueves"],[5,"Viernes"],[6,"Sábado"],[0,"Domingo"]];
-  return `<div class="schedule-row"><select name="workday" aria-label="Día">${weekdays.map(([value,label]) => `<option value="${value}" ${Number(schedule.weekday) === value ? "selected" : ""}>${label}</option>`).join("")}</select><label class="schedule-time"><span>Entrada</span><input type="time" name="workstart" value="${esc(String(schedule.starts_at || "").slice(0,5))}" required></label><label class="schedule-time"><span>Salida</span><input type="time" name="workend" value="${esc(String(schedule.ends_at || "").slice(0,5))}" required></label><button type="button" class="schedule-remove" data-remove-schedule aria-label="Quitar horario">×</button></div>`;
+  const weekdays = [
+    [1, "Lunes"],
+    [2, "Martes"],
+    [3, "Miércoles"],
+    [4, "Jueves"],
+    [5, "Viernes"],
+    [6, "Sábado"],
+    [0, "Domingo"],
+  ];
+  return `<div class="schedule-row"><select name="workday" aria-label="Día">${weekdays.map(([value, label]) => `<option value="${value}" ${Number(schedule.weekday) === value ? "selected" : ""}>${label}</option>`).join("")}</select><label class="schedule-time"><span>Entrada</span><input type="time" name="workstart" value="${esc(String(schedule.starts_at || "").slice(0, 5))}" required></label><label class="schedule-time"><span>Salida</span><input type="time" name="workend" value="${esc(String(schedule.ends_at || "").slice(0, 5))}" required></label><button type="button" class="schedule-remove" data-remove-schedule aria-label="Quitar horario">×</button></div>`;
 }
 
 function bindAccountScheduleRows(form) {
-  const rows = form.querySelector("#work-schedule-rows"), add = form.querySelector("#add-work-schedule");
+  const rows = form.querySelector("#work-schedule-rows"),
+    add = form.querySelector("#add-work-schedule");
   const syncRemoveButtons = () => {
-    const items = rows.querySelectorAll(".schedule-row"), onlyOne = items.length <= 1;
+    const items = rows.querySelectorAll(".schedule-row"),
+      onlyOne = items.length <= 1;
     items.forEach((item) => {
       const button = item.querySelector("[data-remove-schedule]");
       button.disabled = onlyOne;
-      button.title = onlyOne ? "Debe quedar al menos un horario" : "Quitar horario";
+      button.title = onlyOne
+        ? "Debe quedar al menos un horario"
+        : "Quitar horario";
     });
   };
-  add?.addEventListener("click", () => { rows.insertAdjacentHTML("beforeend", accountScheduleRowMarkup()); syncRemoveButtons(); });
+  add?.addEventListener("click", () => {
+    rows.insertAdjacentHTML("beforeend", accountScheduleRowMarkup());
+    syncRemoveButtons();
+  });
   rows?.addEventListener("click", (event) => {
-    if (event.target.closest("[data-remove-schedule]") && rows.querySelectorAll(".schedule-row").length > 1) {
+    if (
+      event.target.closest("[data-remove-schedule]") &&
+      rows.querySelectorAll(".schedule-row").length > 1
+    ) {
       event.target.closest(".schedule-row").remove();
       syncRemoveButtons();
     }
@@ -1190,8 +1395,20 @@ function collectAccountSchedules(form) {
     starts_at: row.querySelector('[name="workstart"]').value,
     ends_at: row.querySelector('[name="workend"]').value,
   }));
-  if (!schedules.length || schedules.some((item) => !item.starts_at || !item.ends_at)) return { schedules, error: "Completa el día, la hora de entrada y la hora de salida de cada horario." };
-  if (schedules.some((item) => item.starts_at >= item.ends_at)) return { schedules, error: "La entrada debe ser anterior a la salida en cada horario." };
+  if (
+    !schedules.length ||
+    schedules.some((item) => !item.starts_at || !item.ends_at)
+  )
+    return {
+      schedules,
+      error:
+        "Completa el día, la hora de entrada y la hora de salida de cada horario.",
+    };
+  if (schedules.some((item) => item.starts_at >= item.ends_at))
+    return {
+      schedules,
+      error: "La entrada debe ser anterior a la salida en cada horario.",
+    };
   const byDay = new Map();
   for (const item of schedules) {
     const daySchedules = byDay.get(item.weekday) || [];
@@ -1201,7 +1418,12 @@ function collectAccountSchedules(form) {
   for (const daySchedules of byDay.values()) {
     daySchedules.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
     for (let index = 1; index < daySchedules.length; index++) {
-      if (daySchedules[index].starts_at < daySchedules[index - 1].ends_at) return { schedules, error: "Los horarios del mismo día se cruzan. Ajusta las horas para que no se superpongan." };
+      if (daySchedules[index].starts_at < daySchedules[index - 1].ends_at)
+        return {
+          schedules,
+          error:
+            "Los horarios del mismo día se cruzan. Ajusta las horas para que no se superpongan.",
+        };
     }
   }
   return { schedules, error: "" };
@@ -1232,7 +1454,9 @@ function editAccountDialog(account) {
   bindAccountRoleSelector(f, updateFields);
   bindAccountScheduleRows(f);
   updateFields();
-  f.querySelector("#reset-account-password").addEventListener("click", () => resetAccountPasswordDialog(account));
+  f.querySelector("#reset-account-password").addEventListener("click", () =>
+    resetAccountPasswordDialog(account),
+  );
   d.showModal();
   f.addEventListener("submit", async (e) => {
     if (e.submitter?.id !== "save-account") return;
@@ -1247,9 +1471,18 @@ function editAccountDialog(account) {
       err.textContent = "Escribe el nombre de la cuenta.";
       return;
     }
-    if (!roleIds.length) { err.textContent = "Selecciona al menos un rol de la lista."; return; }
-    if (!adminSelected && !site.value) { err.textContent = "Selecciona una sede para la cuenta."; return; }
-    if (!adminSelected && scheduleResult.error) { err.textContent = scheduleResult.error; return; }
+    if (!roleIds.length) {
+      err.textContent = "Selecciona al menos un rol de la lista.";
+      return;
+    }
+    if (!adminSelected && !site.value) {
+      err.textContent = "Selecciona una sede para la cuenta.";
+      return;
+    }
+    if (!adminSelected && scheduleResult.error) {
+      err.textContent = scheduleResult.error;
+      return;
+    }
     save.disabled = true;
     try {
       const { data, error } = await supabase.functions.invoke("staff-admin", {
@@ -1286,21 +1519,44 @@ function resetAccountPasswordDialog(account) {
   form.addEventListener("submit", async (event) => {
     if (event.submitter?.id !== "confirm-reset-password") return;
     event.preventDefault();
-    const values = new FormData(form), password = String(values.get("password")), confirm = String(values.get("confirm"));
-    const error = form.querySelector(".password-error"), button = form.querySelector("#confirm-reset-password");
+    const values = new FormData(form),
+      password = String(values.get("password")),
+      confirm = String(values.get("confirm"));
+    const error = form.querySelector(".password-error"),
+      button = form.querySelector("#confirm-reset-password");
     error.textContent = "";
-    if (password !== confirm) { error.textContent = "Las contraseñas no coinciden."; return; }
+    if (password !== confirm) {
+      error.textContent = "Las contraseñas no coinciden.";
+      return;
+    }
     button.disabled = true;
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke("staff-admin", {
-        body: { action: "reset_password", auth_user_id: account.auth_user_id, password },
-      });
-      if (invokeError || data?.error) throw new Error(data?.error || invokeError?.message || "No se pudo restablecer la contraseña.");
+      const { data, error: invokeError } = await supabase.functions.invoke(
+        "staff-admin",
+        {
+          body: {
+            action: "reset_password",
+            auth_user_id: account.auth_user_id,
+            password,
+          },
+        },
+      );
+      if (invokeError || data?.error)
+        throw new Error(
+          data?.error ||
+            invokeError?.message ||
+            "No se pudo restablecer la contraseña.",
+        );
       dialog.close();
-      toast("Contraseña temporal guardada. Debe cambiarla al volver a ingresar.");
+      toast(
+        "Contraseña temporal guardada. Debe cambiarla al volver a ingresar.",
+      );
     } catch (requestError) {
-      error.textContent = requestError.message || "No se pudo restablecer la contraseña.";
-    } finally { if (button.isConnected) button.disabled = false; }
+      error.textContent =
+        requestError.message || "No se pudo restablecer la contraseña.";
+    } finally {
+      if (button.isConnected) button.disabled = false;
+    }
   });
   dialog.addEventListener("close", () => dialog.remove());
 }
@@ -1323,7 +1579,10 @@ function markAttendanceDialog(account, eventType) {
       locationId = fields.get("location_id"),
       localDateTime = String(fields.get("event_at") || ""),
       reason = String(fields.get("correction_reason") || "").trim();
-    if (localDateTime && !reason) { err.textContent = "Escribe el motivo de la corrección."; return; }
+    if (localDateTime && !reason) {
+      err.textContent = "Escribe el motivo de la corrección.";
+      return;
+    }
     btn.disabled = true;
     const { error } = await supabase.rpc("mark_attendance", {
       p_staff_profile_id: account.auth_user_id,
@@ -1369,7 +1628,9 @@ async function markAttendance(staffId, eventType = "check_in") {
     return;
   }
   await loadAccounts();
-  toast(eventType === "check_in" ? "Entrada registrada." : "Salida registrada.");
+  toast(
+    eventType === "check_in" ? "Entrada registrada." : "Salida registrada.",
+  );
 }
 // Abre el formulario para crear una nueva cuenta de personal.
 function createAccountDialog() {
@@ -1382,28 +1643,51 @@ function createAccountDialog() {
     locationSelect = form.querySelector("#new-account-location"),
     scheduleWrap = form.querySelector("#new-account-schedules-wrap"),
     submit = form.querySelector("#submit-new-account");
-  const usernameInput = form.querySelector("#new-account-username"), usernameHelp = form.querySelector("#username-availability");
+  const usernameInput = form.querySelector("#new-account-username"),
+    usernameHelp = form.querySelector("#username-availability");
   let usernameCheckVersion = 0;
   const checkUsernameAvailability = async () => {
-    const version = ++usernameCheckVersion, username = normalizeUsername(usernameInput.value);
+    const version = ++usernameCheckVersion,
+      username = normalizeUsername(usernameInput.value);
     usernameHelp.textContent = "";
     usernameHelp.className = "username-availability";
     if (!/^[a-z0-9._-]{1,49}$/.test(username)) return false;
-    const { data, error } = await supabase.from("accounts").select("auth_user_id").eq("username", username).eq("is_active", true).maybeSingle();
+    const { data, error } = await supabase
+      .from("accounts")
+      .select("auth_user_id")
+      .eq("username", username)
+      .eq("is_active", true)
+      .maybeSingle();
     if (version !== usernameCheckVersion) return Boolean(data);
-    if (error) { usernameHelp.textContent = "No se pudo comprobar el usuario. Vuelve a intentarlo."; usernameHelp.classList.add("error"); return false; }
-    if (data) { usernameHelp.textContent = "Este nombre ya está tomado."; usernameHelp.classList.add("error"); return true; }
-    usernameHelp.textContent = "Nombre disponible."; usernameHelp.classList.add("available");
+    if (error) {
+      usernameHelp.textContent =
+        "No se pudo comprobar el usuario. Vuelve a intentarlo.";
+      usernameHelp.classList.add("error");
+      return false;
+    }
+    if (data) {
+      usernameHelp.textContent = "Este nombre ya está tomado.";
+      usernameHelp.classList.add("error");
+      return true;
+    }
+    usernameHelp.textContent = "Nombre disponible.";
+    usernameHelp.classList.add("available");
     return false;
   };
-  usernameInput.addEventListener("input", () => { usernameCheckVersion++; usernameHelp.textContent = ""; usernameHelp.className = "username-availability"; });
+  usernameInput.addEventListener("input", () => {
+    usernameCheckVersion++;
+    usernameHelp.textContent = "";
+    usernameHelp.className = "username-availability";
+  });
   usernameInput.addEventListener("blur", checkUsernameAvailability);
   const syncRole = () => {
-    const adminSelected = isAdminRoleSelection(form), roleIds = selectedAccountRoleIds(form);
+    const adminSelected = isAdminRoleSelection(form),
+      roleIds = selectedAccountRoleIds(form);
     locationWrap.hidden = adminSelected;
     scheduleWrap.hidden = adminSelected;
     locationSelect.required = !adminSelected;
-    submit.disabled = !roleIds.length || (!adminSelected && !s.locations.length);
+    submit.disabled =
+      !roleIds.length || (!adminSelected && !s.locations.length);
   };
   bindAccountRoleSelector(form, syncRole);
   bindAccountScheduleRows(form);
@@ -1424,15 +1708,27 @@ function createAccountDialog() {
         "El usuario debe tener hasta 49 caracteres: letras, números, punto, guion o guion bajo.";
       return;
     }
-    if (!roleIds.length) { error.textContent = "Selecciona un rol o combina permisos de la lista."; return; }
+    if (!roleIds.length) {
+      error.textContent = "Selecciona un rol o combina permisos de la lista.";
+      return;
+    }
     if (!adminSelected && !data.get("location_id")) {
       error.textContent = "Crea o selecciona una sede para el empleado.";
       return;
     }
-    if (!adminSelected && scheduleResult.error) { error.textContent = scheduleResult.error; return; }
+    if (!adminSelected && scheduleResult.error) {
+      error.textContent = scheduleResult.error;
+      return;
+    }
     submit.disabled = true;
     const usernameTaken = await checkUsernameAvailability();
-    if (usernameTaken || usernameHelp.classList.contains("error")) { submit.disabled = false; usernameInput.focus(); if (usernameTaken) error.textContent = "Elige otro nombre de usuario para continuar."; return; }
+    if (usernameTaken || usernameHelp.classList.contains("error")) {
+      submit.disabled = false;
+      usernameInput.focus();
+      if (usernameTaken)
+        error.textContent = "Elige otro nombre de usuario para continuar.";
+      return;
+    }
     try {
       const { data: result, error: invokeError } =
         await supabase.functions.invoke("staff-admin", {
@@ -1448,9 +1744,20 @@ function createAccountDialog() {
         });
       if (invokeError) {
         let details = null;
-        try { details = await invokeError.context?.json?.(); } catch {}
-        if (details?.error === "username_taken") { usernameHelp.textContent = "Este nombre ya está tomado."; usernameHelp.classList.add("error"); usernameInput.focus(); return; }
-        throw new Error(details?.error || invokeError.message || "No se pudo crear la cuenta.");
+        try {
+          details = await invokeError.context?.json?.();
+        } catch {}
+        if (details?.error === "username_taken") {
+          usernameHelp.textContent = "Este nombre ya está tomado.";
+          usernameHelp.classList.add("error");
+          usernameInput.focus();
+          return;
+        }
+        throw new Error(
+          details?.error ||
+            invokeError.message ||
+            "No se pudo crear la cuenta.",
+        );
       }
       if (result?.error) throw new Error(result.error);
       d.close();
@@ -1474,11 +1781,17 @@ function manageLocationsDialog() {
         (l) =>
           '<div class="location-row"><span><strong>' +
           esc(l.name) +
-          '</strong><small>' + esc(l.address || "Sin dirección") + '</small></span><span class="location-actions"><button type="button" class="rowaction" data-rename-location="' +
+          "</strong><small>" +
+          esc(l.address || "Sin dirección") +
+          '</small></span><span class="location-actions"><button type="button" class="rowaction" data-rename-location="' +
           l.id +
           '">Editar</button><button type="button" class="rowaction danger-action" data-delete-location="' +
           l.id +
-          '" ' + (s.locations.length <= 1 ? 'disabled title="El restaurante debe conservar al menos una sede"' : '') + '>Eliminar</button></span></div>',
+          '" ' +
+          (s.locations.length <= 1
+            ? 'disabled title="El restaurante debe conservar al menos una sede"'
+            : "") +
+          ">Eliminar</button></span></div>",
       )
       .join("");
     d.innerHTML =
@@ -1507,13 +1820,29 @@ function manageLocationsDialog() {
   d.showModal();
   d.addEventListener("close", () => d.remove());
 }
-const locationWeekdays = [[1,"Lunes"],[2,"Martes"],[3,"Miércoles"],[4,"Jueves"],[5,"Viernes"],[6,"Sábado"],[0,"Domingo"]];
+const locationWeekdays = [
+  [1, "Lunes"],
+  [2, "Martes"],
+  [3, "Miércoles"],
+  [4, "Jueves"],
+  [5, "Viernes"],
+  [6, "Sábado"],
+  [0, "Domingo"],
+];
 function locationHoursMarkup(location) {
-  const byDay = new Map((location?.location_hours || []).map((item) => [Number(item.weekday), item]));
-  return locationWeekdays.map(([weekday, label]) => {
-    const item = byDay.get(weekday), mode = item ? (item.closed ? "closed" : "open") : "unset";
-    return `<div class="schedule-row location-hours-row"><strong>${label}</strong><select name="hour_mode" data-weekday="${weekday}"><option value="unset" ${mode === "unset" ? "selected" : ""}>Sin definir</option><option value="open" ${mode === "open" ? "selected" : ""}>Abierto</option><option value="closed" ${mode === "closed" ? "selected" : ""}>Cerrado</option></select><input aria-label="Apertura ${label}" type="time" name="opens_at" value="${esc(String(item?.opens_at || "").slice(0,5))}" ${mode === "open" ? "required" : "disabled"}><input aria-label="Cierre ${label}" type="time" name="closes_at" value="${esc(String(item?.closes_at || "").slice(0,5))}" ${mode === "open" ? "required" : "disabled"}></div>`;
-  }).join("");
+  const byDay = new Map(
+    (location?.location_hours || []).map((item) => [
+      Number(item.weekday),
+      item,
+    ]),
+  );
+  return locationWeekdays
+    .map(([weekday, label]) => {
+      const item = byDay.get(weekday),
+        mode = item ? (item.closed ? "closed" : "open") : "unset";
+      return `<div class="schedule-row location-hours-row"><strong>${label}</strong><select name="hour_mode" data-weekday="${weekday}"><option value="unset" ${mode === "unset" ? "selected" : ""}>Sin definir</option><option value="open" ${mode === "open" ? "selected" : ""}>Abierto</option><option value="closed" ${mode === "closed" ? "selected" : ""}>Cerrado</option></select><input aria-label="Apertura ${label}" type="time" name="opens_at" value="${esc(String(item?.opens_at || "").slice(0, 5))}" ${mode === "open" ? "required" : "disabled"}><input aria-label="Cierre ${label}" type="time" name="closes_at" value="${esc(String(item?.closes_at || "").slice(0, 5))}" ${mode === "open" ? "required" : "disabled"}></div>`;
+    })
+    .join("");
 }
 
 // Crea o edita los datos y el horario semanal de una sede.
@@ -1524,8 +1853,14 @@ function editLocationDialog(location = null) {
   document.body.appendChild(d);
   const f = d.querySelector("form");
   const syncHours = (select) => {
-    const row = select.closest(".location-hours-row"), enabled = select.value === "open";
-    row.querySelectorAll('input[name="opens_at"],input[name="closes_at"]').forEach((input) => { input.disabled = !enabled; input.required = enabled; });
+    const row = select.closest(".location-hours-row"),
+      enabled = select.value === "open";
+    row
+      .querySelectorAll('input[name="opens_at"],input[name="closes_at"]')
+      .forEach((input) => {
+        input.disabled = !enabled;
+        input.required = enabled;
+      });
   };
   f.querySelectorAll('[name="hour_mode"]').forEach((select) => {
     select.addEventListener("change", () => syncHours(select));
@@ -1535,39 +1870,79 @@ function editLocationDialog(location = null) {
   f.addEventListener("submit", async (e) => {
     if (e.submitter?.id !== "save-location") return;
     e.preventDefault();
-    const values = new FormData(f), name = String(values.get("name") || "").trim(),
+    const values = new FormData(f),
+      name = String(values.get("name") || "").trim(),
       err = f.querySelector(".password-error"),
       btn = f.querySelector("#save-location"),
       address = String(values.get("address") || "").trim(),
       hours = [...f.querySelectorAll(".location-hours-row")].flatMap((row) => {
         const mode = row.querySelector('[name="hour_mode"]').value;
         if (mode === "unset") return [];
-        return [{ location_id: location?.id, weekday: Number(row.querySelector('[name="hour_mode"]').dataset.weekday), opens_at: mode === "open" ? row.querySelector('[name="opens_at"]').value : null, closes_at: mode === "open" ? row.querySelector('[name="closes_at"]').value : null, closed: mode === "closed" }];
+        return [
+          {
+            location_id: location?.id,
+            weekday: Number(
+              row.querySelector('[name="hour_mode"]').dataset.weekday,
+            ),
+            opens_at:
+              mode === "open"
+                ? row.querySelector('[name="opens_at"]').value
+                : null,
+            closes_at:
+              mode === "open"
+                ? row.querySelector('[name="closes_at"]').value
+                : null,
+            closed: mode === "closed",
+          },
+        ];
       });
     if (!name) {
       err.textContent = "Escribe el nombre de la sede.";
       return;
     }
     btn.disabled = true;
-    let locationId = location?.id, locationError;
+    let locationId = location?.id,
+      locationError;
     if (location) {
-      const result = await supabase.from("locations").update({ name, address: address || null }).eq("id", location.id);
+      const result = await supabase
+        .from("locations")
+        .update({ name, address: address || null })
+        .eq("id", location.id);
       locationError = result.error;
     } else {
-      const result = await supabase.from("locations").insert({ name, address: address || null, restaurant_id: s.restaurantId }).select("id").single();
+      const result = await supabase
+        .from("locations")
+        .insert({
+          name,
+          address: address || null,
+          restaurant_id: s.restaurantId,
+        })
+        .select("id")
+        .single();
       locationError = result.error;
       locationId = result.data?.id;
     }
     if (!locationError && locationId) {
-      const existingDays = (location?.location_hours || []).map((item) => Number(item.weekday));
+      const existingDays = (location?.location_hours || []).map((item) =>
+        Number(item.weekday),
+      );
       const selectedDays = hours.map((item) => item.weekday);
-      const removedDays = existingDays.filter((day) => !selectedDays.includes(day));
+      const removedDays = existingDays.filter(
+        (day) => !selectedDays.includes(day),
+      );
       if (hours.length) {
-        const result = await supabase.from("location_hours").upsert(hours.map((item) => ({ ...item, location_id: locationId })), { onConflict: "location_id,weekday" });
+        const result = await supabase.from("location_hours").upsert(
+          hours.map((item) => ({ ...item, location_id: locationId })),
+          { onConflict: "location_id,weekday" },
+        );
         locationError = result.error;
       }
       if (!locationError && removedDays.length) {
-        const result = await supabase.from("location_hours").delete().eq("location_id", locationId).in("weekday", removedDays);
+        const result = await supabase
+          .from("location_hours")
+          .delete()
+          .eq("location_id", locationId)
+          .in("weekday", removedDays);
         locationError = result.error;
       }
     }
@@ -1625,7 +2000,9 @@ async function deleteLocation(location) {
 // Abre el diálogo para confirmar la eliminación de una cuenta.
 function deleteAccountDialog(account) {
   const self = account.auth_user_id === s.authUserId,
-    adminCount = s.accounts.filter((a) => a.role === "admin" && a.is_active).length;
+    adminCount = s.accounts.filter(
+      (a) => a.role === "admin" && a.is_active,
+    ).length;
   if (account.role === "admin" && !self) {
     toast("No puedes eliminar a otro administrador.");
     return;
@@ -1685,8 +2062,7 @@ function deleteAccountDialog(account) {
 function changePassword(required = false) {
   const d = document.createElement("dialog");
   d.className = "password-dialog";
-  d.innerHTML =
-    `<form method="dialog"><div class="panel-title">${required ? "Elige una nueva contraseña" : "Cambiar contraseña"}</div><p class="meta">${required ? "El administrador restableció tu acceso. Elige una contraseña nueva para continuar." : "Confirma tu contraseña actual y escribe una nueva."}</p>${required ? "" : '<label class="dialog-label">Contraseña actual<input name="old" type="password" required autocomplete="current-password"></label>'}<label class="dialog-label">Contraseña nueva<input name="next" type="password" minlength="6" required autocomplete="new-password"></label><label class="dialog-label">Repite la contraseña nueva<input name="confirm" type="password" minlength="6" required autocomplete="new-password"></label><p class="password-error" role="alert"></p><div class="dialog-actions">${required ? "" : '<button class="btn secondary" value="cancel" formnovalidate>Cancelar</button>'}<button class="btn primary" id="save-password" value="save">Guardar</button></div></form>`;
+  d.innerHTML = `<form method="dialog"><div class="panel-title">${required ? "Elige una nueva contraseña" : "Cambiar contraseña"}</div><p class="meta">Ingresa tu contraseña actual y define una nueva.</p><label class="dialog-label">Contraseña actual<input name="old" type="password" required autocomplete="current-password"></label><label class="dialog-label">Contraseña nueva<input name="next" type="password" minlength="6" required autocomplete="new-password"></label><label class="dialog-label">Repite la contraseña nueva<input name="confirm" type="password" minlength="6" required autocomplete="new-password"></label><p class="password-error" role="alert"></p><div class="dialog-actions">${required ? "" : '<button class="btn secondary" value="cancel" >Cancelar</button>'}<button class="btn primary" id="save-password" value="save">Guardar</button></div></form>`;
   document.body.appendChild(d);
   if (required) d.addEventListener("cancel", (event) => event.preventDefault());
   d.showModal();
@@ -1719,23 +2095,35 @@ function changePassword(required = false) {
     }
     button.disabled = true;
     try {
-      if (!required) {
-        const email = authEmailForUsername(s.username);
-        const { error: verifyError } = await supabase.auth.signInWithPassword({ email, password: old });
-        if (verifyError) throw new Error("La contraseña actual no es correcta.");
-      }
+      const email = authEmailForUsername(s.username);
+      const { error: verifyError } = await supabase.auth.signInWithPassword({
+        email,
+        password: old,
+      });
+      if (verifyError) throw new Error("La contraseña actual no es correcta.");
       const { error: updateError } = await supabase.auth.updateUser({
         password: next,
       });
       if (updateError) throw updateError;
       if (required) {
-        const { error: clearError } = await supabase.rpc("clear_own_password_change_requirement");
+        const { error: clearError } = await supabase.rpc(
+          "clear_own_password_change_requirement",
+        );
         if (clearError) throw clearError;
         s.mustChangePassword = false;
       }
+      let toSave = next;
+      await supabase
+        .from("accounts")
+        .update({ passwords: toSave })
+        .eq("auth_user_id", s.authUserId);
       d.close();
       toast("Contraseña actualizada.");
-      if (required) { s.page = "orders"; render(); orderFlow.enter("orders"); }
+      if (required) {
+        s.page = "orders";
+        render();
+        orderFlow.enter("orders");
+      }
     } catch (error) {
       d.querySelector(".password-error").textContent =
         error.message || "No se pudo cambiar la contraseña.";
@@ -1749,10 +2137,12 @@ function changePassword(required = false) {
 function render() {
   if (s.restaurantSuspended) {
     const root = $("#app");
-    root.innerHTML = '<main class="login"><section class="login-card" style="max-width:760px;padding:64px 36px"><img src="/assets/black-white-logo.svg" alt="Black&White POS" style="width:min(320px,80%);margin-bottom:38px"><div class="eyebrow">Acceso no disponible</div><h1 style="font-size:clamp(30px,6vw,58px);margin:14px 0">Tu restaurante ha sido dado de baja</h1><p>Contacta con el equipo de Black&amp;White para revisar el estado de tu servicio.</p></section></main>';
+    root.innerHTML =
+      '<main class="login"><section class="login-card" style="max-width:760px;padding:64px 36px"><img src="/assets/black-white-logo.svg" alt="Black&White POS" style="width:min(320px,80%);margin-bottom:38px"><div class="eyebrow">Acceso no disponible</div><h1 style="font-size:clamp(30px,6vw,58px);margin:14px 0">Tu restaurante ha sido dado de baja</h1><p>Contacta con el equipo de Black&amp;White para revisar el estado de tu servicio.</p></section></main>';
     return;
   }
-  if (s.user && !canOpenWorkspace(s.page)) s.page = defaultWorkspaceForAccount();
+  if (s.user && !canOpenWorkspace(s.page))
+    s.page = defaultWorkspaceForAccount();
   applyDeviceClasses();
   let root = $("#app");
   root.innerHTML = s.user ? shell() : login();
@@ -1765,29 +2155,47 @@ function primaryDeviceKind() {
   if (deviceFormFactors?.includes("Desktop")) return "desktop";
 
   const ua = navigator.userAgent || "";
-  if (/iPad/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return "tablet";
+  if (
+    /iPad/i.test(ua) ||
+    (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)
+  )
+    return "tablet";
   if (/iPhone|iPod|Windows Phone/i.test(ua)) return "mobile";
 
   const android = /Android/i.test(ua);
-  const tabletModel = /\b(?:SM-T|SM-X|Lenovo TB|Pixel Tablet|MatePad|MediaPad|Nexus 7|Nexus 10|Tab\s)/i.test(ua);
+  const tabletModel =
+    /\b(?:SM-T|SM-X|Lenovo TB|Pixel Tablet|MatePad|MediaPad|Nexus 7|Nexus 10|Tab\s)/i.test(
+      ua,
+    );
   if (android && tabletModel) return "tablet";
-  if (navigator.userAgentData?.mobile === true || /Android.*Mobile/i.test(ua)) return "mobile";
+  if (navigator.userAgentData?.mobile === true || /Android.*Mobile/i.test(ua))
+    return "mobile";
   if (android && !/Mobile/i.test(ua)) return "tablet";
 
   // Touch-capable desktop-class devices are ambiguous; try the resolution fallback.
-  const mayBeTablet = navigator.maxTouchPoints > 0 || matchMedia("(any-pointer: coarse)").matches;
+  const mayBeTablet =
+    navigator.maxTouchPoints > 0 || matchMedia("(any-pointer: coarse)").matches;
   return mayBeTablet ? null : "desktop";
 }
 function isTabletResolution() {
-  const touchCapable = navigator.maxTouchPoints > 0 || matchMedia("(any-pointer: coarse)").matches;
+  const touchCapable =
+    navigator.maxTouchPoints > 0 || matchMedia("(any-pointer: coarse)").matches;
   const tabletLikeDensity = window.devicePixelRatio >= 1.5;
   if (!touchCapable && !tabletLikeDensity) return false;
-  const sizes = [[screen.width, screen.height], [innerWidth, innerHeight]];
+  const sizes = [
+    [screen.width, screen.height],
+    [innerWidth, innerHeight],
+  ];
   const tolerance = 24;
-  return sizes.some(([width, height]) => width > 0 && height > 0 &&
-    TABLET_RESOLUTION_FALLBACK.some(([tabletWidth, tabletHeight]) =>
-      Math.abs(width - tabletWidth) <= tolerance && Math.abs(height - tabletHeight) <= tolerance
-    )
+  return sizes.some(
+    ([width, height]) =>
+      width > 0 &&
+      height > 0 &&
+      TABLET_RESOLUTION_FALLBACK.some(
+        ([tabletWidth, tabletHeight]) =>
+          Math.abs(width - tabletWidth) <= tolerance &&
+          Math.abs(height - tabletHeight) <= tolerance,
+      ),
   );
 }
 function deviceKind() {
@@ -1820,22 +2228,41 @@ async function loadDeviceFormFactors() {
 function adaptNewOrderButton() {
   const head = document.querySelector(".orders-page-head");
   const button = head?.querySelector(".new-order-button");
-  if (!head || !button || !document.body.classList.contains("device-mobile")) return;
+  if (!head || !button || !document.body.classList.contains("device-mobile"))
+    return;
 
   const text = head.firstElementChild;
   const probe = text.cloneNode(true);
-  Object.assign(probe.style, { position: "absolute", visibility: "hidden", width: "min-content", flex: "none", inset: "0 auto auto 0" });
+  Object.assign(probe.style, {
+    position: "absolute",
+    visibility: "hidden",
+    width: "min-content",
+    flex: "none",
+    inset: "0 auto auto 0",
+  });
   head.append(probe);
   const minimumTextWidth = probe.getBoundingClientRect().width;
   probe.remove();
   const gap = parseFloat(getComputedStyle(head).columnGap) || 12;
   const availableWidth = head.clientWidth;
 
-  button.classList.remove("new-order-mode-single", "new-order-mode-stacked", "new-order-mode-icon");
+  button.classList.remove(
+    "new-order-mode-single",
+    "new-order-mode-stacked",
+    "new-order-mode-icon",
+  );
   button.classList.add("new-order-mode-single");
-  if (minimumTextWidth + gap + button.getBoundingClientRect().width <= availableWidth) return;
+  if (
+    minimumTextWidth + gap + button.getBoundingClientRect().width <=
+    availableWidth
+  )
+    return;
   button.classList.replace("new-order-mode-single", "new-order-mode-stacked");
-  if (minimumTextWidth + gap + button.getBoundingClientRect().width <= availableWidth) return;
+  if (
+    minimumTextWidth + gap + button.getBoundingClientRect().width <=
+    availableWidth
+  )
+    return;
   button.classList.replace("new-order-mode-stacked", "new-order-mode-icon");
 }
 // Vincula los eventos de interacción de la vista actual.
@@ -1846,10 +2273,11 @@ function bind() {
         s.page = b.dataset.page;
         render();
         orderFlow.enter(s.page);
-          workspaces.enter(s.page);
+        workspaces.enter(s.page);
         if (s.page === "account") loadAccounts();
         if (s.page === "stats") statistics.enter();
-        if (s.page === "settings") restaurantSettings.load().then(() => render());
+        if (s.page === "settings")
+          restaurantSettings.load().then(() => render());
       }),
   );
   $("#login-form")?.addEventListener("submit", (e) => {
@@ -1890,7 +2318,15 @@ function bind() {
     $("#save-employee-note")?.addEventListener("click", async () => {
       const button = $("#save-employee-note");
       button.disabled = true;
-      const result = await supabase.from("employee_notes").upsert({ auth_user_id: s.authUserId, restaurant_id: s.restaurantId, note: $("#employee-note").value, updated_at: new Date().toISOString() }, { onConflict: "auth_user_id" });
+      const result = await supabase.from("employee_notes").upsert(
+        {
+          auth_user_id: s.authUserId,
+          restaurant_id: s.restaurantId,
+          note: $("#employee-note").value,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "auth_user_id" },
+      );
       button.disabled = false;
       if (result.error) return toast("No se pudo guardar la nota.");
       toast("Nota guardada.");
@@ -1943,7 +2379,9 @@ function bind() {
   document
     .querySelectorAll("[data-mark-attendance]")
     .forEach(
-      (b) => (b.onclick = () => markAttendance(b.dataset.markAttendance, b.dataset.attendanceEvent)),
+      (b) =>
+        (b.onclick = () =>
+          markAttendance(b.dataset.markAttendance, b.dataset.attendanceEvent)),
     );
   document.querySelectorAll("[data-edit-account]").forEach(
     (b) =>

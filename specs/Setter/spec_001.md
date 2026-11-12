@@ -27,6 +27,7 @@
 - Después del alta, el administrador del restaurante puede añadir o quitar necesidades opcionales desde el POS, sin crear otro restaurante. La ubicación exacta del control en la interfaz queda pendiente.
 - Quitar una necesidad revoca sus roles y accesos de interfaz/operación, pero conserva los registros y valores existentes. La información no se elimina ni se migra a otro restaurante.
 - Setter puede consultar el total de cuentas y los roles; nunca muestra contraseñas. Desde Setter se pueden crear o eliminar cuentas, pero no editar su perfil ni cambiar su contraseña.
+- El resumen de cada restaurante muestra en modo de solo lectura las sedes registradas y sus direcciones, además del número de sedes.
 - La app POS muestra al administrador las configuraciones que corresponden a las necesidades elegidas y a las secciones fijas. CRM, Salón y Cocina sí pueden ser necesidades opcionales.
 - Cada sede puede guardar dirección opcional y horario de atención. Cada empleado puede tener asignado uno o más horarios de entrada y salida.
 - Si un restaurante está dado de baja, las cuentas asociadas no pueden operar Black&White POS. Tras resolver la sesión, la aplicación debe descartar los datos privados del restaurante, limpiar su interfaz y mostrar una pantalla bloqueante con el aviso **«Tu restaurante ha sido dado de baja»**. La restricción debe aplicarse también en los servicios de datos; limpiar el DOM por sí solo no controla el acceso.
@@ -40,7 +41,7 @@ La autenticación es una pantalla breve de correo y enlace; no crea un perfil vi
 3. La persona inicia sesión en Black&White POS. La app resuelve su restaurante y sus permisos sin pedirle que lo seleccione.
 4. Dentro del POS, el administrador ve las configuraciones aplicables según las necesidades y las secciones fijas, y guarda sus valores en los campos/tablas propios de cada área.
 
-La contraseña inicial debe tratarse como credencial temporal; nunca se almacena en texto plano en las tablas del producto. El método de entrega y el cambio obligatorio en el primer acceso quedan por definir.
+La contraseña inicial debe tratarse como credencial temporal; nunca se almacena en texto plano en las tablas del producto. Supabase Auth es responsable de guardar y verificar credenciales. Al cambiar una contraseña desde POS se exige la actual, incluso tras un restablecimiento administrativo. El método de entrega queda por definir.
 
 ## Modelo de datos
 
