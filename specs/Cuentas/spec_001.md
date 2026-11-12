@@ -1,6 +1,6 @@
 # Black&White POS — Cuentas 001
 
-**Estado:** Primera implementación en código y migración 202611120001; UI por probar por el propietario.
+**Estado:** Primera implementación en código y migraciones 202611120001–120002; UI por probar por el propietario.
 **Tipo:** Sección fija para todos los restaurantes. La autenticación es infraestructura base.
 
 ## Propósito
@@ -29,6 +29,8 @@ Si el restaurante tiene al menos una necesidad opcional distinta de **Comprobant
 
 **Empleado** es un rol especial y exclusivo: no se combina con otros roles. Concede los permisos de todos los roles disponibles para ese restaurante. Si el restaurante solo selecciona Comprobantes, sus roles disponibles siguen siendo Administrador y Empleado.
 
+En el formulario de cuenta se elige una de tres opciones: **Administrador**, **Empleado** o **Ninguna de las anteriores**. La tercera muestra los roles asignables mediante casillas; se pueden combinar varios. Los nombres completos pueden repetirse. El nombre de usuario es único entre las cuentas activas: una cuenta desactivada no reserva el nombre y no puede reactivarse.
+
 El catálogo global `roles` no pertenece a restaurantes ni a cuentas y no debe tener claves foráneas hacia ellas. `restaurants` guardará un array con los IDs de rol habilitados según sus necesidades y configuración; `accounts` guardará un array con los IDs asignados a cada cuenta. La app web calcula los permisos efectivos a partir de esos arrays y de la configuración del restaurante. El backend debe validar las mismas reglas al autorizar operaciones.
 
 Ejemplo: Setter crea el restaurante con la necesidad **Cocina**; quedan disponibles **Cocinero** y **Cajero**, porque existe una necesidad distinta de Comprobantes. En Cuentas, el administrador puede asignar ambos roles a la misma persona. Si además activa «Tengo una barra separada de la cocina», quedan disponibles Barista y Bartender y aparece el espacio de trabajo Barra.
@@ -40,9 +42,11 @@ Ejemplo: Setter crea el restaurante con la necesidad **Cocina**; quedan disponib
 - Las necesidades y configuraciones del restaurante determinan los IDs de roles habilitados que guarda `restaurants`; Cuentas permite asignar a cada cuenta uno o varios de esos roles en `accounts`.
 - El administrador del restaurante puede añadir o quitar necesidades opcionales después de crear el restaurante, sin recrearlo. La edición controla disponibilidad de módulos y roles; no borra registros existentes ni los mueve a otro restaurante.
 - Cada sede puede tener una dirección opcional y horario semanal; un día puede estar abierto, cerrado o sin definir.
+- Setter pide una sede principal al crear el restaurante. Todo restaurante existente sin sede recibe **Sede principal**; el administrador puede crear más sedes desde Cuentas y no puede eliminar la última.
 - Cada empleado puede tener asignado uno o más bloques reutilizables de horario.
+- Cada horario debe indicar día, entrada y salida; la salida debe ser posterior a la entrada y los bloques del mismo día no se pueden cruzar.
 - El administrador puede establecer una contraseña temporal de al menos seis caracteres; la persona debe cambiarla al siguiente inicio de sesión.
-- Las cuentas se desactivan sin borrar su historial y pueden restaurarse.
+- Las cuentas se desactivan sin borrar su historial y no se restauran desde la interfaz.
 - Las operaciones administrativas protegen al último administrador activo.
 
 El alta todavía usa una contraseña inicial definida por el administrador, no invitación por correo. No hay un historial general de acciones administrativas ni sesiones.
@@ -107,4 +111,4 @@ La fuente de verdad es una bitácora de eventos: una fila por marca efectiva. La
 
 ## Pendientes
 
-En la primera implementación quedan por completar dirección y horario de atención de cada sede, turnos que cruzan medianoche, historial de asignaciones de sede/horarios y el historial general de acciones administrativas/sesiones. Delivery requiere definir la configuración que habilita Repartidor en la interfaz. La nota personal sigue sin reinicio automático hasta acordar retención. El administrador puede corregir asistencias de hoy o ayer; falta validar estos casos en la UI.
+En la primera implementación quedan por completar turnos que cruzan medianoche, historial de asignaciones de sede/horarios y el historial general de acciones administrativas/sesiones. Delivery requiere definir la configuración que habilita Repartidor en la interfaz. La nota personal sigue sin reinicio automático hasta acordar retención. El administrador puede corregir asistencias de hoy o ayer; falta validar estos casos en la UI.

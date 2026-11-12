@@ -36,7 +36,7 @@ La autenticación es una pantalla breve de correo y enlace; no crea un perfil vi
 ## Flujo de alta de restaurante
 
 1. Un operador autorizado entra a Setter.
-2. Crea el restaurante y selecciona sus necesidades; Setter guarda esas necesidades y crea la cuenta inicial Administrador vinculada al restaurante.
+2. Crea el restaurante, selecciona sus necesidades y define el nombre de su sede principal (la dirección es opcional); Setter guarda la sede y crea la cuenta inicial Administrador vinculada al restaurante. Se pueden añadir más sedes desde Cuentas dentro del POS.
 3. La persona inicia sesión en Black&White POS. La app resuelve su restaurante y sus permisos sin pedirle que lo seleccione.
 4. Dentro del POS, el administrador ve las configuraciones aplicables según las necesidades y las secciones fijas, y guarda sus valores en los campos/tablas propios de cada área.
 
@@ -53,6 +53,7 @@ La contraseña inicial debe tratarse como credencial temporal; nunca se almacena
 - Cocina habilita Cocinero; la opción de barra separada habilita Barista y Bartender y el espacio de trabajo Barra. Salón habilita Mesero y Portero. CRM habilita Social Manager. Delivery habilita Repartidor cuando se definan y activen sus configuraciones. Comprobantes no añade roles. Si existe al menos una necesidad opcional distinta de Comprobantes, Cajero se incluye entre los roles disponibles; si se quitan todas esas necesidades, Cajero se quita y Empleado cubre conceptualmente caja.
 - Configuraciones persistidas en columnas directas de `restaurants` o en tablas de dominio específicas, según su forma y relación. No se usará un catálogo genérico de configuraciones.
 - `locations`: sedes pertenecientes a un restaurante.
+- Todo restaurante se crea con la sede **Sede principal** o el nombre que escriba el operador. La dirección es opcional; se pueden crear otras sedes desde el POS y no se permite eliminar la última.
 - Datos operativos de cada módulo: asociados al restaurante y, cuando aplique, a una sede.
 
 Las necesidades elegidas determinan qué opciones aparecen en la app POS, sin selector de arquitectura/versiones. El backend valida y persiste cada ajuste en campos o tablas con significado de dominio, en lugar de usar un almacén genérico clave-valor. Los valores, restricciones y relaciones deben quedar definidos en el esquema de cada área.

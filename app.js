@@ -176,7 +176,6 @@ const s = {
   availableRoleIds: [],
   availableRoles: [],
   mustChangePassword: false,
-  showInactiveAccounts: false,
   attendanceRecords: [],
   restaurantSettings: null,
   restaurantNeeds: [],
@@ -855,9 +854,7 @@ async function loadAccounts() {
   const allowedRoles = new Set(s.availableRoleIds || []);
   s.locations = locationsResult.data || [];
   s.availableRoles = (rolesResult.data || []).filter((role) => allowedRoles.has(role.id));
-  const accountRows = (accountsResult.data || []).filter((item) =>
-    item.is_active || (s.role === "Administrador" && s.showInactiveAccounts)
-  );
+  const accountRows = (accountsResult.data || []).filter((item) => item.is_active);
   s.accounts = accountRows.map((a) => {
     const roleIds = Array.isArray(a.role_ids) ? a.role_ids : [];
     const accountRoles = roleIds.map((id) => roleById.get(id)).filter(Boolean);
@@ -948,9 +945,6 @@ function account() {
               : "") +
             ">Eliminar</button>"
           : "",
-        restoreAction = !a.is_active && s.role === "Administrador"
-          ? '<button class="rowaction" data-restore-account="' + a.auth_user_id + '">Reactivar</button>'
-          : "",
         initials = a.display_name
           .split(" ")
           .filter(Boolean)
@@ -988,7 +982,6 @@ function account() {
         attendanceAction +
         editAction +
         deleteAction +
-        restoreAction +
         "</div></td></tr>"
       );
     })
@@ -1012,11 +1005,6 @@ function account() {
           : "Consulta de hoy") +
         '</span><button class="btn secondary" id="edit-account-date">Elegir fecha</button></div>'
       : "";
-  const inactiveToggle = s.role === "Administrador"
-    ? '<button class="btn secondary" id="toggle-inactive-accounts">' +
-      (s.showInactiveAccounts ? "Ver cuentas activas" : "Ver cuentas desactivadas") +
-      "</button>"
-    : "";
   return (
     '<section class="page-head"><div><div class="eyebrow">Perfil y equipo</div><h1>' +
     (emp ? "Tu cuenta y equipo" : "Cuentas y equipo") +
@@ -1024,7 +1012,7 @@ function account() {
     dateControl +
     (emp
       ? ""
-      : inactiveToggle + '<button class="btn secondary" id="manage-sites">Gestionar sedes</button><button class="btn primary" id="create-account">＋ Crear cuenta</button>') +
+      : '<button class="btn secondary" id="manage-sites">Gestionar sedes</button><button class="btn primary" id="create-account">＋ Crear cuenta</button>') +
     '<button class="btn secondary" id="change-password">Cambiar contraseña</button></div></section><div class="metrics account-metrics"><article class="metric"><div class="metric-label">Mi perfil</div><div class="metric-value" style="font-size:17px">' +
     esc(s.user) +
     '</div><div class="metric-foot neutral">' +
@@ -1141,33 +1129,58 @@ function accountDateDialog() {
   d.showModal();
   d.addEventListener("close", () => d.remove());
 }
-function accountRoleOptionsMarkup(selectedIds = []) {
-  const selected = new Set(selectedIds);
-  return `<div class="account-role-options">${(s.availableRoles || []).map((role) =>
-    `<label class="settings-check"><input type="checkbox" name="role_ids" value="${esc(role.id)}" data-account-role-key="${esc(role.key)}" ${selected.has(role.id) ? "checked" : ""}><span>${esc(role.name)}${role.key === "employee" ? " · todos los permisos del restaurante" : ""}</span></label>`
-  ).join("")}</div>`;
+function accountRoleSelectorMarkup(selectedIds = []) {
+  const selected = new Set(selectedIds),
+    selectedRoles = (s.availableRoles || []).filter((role) => selected.has(role.id)),
+    mode = selectedRoles.some((role) => role.key === "admin") ? "admin" : selectedRoles.some((role) => role.key === "employee") ? "employee" : "custom",
+    role = (key) => (s.availableRoles || []).find((item) => item.key === key);
+  return `<label class="dialog-label account-role-mode">Tipo de cuenta<select name="role_mode"><option value="admin" ${mode === "admin" ? "selected" : ""}>Administrador</option><option value="employee" ${mode === "employee" ? "selected" : ""}>Empleado</option><option value="custom" ${mode === "custom" ? "selected" : ""}>Ninguna de las anteriores</option></select></label><div class="account-custom-roles" ${mode === "custom" ? "" : "hidden"}><p class="meta">Selecciona uno o más permisos para combinar sus funciones.</p><div class="account-role-options">${(s.availableRoles || []).filter((item) => !["admin", "employee"].includes(item.key)).map((item) => `<label class="account-role-option"><input type="checkbox" name="custom_role_ids" value="${esc(item.id)}" ${selected.has(item.id) ? "checked" : ""}><span>${esc(item.name)}</span></label>`).join("")}</div></div>`;
 }
 
-function bindAccountRoleOptions(form) {
-  const options = [...form.querySelectorAll('[name="role_ids"]')];
-  options.forEach((input) => input.addEventListener("change", () => {
-    const special = ["admin", "employee"].includes(input.dataset.accountRoleKey);
-    if (input.checked && special) options.forEach((other) => { if (other !== input) other.checked = false; });
-    else if (input.checked) options.filter((other) => ["admin", "employee"].includes(other.dataset.accountRoleKey)).forEach((other) => { other.checked = false; });
-  }));
+function selectedAccountRoleIds(form) {
+  const mode = form.querySelector('[name="role_mode"]')?.value;
+  if (mode === "admin" || mode === "employee") {
+    const id = (s.availableRoles || []).find((role) => role.key === mode)?.id;
+    return id ? [id] : [];
+  }
+  return [...form.querySelectorAll('[name="custom_role_ids"]:checked')].map((input) => input.value);
+}
+
+function bindAccountRoleSelector(form, onChange = () => {}) {
+  const select = form.querySelector('[name="role_mode"]'),
+    options = form.querySelector(".account-custom-roles");
+  const update = () => {
+    options.hidden = select.value !== "custom";
+    onChange();
+  };
+  select.addEventListener("change", update);
+  form.querySelectorAll('[name="custom_role_ids"]').forEach((input) => input.addEventListener("change", onChange));
+  update();
 }
 
 function accountScheduleRowMarkup(schedule = {}) {
   const weekdays = [[1,"Lunes"],[2,"Martes"],[3,"Miércoles"],[4,"Jueves"],[5,"Viernes"],[6,"Sábado"],[0,"Domingo"]];
-  return `<div class="schedule-row"><select name="workday">${weekdays.map(([value,label]) => `<option value="${value}" ${Number(schedule.weekday) === value ? "selected" : ""}>${label}</option>`).join("")}</select><input type="time" name="workstart" value="${esc(String(schedule.starts_at || "").slice(0,5))}"><input type="time" name="workend" value="${esc(String(schedule.ends_at || "").slice(0,5))}"><button type="button" class="rowaction" data-remove-schedule aria-label="Quitar horario">×</button></div>`;
+  return `<div class="schedule-row"><select name="workday" aria-label="Día">${weekdays.map(([value,label]) => `<option value="${value}" ${Number(schedule.weekday) === value ? "selected" : ""}>${label}</option>`).join("")}</select><label class="schedule-time"><span>Entrada</span><input type="time" name="workstart" value="${esc(String(schedule.starts_at || "").slice(0,5))}" required></label><label class="schedule-time"><span>Salida</span><input type="time" name="workend" value="${esc(String(schedule.ends_at || "").slice(0,5))}" required></label><button type="button" class="schedule-remove" data-remove-schedule aria-label="Quitar horario">×</button></div>`;
 }
 
 function bindAccountScheduleRows(form) {
-  const rows = form.querySelector("#work-schedule-rows");
-  form.querySelector("#add-work-schedule")?.addEventListener("click", () => rows.insertAdjacentHTML("beforeend", accountScheduleRowMarkup()));
+  const rows = form.querySelector("#work-schedule-rows"), add = form.querySelector("#add-work-schedule");
+  const syncRemoveButtons = () => {
+    const items = rows.querySelectorAll(".schedule-row"), onlyOne = items.length <= 1;
+    items.forEach((item) => {
+      const button = item.querySelector("[data-remove-schedule]");
+      button.disabled = onlyOne;
+      button.title = onlyOne ? "Debe quedar al menos un horario" : "Quitar horario";
+    });
+  };
+  add?.addEventListener("click", () => { rows.insertAdjacentHTML("beforeend", accountScheduleRowMarkup()); syncRemoveButtons(); });
   rows?.addEventListener("click", (event) => {
-    if (event.target.closest("[data-remove-schedule]") && rows.querySelectorAll(".schedule-row").length > 1) event.target.closest(".schedule-row").remove();
+    if (event.target.closest("[data-remove-schedule]") && rows.querySelectorAll(".schedule-row").length > 1) {
+      event.target.closest(".schedule-row").remove();
+      syncRemoveButtons();
+    }
   });
+  syncRemoveButtons();
 }
 
 function collectAccountSchedules(form) {
@@ -1177,14 +1190,25 @@ function collectAccountSchedules(form) {
     starts_at: row.querySelector('[name="workstart"]').value,
     ends_at: row.querySelector('[name="workend"]').value,
   }));
-  return {
-    schedules: schedules.filter((item) => item.starts_at && item.ends_at),
-    hasIncompleteRows: schedules.some((item) => Boolean(item.starts_at) !== Boolean(item.ends_at)),
-  };
+  if (!schedules.length || schedules.some((item) => !item.starts_at || !item.ends_at)) return { schedules, error: "Completa el día, la hora de entrada y la hora de salida de cada horario." };
+  if (schedules.some((item) => item.starts_at >= item.ends_at)) return { schedules, error: "La entrada debe ser anterior a la salida en cada horario." };
+  const byDay = new Map();
+  for (const item of schedules) {
+    const daySchedules = byDay.get(item.weekday) || [];
+    daySchedules.push(item);
+    byDay.set(item.weekday, daySchedules);
+  }
+  for (const daySchedules of byDay.values()) {
+    daySchedules.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+    for (let index = 1; index < daySchedules.length; index++) {
+      if (daySchedules[index].starts_at < daySchedules[index - 1].ends_at) return { schedules, error: "Los horarios del mismo día se cruzan. Ajusta las horas para que no se superpongan." };
+    }
+  }
+  return { schedules, error: "" };
 }
 
-function isAdminRoleSelection(roleIds) {
-  return (s.availableRoles || []).some((role) => role.key === "admin" && roleIds.includes(role.id));
+function isAdminRoleSelection(form) {
+  return form.querySelector('[name="role_mode"]')?.value === "admin";
 }
 
 // Abre el formulario para editar una cuenta existente.
@@ -1192,7 +1216,7 @@ function editAccountDialog(account) {
   const d = document.createElement("dialog");
   d.className = "password-dialog account-dialog";
   const schedules = account.schedules?.length ? account.schedules : [{}];
-  d.innerHTML = `<form method="dialog"><div class="panel-title">Editar cuenta</div><label class="dialog-label">Nombre visible<input name="display_name" maxlength="100" required value="${esc(account.display_name)}"></label><fieldset class="dialog-label"><legend>Roles y permisos</legend>${accountRoleOptionsMarkup(account.role_ids || [])}</fieldset><label class="dialog-label" id="edit-account-location-wrap">Sede<select name="location_id" id="edit-account-location"><option value="">Sin sede</option>${s.locations.map((location) => `<option value="${esc(location.id)}" ${location.id === account.location_id ? "selected" : ""}>${esc(location.name)}</option>`).join("")}</select></label><div class="dialog-label" id="edit-account-schedules-wrap"><span>Horarios de trabajo</span><div id="work-schedule-rows">${schedules.map((schedule) => accountScheduleRowMarkup(schedule)).join("")}</div><button type="button" class="btn small" id="add-work-schedule">＋ Agregar horario</button></div><button type="button" class="btn secondary" id="reset-account-password">Restablecer contraseña</button><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="save-account" value="save">Guardar cambios</button></div></form>`;
+  d.innerHTML = `<form method="dialog"><div class="panel-title">Editar cuenta</div><label class="dialog-label">Nombre visible<input name="display_name" maxlength="100" required value="${esc(account.display_name)}"></label><fieldset class="dialog-label"><legend>Roles y permisos</legend>${accountRoleSelectorMarkup(account.role_ids || [])}</fieldset><label class="dialog-label" id="edit-account-location-wrap">Sede<select name="location_id" id="edit-account-location"><option value="">Seleccionar sede</option>${s.locations.map((location) => `<option value="${esc(location.id)}" ${location.id === account.location_id ? "selected" : ""}>${esc(location.name)}</option>`).join("")}</select></label><div class="dialog-label" id="edit-account-schedules-wrap"><span>Horarios de trabajo</span><div id="work-schedule-rows" class="schedule-list">${schedules.map((schedule) => accountScheduleRowMarkup(schedule)).join("")}</div><button type="button" class="btn small" id="add-work-schedule">＋ Agregar horario</button></div><button type="button" class="btn secondary" id="reset-account-password">Restablecer contraseña</button><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="save-account" value="save">Guardar cambios</button></div></form>`;
   document.body.appendChild(d);
   const f = d.querySelector("form"),
     wrap = f.querySelector("#edit-account-location-wrap"),
@@ -1200,14 +1224,12 @@ function editAccountDialog(account) {
     scheduleWrap = f.querySelector("#edit-account-schedules-wrap"),
     save = f.querySelector("#save-account");
   const updateFields = () => {
-    const roleIds = [...f.querySelectorAll('[name="role_ids"]:checked')].map((input) => input.value);
-    const selectedAdmin = isAdminRoleSelection(roleIds);
+    const selectedAdmin = isAdminRoleSelection(f);
     wrap.hidden = selectedAdmin;
     site.required = !selectedAdmin;
     scheduleWrap.hidden = selectedAdmin;
   };
-  bindAccountRoleOptions(f);
-  f.querySelectorAll('[name="role_ids"]').forEach((input) => input.addEventListener("change", updateFields));
+  bindAccountRoleSelector(f, updateFields);
   bindAccountScheduleRows(f);
   updateFields();
   f.querySelector("#reset-account-password").addEventListener("click", () => resetAccountPasswordDialog(account));
@@ -1217,17 +1239,17 @@ function editAccountDialog(account) {
     e.preventDefault();
     const err = f.querySelector(".password-error"),
       name = new FormData(f).get("display_name").trim(),
-      roleIds = [...f.querySelectorAll('[name="role_ids"]:checked')].map((input) => input.value),
-      adminSelected = isAdminRoleSelection(roleIds),
+      roleIds = selectedAccountRoleIds(f),
+      adminSelected = isAdminRoleSelection(f),
       scheduleResult = collectAccountSchedules(f);
     err.textContent = "";
     if (!name) {
       err.textContent = "Escribe el nombre de la cuenta.";
       return;
     }
-    if (!roleIds.length) { err.textContent = "Selecciona al menos un rol."; return; }
+    if (!roleIds.length) { err.textContent = "Selecciona al menos un rol de la lista."; return; }
     if (!adminSelected && !site.value) { err.textContent = "Selecciona una sede para la cuenta."; return; }
-    if (!adminSelected && (scheduleResult.hasIncompleteRows || !scheduleResult.schedules.length)) { err.textContent = "Completa al menos un horario de entrada y salida."; return; }
+    if (!adminSelected && scheduleResult.error) { err.textContent = scheduleResult.error; return; }
     save.disabled = true;
     try {
       const { data, error } = await supabase.functions.invoke("staff-admin", {
@@ -1353,23 +1375,37 @@ async function markAttendance(staffId, eventType = "check_in") {
 function createAccountDialog() {
   const d = document.createElement("dialog");
   d.className = "password-dialog account-dialog";
-  d.innerHTML = `<form method="dialog"><div class="panel-title">Crear cuenta</div><p class="meta">La persona iniciará sesión con el usuario y la contraseña que asignes.</p><label class="dialog-label">Nombre completo<input name="display_name" maxlength="100" required autocomplete="name" placeholder="Ej. Ana Morales"></label><label class="dialog-label">Nombre de usuario<input name="username" maxlength="49" required autocomplete="off" placeholder="Ej. ana.morales"><span class="meta">Sin espacios; se guardará en minúsculas y sin tildes.</span></label><fieldset class="dialog-label"><legend>Roles y permisos</legend>${accountRoleOptionsMarkup()}</fieldset><label class="dialog-label" id="new-account-location-wrap">Sede<select name="location_id" id="new-account-location"><option value="">Seleccionar sede</option>${s.locations.map((location) => `<option value="${esc(location.id)}">${esc(location.name)}</option>`).join("")}</select><span class="meta" id="no-locations-message" ${s.locations.length ? "hidden" : ""}>Primero crea una sede con “Gestionar sedes”.</span></label><label class="dialog-label">Contraseña inicial<input name="password" type="password" minlength="6" required autocomplete="new-password" placeholder="Mínimo 6 caracteres"></label><div class="dialog-label" id="new-account-schedules-wrap"><span>Horarios de trabajo</span><div id="work-schedule-rows">${accountScheduleRowMarkup()}</div><button type="button" class="btn small" id="add-work-schedule">＋ Agregar horario</button></div><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="submit-new-account" value="save">Crear cuenta</button></div></form>`;
+  d.innerHTML = `<form method="dialog"><div class="panel-title">Crear cuenta</div><p class="meta">La persona iniciará sesión con el usuario y la contraseña que asignes.</p><label class="dialog-label">Nombre completo<input name="display_name" maxlength="100" required autocomplete="name" placeholder="Ej. Ana Morales"></label><label class="dialog-label">Nombre de usuario<input name="username" id="new-account-username" maxlength="49" required autocomplete="off" placeholder="Ej. ana.morales"><span class="meta">Sin espacios; se guardará en minúsculas y sin tildes.</span><span class="username-availability" id="username-availability" aria-live="polite"></span></label><fieldset class="dialog-label"><legend>Roles y permisos</legend>${accountRoleSelectorMarkup()}</fieldset><label class="dialog-label" id="new-account-location-wrap">Sede<select name="location_id" id="new-account-location"><option value="">Seleccionar sede</option>${s.locations.map((location) => `<option value="${esc(location.id)}">${esc(location.name)}</option>`).join("")}</select><span class="meta" id="no-locations-message" ${s.locations.length ? "hidden" : ""}>Primero crea una sede con “Gestionar sedes”.</span></label><label class="dialog-label">Contraseña inicial<input name="password" type="password" minlength="6" required autocomplete="new-password" placeholder="Mínimo 6 caracteres"></label><div class="dialog-label" id="new-account-schedules-wrap"><span>Horarios de trabajo</span><div id="work-schedule-rows" class="schedule-list">${accountScheduleRowMarkup()}</div><button type="button" class="btn small" id="add-work-schedule">＋ Agregar horario</button></div><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="submit-new-account" value="save">Crear cuenta</button></div></form>`;
   document.body.appendChild(d);
   const form = d.querySelector("form"),
     locationWrap = form.querySelector("#new-account-location-wrap"),
     locationSelect = form.querySelector("#new-account-location"),
     scheduleWrap = form.querySelector("#new-account-schedules-wrap"),
     submit = form.querySelector("#submit-new-account");
+  const usernameInput = form.querySelector("#new-account-username"), usernameHelp = form.querySelector("#username-availability");
+  let usernameCheckVersion = 0;
+  const checkUsernameAvailability = async () => {
+    const version = ++usernameCheckVersion, username = normalizeUsername(usernameInput.value);
+    usernameHelp.textContent = "";
+    usernameHelp.className = "username-availability";
+    if (!/^[a-z0-9._-]{1,49}$/.test(username)) return false;
+    const { data, error } = await supabase.from("accounts").select("auth_user_id").eq("username", username).eq("is_active", true).maybeSingle();
+    if (version !== usernameCheckVersion) return Boolean(data);
+    if (error) { usernameHelp.textContent = "No se pudo comprobar el usuario. Vuelve a intentarlo."; usernameHelp.classList.add("error"); return false; }
+    if (data) { usernameHelp.textContent = "Este nombre ya está tomado."; usernameHelp.classList.add("error"); return true; }
+    usernameHelp.textContent = "Nombre disponible."; usernameHelp.classList.add("available");
+    return false;
+  };
+  usernameInput.addEventListener("input", () => { usernameCheckVersion++; usernameHelp.textContent = ""; usernameHelp.className = "username-availability"; });
+  usernameInput.addEventListener("blur", checkUsernameAvailability);
   const syncRole = () => {
-    const roleIds = [...form.querySelectorAll('[name="role_ids"]:checked')].map((input) => input.value);
-    const adminSelected = isAdminRoleSelection(roleIds);
+    const adminSelected = isAdminRoleSelection(form), roleIds = selectedAccountRoleIds(form);
     locationWrap.hidden = adminSelected;
     scheduleWrap.hidden = adminSelected;
     locationSelect.required = !adminSelected;
     submit.disabled = !roleIds.length || (!adminSelected && !s.locations.length);
   };
-  bindAccountRoleOptions(form);
-  form.querySelectorAll('[name="role_ids"]').forEach((input) => input.addEventListener("change", syncRole));
+  bindAccountRoleSelector(form, syncRole);
   bindAccountScheduleRows(form);
   syncRole();
   d.showModal();
@@ -1379,8 +1415,8 @@ function createAccountDialog() {
     const data = new FormData(form),
       error = form.querySelector(".password-error"),
       username = normalizeUsername(data.get("username")),
-      roleIds = [...form.querySelectorAll('[name="role_ids"]:checked')].map((input) => input.value),
-      adminSelected = isAdminRoleSelection(roleIds),
+      roleIds = selectedAccountRoleIds(form),
+      adminSelected = isAdminRoleSelection(form),
       scheduleResult = collectAccountSchedules(form);
     error.textContent = "";
     if (!/^[a-z0-9._-]{1,49}$/.test(username)) {
@@ -1388,13 +1424,15 @@ function createAccountDialog() {
         "El usuario debe tener hasta 49 caracteres: letras, números, punto, guion o guion bajo.";
       return;
     }
-    if (!roleIds.length) { error.textContent = "Selecciona al menos un rol."; return; }
+    if (!roleIds.length) { error.textContent = "Selecciona un rol o combina permisos de la lista."; return; }
     if (!adminSelected && !data.get("location_id")) {
       error.textContent = "Crea o selecciona una sede para el empleado.";
       return;
     }
-    if (!adminSelected && (scheduleResult.hasIncompleteRows || !scheduleResult.schedules.length)) { error.textContent = "Asigna entrada y salida a cada horario del empleado."; return; }
+    if (!adminSelected && scheduleResult.error) { error.textContent = scheduleResult.error; return; }
     submit.disabled = true;
+    const usernameTaken = await checkUsernameAvailability();
+    if (usernameTaken || usernameHelp.classList.contains("error")) { submit.disabled = false; usernameInput.focus(); if (usernameTaken) error.textContent = "Elige otro nombre de usuario para continuar."; return; }
     try {
       const { data: result, error: invokeError } =
         await supabase.functions.invoke("staff-admin", {
@@ -1408,12 +1446,12 @@ function createAccountDialog() {
             schedules: adminSelected ? [] : scheduleResult.schedules,
           },
         });
-      if (invokeError)
-        throw new Error(
-          (await invokeError.context?.json?.())?.error ||
-            invokeError.message ||
-            "No se pudo crear la cuenta.",
-        );
+      if (invokeError) {
+        let details = null;
+        try { details = await invokeError.context?.json?.(); } catch {}
+        if (details?.error === "username_taken") { usernameHelp.textContent = "Este nombre ya está tomado."; usernameHelp.classList.add("error"); usernameInput.focus(); return; }
+        throw new Error(details?.error || invokeError.message || "No se pudo crear la cuenta.");
+      }
       if (result?.error) throw new Error(result.error);
       d.close();
       await loadAccounts();
@@ -1440,7 +1478,7 @@ function manageLocationsDialog() {
           l.id +
           '">Editar</button><button type="button" class="rowaction danger-action" data-delete-location="' +
           l.id +
-          '">Eliminar</button></span></div>',
+          '" ' + (s.locations.length <= 1 ? 'disabled title="El restaurante debe conservar al menos una sede"' : '') + '>Eliminar</button></span></div>',
       )
       .join("");
     d.innerHTML =
@@ -1552,6 +1590,10 @@ function editLocationDialog(location = null) {
 }
 // Elimina una sede después de validar que la operación sea posible.
 async function deleteLocation(location) {
+  if (s.locations.filter((item) => item.is_active !== false).length <= 1) {
+    toast("El restaurante debe conservar al menos una sede.");
+    return;
+  }
   if (
     !(await confirmInApp(
       "Eliminar sede",
@@ -1921,35 +1963,12 @@ function bind() {
         if (a) deleteAccountDialog(a);
       }),
   );
-  document.querySelectorAll("[data-restore-account]").forEach((button) => {
-    button.onclick = async () => {
-      const account = s.accounts.find((item) => item.auth_user_id === button.dataset.restoreAccount);
-      if (account) await restoreAccount(account);
-    };
-  });
-  $("#toggle-inactive-accounts")?.addEventListener("click", () => {
-    s.showInactiveAccounts = !s.showInactiveAccounts;
-    loadAccounts();
-  });
   $("#create-account")?.addEventListener("click", createAccountDialog);
   $("#manage-sites")?.addEventListener("click", manageLocationsDialog);
   $("#change-password")?.addEventListener("click", changePassword);
   $("#edit-account-date")?.addEventListener("click", accountDateDialog);
 }
 
-async function restoreAccount(account) {
-  const confirmed = await confirmInApp("Reactivar cuenta", `¿Devolver el acceso a ${account.display_name} (@${account.username})?`, "Reactivar");
-  if (!confirmed) return;
-  const { data, error } = await supabase.functions.invoke("staff-admin", {
-    body: { action: "restore", auth_user_id: account.auth_user_id },
-  });
-  if (error || data?.error) {
-    toast(data?.error || "No se pudo reactivar la cuenta.");
-    return;
-  }
-  await loadAccounts();
-  toast("Cuenta reactivada.");
-}
 // Agrega un producto o movimiento al pedido activo.
 function add(id) {
   let p = products.find((x) => x.id === id),

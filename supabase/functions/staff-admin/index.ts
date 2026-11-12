@@ -39,6 +39,22 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: `Bearer ${serviceKey}` } },
   });
 
+  const archiveInactiveUsername = async (username: string) => {
+    const { data: previous, error } = await admin.from("accounts").select("auth_user_id")
+      .eq("username", username).eq("is_active", false);
+    if (error) return error.message;
+    const domain = baseEmail.split("@")[1];
+    for (const account of previous || []) {
+      const { error: authError } = await admin.auth.admin.updateUserById(account.auth_user_id, {
+        email: `inactive-${account.auth_user_id}@${domain}`,
+        email_confirm: true,
+        ban_duration: "876000h",
+      });
+      if (authError) return authError.message;
+    }
+    return null;
+  };
+
   const { data: actor, error: actorError } = await admin.from("accounts")
     .select("auth_user_id,restaurant_id,role_ids,location_id,is_active,restaurants!inner(status,available_role_ids)")
     .eq("auth_user_id", user.id).maybeSingle();
@@ -76,6 +92,12 @@ Deno.serve(async (req) => {
       starts_at: String(schedule.starts_at).slice(0, 8),
       ends_at: String(schedule.ends_at).slice(0, 8),
     }));
+    const byDay = new Map<number, Schedule[]>();
+    for (const schedule of schedules) byDay.set(schedule.weekday, [...(byDay.get(schedule.weekday) || []), schedule]);
+    for (const day of byDay.values()) {
+      day.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+      for (let index = 1; index < day.length; index++) if (day[index].starts_at < day[index - 1].ends_at) return null;
+    }
     return schedules.filter((schedule, index) => schedules.findIndex((other) =>
       other.weekday === schedule.weekday && other.starts_at === schedule.starts_at && other.ends_at === schedule.ends_at
     ) === index);
@@ -121,6 +143,12 @@ Deno.serve(async (req) => {
     if (!validUsername(username) || !displayName || password.length < 6)
       return reply(400, { error: "valid_username_display_name_and_password_required_min_6" });
     if (!roleIds) return reply(400, { error: "choose_only_roles_enabled_for_restaurant" });
+    const { data: usernameMatch, error: usernameLookupError } = await admin.from("accounts").select("auth_user_id")
+      .eq("username", username).eq("is_active", true).maybeSingle();
+    if (usernameLookupError) return reply(500, { error: "username_lookup_failed" });
+    if (usernameMatch) return reply(409, { error: "username_taken" });
+    const archiveError = await archiveInactiveUsername(username);
+    if (archiveError) return reply(500, { error: "inactive_username_archive_failed", detail: archiveError });
     if (!schedules || (!isAdmin && schedules.length === 0))
       return reply(400, { error: "employee_requires_valid_work_schedule" });
     if (locationId === null) return reply(400, { error: "location_not_in_restaurant" });
@@ -139,6 +167,7 @@ Deno.serve(async (req) => {
     });
     if (createError || !created.user) {
       if (storedSchedules.created.length) await admin.from("account_schedules").delete().in("id", storedSchedules.created);
+      if (/already registered|already been registered|already exists/i.test(createError?.message || "")) return reply(409, { error: "username_taken" });
       return reply(409, { error: createError?.message ?? "auth_user_creation_failed" });
     }
     const { error: insertError } = await admin.from("accounts").insert({
@@ -153,6 +182,7 @@ Deno.serve(async (req) => {
     if (insertError) {
       await admin.auth.admin.deleteUser(created.user.id);
       if (storedSchedules.created.length) await admin.from("account_schedules").delete().in("id", storedSchedules.created);
+      if (insertError.code === "23505") return reply(409, { error: "username_taken" });
       return reply(400, { error: insertError.message });
     }
     return reply(201, {
@@ -186,22 +216,16 @@ Deno.serve(async (req) => {
       try { if (await countOtherAdmins() < 1) return reply(400, { error: "restaurant_must_keep_one_active_admin" }); }
       catch { return reply(500, { error: "admin_count_failed" }); }
     }
+    const { data: authTarget, error: authLookupError } = await admin.auth.admin.getUserById(targetId);
+    if (authLookupError || !authTarget.user?.email) return reply(500, { error: "auth_account_lookup_failed" });
+    const domain = baseEmail.split("@")[1];
+    const { error: banError } = await admin.auth.admin.updateUserById(targetId, {
+      email: `inactive-${targetId}@${domain}`, email_confirm: true, ban_duration: "876000h",
+    });
+    if (banError) return reply(400, { error: banError.message });
     const { error } = await admin.from("accounts").update({ is_active: false }).eq("auth_user_id", targetId);
-    if (error) return reply(400, { error: error.message });
-    const { error: banError } = await admin.auth.admin.updateUserById(targetId, { ban_duration: "876000h" });
-    if (banError) {
-      await admin.from("accounts").update({ is_active: true }).eq("auth_user_id", targetId);
-      return reply(400, { error: banError.message });
-    }
-    return reply(200, { success: true });
-  }
-
-  if (action === "restore") {
-    const { error: unbanError } = await admin.auth.admin.updateUserById(targetId, { ban_duration: "none" });
-    if (unbanError) return reply(400, { error: unbanError.message });
-    const { error } = await admin.from("accounts").update({ is_active: true }).eq("auth_user_id", targetId);
     if (error) {
-      await admin.auth.admin.updateUserById(targetId, { ban_duration: "876000h" });
+      await admin.auth.admin.updateUserById(targetId, { email: authTarget.user.email, email_confirm: true, ban_duration: "none" });
       return reply(400, { error: error.message });
     }
     return reply(200, { success: true });
@@ -210,7 +234,7 @@ Deno.serve(async (req) => {
   if (action === "reset_password") {
     const password = String(body.password ?? "");
     if (password.length < 6) return reply(400, { error: "password_min_length_6" });
-    if (!target.is_active) return reply(400, { error: "restore_account_before_password_reset" });
+    if (!target.is_active) return reply(400, { error: "inactive_account_cannot_reset_password" });
     const { error: flagError } = await admin.from("accounts").update({ must_change_password: true }).eq("auth_user_id", targetId);
     if (flagError) return reply(400, { error: flagError.message });
     const { error: passwordError } = await admin.auth.admin.updateUserById(targetId, { password });

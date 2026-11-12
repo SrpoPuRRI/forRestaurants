@@ -46,6 +46,8 @@ Deno.serve(async (req) => {
     }
   } catch { return reply(400, { error: "invalid_request_body" }); }
   const name = String(body.name ?? "").trim();
+  const initialLocationName = String(body.initial_location_name ?? "").trim();
+  const initialLocationAddress = String(body.initial_location_address ?? "").trim();
   const username = normalize(String(body.initial_username ?? ""));
   const displayName = String(body.initial_display_name ?? "Administrador").trim();
   const password = String(body.initial_password ?? "");
@@ -56,8 +58,8 @@ Deno.serve(async (req) => {
   if (!Array.isArray(parsedNeeds)) return reply(400, { error: "needs_must_be_an_array" });
   const needs = parsedNeeds.map(String);
   const distinctNeeds = [...new Set(needs)];
-  if (!name || !/^[a-z0-9._-]{1,49}$/.test(username) || password.length < 6 || !displayName)
-    return reply(400, { error: "name_username_display_name_and_password_required", password_min_length: 6 });
+  if (!name || !initialLocationName || !/^[a-z0-9._-]{1,49}$/.test(username) || password.length < 6 || !displayName)
+    return reply(400, { error: "name_initial_location_username_display_name_and_password_required", password_min_length: 6 });
   if (logo && (!LOGO_MIME_TYPES.has(logo.type) || logo.size > MAX_LOGO_BYTES))
     return reply(400, { error: "logo_must_be_png_jpeg_webp_or_svg_under_5mb" });
   if (distinctNeeds.length !== needs.length || needs.some((key) => !OPTIONAL_NEEDS.has(key)))
@@ -68,10 +70,23 @@ Deno.serve(async (req) => {
   ];
   const [local, domain] = baseEmail.split("@");
   const email = `${local}+k-${username}@${domain}`;
+  const { data: usernameMatch, error: usernameLookupError } = await admin.from("accounts").select("auth_user_id")
+    .eq("username", username).eq("is_active", true).maybeSingle();
+  if (usernameLookupError) return reply(500, { error: "username_lookup_failed" });
+  if (usernameMatch) return reply(409, { error: "username_taken" });
+  const { data: previousAccounts, error: previousError } = await admin.from("accounts").select("auth_user_id")
+    .eq("username", username).eq("is_active", false);
+  if (previousError) return reply(500, { error: "inactive_username_lookup_failed" });
+  for (const account of previousAccounts || []) {
+    const { error } = await admin.auth.admin.updateUserById(account.auth_user_id, {
+      email: `inactive-${account.auth_user_id}@${domain}`, email_confirm: true, ban_duration: "876000h",
+    });
+    if (error) return reply(500, { error: "inactive_username_archive_failed" });
+  }
   const { data: created, error: createError } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { account_type: "restaurant", username } });
   if (createError || !created.user) return reply(409, { error: createError?.message ?? "auth_user_creation_failed" });
   const { data: restaurantId, error: bundleError } = await admin.rpc("create_restaurant_bundle", {
-    payload: { name, needs, roles, initial_auth_user_id: created.user.id, initial_username: username,
+    payload: { name, needs, roles, initial_location: { name: initialLocationName, address: initialLocationAddress }, initial_auth_user_id: created.user.id, initial_username: username,
       initial_display_name: displayName },
   });
   if (bundleError || !restaurantId) {

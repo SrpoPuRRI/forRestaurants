@@ -23,6 +23,21 @@ Deno.serve(async (req) => {
     // Pin this client's Authorization header so Storage always uses service_role.
     global: { headers: { Authorization: `Bearer ${serviceKey}` } },
   });
+  const authBaseEmail = Deno.env.get("AUTH_EMAIL_BASE")?.toLowerCase();
+  const authEmailDomain = authBaseEmail?.includes("@") ? authBaseEmail.split("@")[1] : undefined;
+  const archiveInactiveUsername = async (username: string) => {
+    const { data: previous, error } = await db.from("accounts").select("auth_user_id")
+      .eq("username", username).eq("is_active", false);
+    if (error) return error.message;
+    if (!authEmailDomain) return previous?.length ? "server_auth_email_not_configured" : null;
+    for (const account of previous || []) {
+      const { error: authError } = await db.auth.admin.updateUserById(account.auth_user_id, {
+        email: `inactive-${account.auth_user_id}@${authEmailDomain}`, email_confirm: true, ban_duration: "876000h",
+      });
+      if (authError) return authError.message;
+    }
+    return null;
+  };
   const { data: operator, error: operatorError } = await caller.from("platform_operators").select("auth_user_id").eq("auth_user_id", user.id).maybeSingle();
   if (operatorError) {
     console.error("platform_operator_lookup_failed", operatorError.message);
@@ -100,6 +115,11 @@ Deno.serve(async (req) => {
     const password = String(body.password ?? "");
     const roleName = String(body.role_name ?? "");
     if (!restaurantId || !/^[a-z0-9._-]{1,49}$/.test(username) || !displayName || password.length < 6) return reply(400, { error: "valid_restaurant_username_name_and_password_required_min_6" });
+    const { data: usernameMatch, error: usernameLookupError } = await db.from("accounts").select("auth_user_id").eq("username", username).eq("is_active", true).maybeSingle();
+    if (usernameLookupError) return reply(500, { error: "username_lookup_failed" });
+    if (usernameMatch) return reply(409, { error: "username_taken" });
+    const archiveError = await archiveInactiveUsername(username);
+    if (archiveError) return reply(500, { error: "inactive_username_archive_failed", detail: archiveError });
     const { data: restaurant } = await db.from("restaurants").select("id,status,available_role_ids").eq("id", restaurantId).maybeSingle();
     if (!restaurant || restaurant.status !== "active") return reply(400, { error: "restaurant_not_active" });
     const { data: role } = await db.from("roles").select("id,name,key").eq("name", roleName).maybeSingle();
@@ -108,6 +128,15 @@ Deno.serve(async (req) => {
     const { data: location } = body.location_id ? await db.from("locations").select("id").eq("id", body.location_id).eq("restaurant_id", restaurantId).maybeSingle() : { data: null };
     if (role.key !== "admin" && (!body.location_id || !location || !schedules.length || schedules.some(s => !Number.isInteger(Number(s.weekday)) || Number(s.weekday)<0 || Number(s.weekday)>6 || !s.starts_at || !s.ends_at || s.starts_at>=s.ends_at)))
       return reply(400, { error: "employee_requires_valid_work_schedule" });
+    if (role.key !== "admin") {
+      const byDay = new Map<number, typeof schedules>();
+      for (const schedule of schedules) byDay.set(Number(schedule.weekday), [...(byDay.get(Number(schedule.weekday)) || []), schedule]);
+      for (const day of byDay.values()) {
+        day.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+        for (let index = 1; index < day.length; index++) if (day[index].starts_at < day[index - 1].ends_at)
+          return reply(400, { error: "employee_work_schedules_overlap" });
+      }
+    }
     if (body.location_id && !location) return reply(400, { error: "location_not_in_restaurant" });
     const baseEmail = Deno.env.get("AUTH_EMAIL_BASE")?.toLowerCase();
     if (!baseEmail || !baseEmail.includes("@")) return reply(500, { error: "server_auth_email_not_configured" });
@@ -124,7 +153,7 @@ Deno.serve(async (req) => {
     const { data: created, error: createError } = await db.auth.admin.createUser({ email: `${local}+k-${username}@${domain}`, password, email_confirm: true, user_metadata: { account_type: "restaurant", username } });
     if (createError || !created.user) return reply(409, { error: createError?.message ?? "auth_user_creation_failed" });
     const { error: insertError } = await db.from("accounts").insert({ auth_user_id: created.user.id, restaurant_id: restaurantId, role_ids: [role.id], schedule_ids: scheduleIds, username, display_name: displayName, location_id: location?.id ?? null });
-    if (insertError) { await db.auth.admin.deleteUser(created.user.id); return reply(400, { error: insertError.message }); }
+    if (insertError) { await db.auth.admin.deleteUser(created.user.id); return insertError.code === "23505" ? reply(409, { error: "username_taken" }) : reply(400, { error: insertError.message }); }
     return reply(201, { auth_user_id: created.user.id, username, role: role.name });
   }
   if (action === "delete_account") {
@@ -137,10 +166,13 @@ Deno.serve(async (req) => {
       if ((admins || []).filter((account) => account.auth_user_id !== accountId && (account.role_ids || []).includes(adminRole.id)).length < 1)
         return reply(400,{error:"restaurant_must_keep_one_active_admin"});
     }
+    const { data: authTarget, error: authLookupError } = await db.auth.admin.getUserById(accountId);
+    if (authLookupError || !authTarget.user?.email) return reply(500, { error: "auth_account_lookup_failed" });
+    if (!authEmailDomain) return reply(500, { error: "server_auth_email_not_configured" });
+    const { error: banError } = await db.auth.admin.updateUserById(accountId, { email: `inactive-${accountId}@${authEmailDomain}`, email_confirm: true, ban_duration: "876000h" });
+    if (banError) return reply(400, { error: banError.message });
     const { error } = await db.from("accounts").update({ is_active: false }).eq("auth_user_id", accountId).eq("restaurant_id", restaurantId);
-    if (error) return reply(400, { error: error.message });
-    const { error: banError } = await db.auth.admin.updateUserById(accountId, { ban_duration: "876000h" });
-    if (banError) { await db.from("accounts").update({ is_active: true }).eq("auth_user_id", accountId); return reply(400, { error: banError.message }); }
+    if (error) { await db.auth.admin.updateUserById(accountId, { email: authTarget.user.email, email_confirm: true, ban_duration: "none" }); return reply(400, { error: error.message }); }
     return reply(200, { success: true });
   }
   return reply(400, { error: "unknown_action" });
