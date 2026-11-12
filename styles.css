@@ -1973,12 +1973,12 @@ body{color:var(--ink);background:#f4f1ea}
 button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline-color:var(--gold)}
 .restaurant-brand{display:flex;align-items:center;gap:12px;min-width:0;color:var(--ink)}
 .sidebar-brand{padding:0 8px 18px;border-bottom:1px solid var(--line)}
-.restaurant-brand-mark{display:block;flex:0 0 88px;width:88px;height:72px;max-width:88px;object-fit:contain;border:1px solid var(--line);border-radius:13px;background:var(--white);padding:3px}
+.restaurant-brand-mark{display:block;flex:0 0 88px;width:88px;height:88px;max-width:88px;object-fit:cover;border:0;border-radius:12px;background:transparent;padding:0}
 .restaurant-brand-fallback{display:grid;place-items:center;background:var(--cream);color:var(--coffee);font:800 22px Manrope,system-ui,sans-serif;letter-spacing:-.04em}
 .restaurant-brand-name{display:-webkit-box;min-width:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow-wrap:anywhere;font:700 16px/1.2 Manrope,system-ui,sans-serif;letter-spacing:-.025em;color:var(--ink)}
 .login-brand{margin-bottom:20px}.login-brand img{display:block;width:min(100%,285px);height:auto}
 .mobile-brand{display:none}
-@media(max-width:780px){.mobile-brand{display:flex;flex:0 1 auto;gap:8px;max-width:calc(100vw - 112px)}.mobile-brand .restaurant-brand-mark{flex-basis:56px;width:56px;height:48px;max-width:56px;border-radius:10px;padding:2px}.mobile-brand .restaurant-brand-name{font-size:14px;-webkit-line-clamp:2}.topbar{height:auto;min-height:64px;background:#f8f6f1}}
+@media(max-width:780px){.mobile-brand{display:flex;flex:0 1 auto;gap:8px;max-width:calc(100vw - 112px)}.mobile-brand .restaurant-brand-mark{flex-basis:56px;width:56px;height:56px;max-width:56px;border-radius:10px}.mobile-brand .restaurant-brand-name{font-size:14px;-webkit-line-clamp:2}.topbar{height:auto;min-height:70px;background:#f8f6f1}.mobile-nav{display:flex;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;overscroll-behavior-x:contain;justify-content:flex-start}.mobile-nav::-webkit-scrollbar{display:none}.mobile-nav button{flex:0 0 78px;min-width:78px;white-space:nowrap}}
 body.device-tablet .mobile-nav .nav-icon{font-size:17px}
 body.device-tablet .orders-workspace>.open-section{margin-top:8px}
 body.device-tablet .open-heading{margin-bottom:6px}

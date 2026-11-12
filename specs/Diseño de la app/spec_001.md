@@ -17,8 +17,8 @@
 - Antes de iniciar sesión, la pantalla identifica **Black&White POS** como el producto que la persona está usando.
 - Después de iniciar sesión, el espacio de trabajo debe sentirse propio del restaurante: la marca principal del encabezado pasa a ser el **nombre del restaurante** junto con **su logo**. No debe seguir mostrando «BLACK&WHITE POS» como identidad principal en la navegación interna.
 - El nombre y el logo del restaurante deben tener suficiente presencia y tamaño para reconocerse al abrir la app, tanto en escritorio como en móvil. La identidad del producto puede quedar fuera del encabezado de trabajo; no debe competir con la marca del restaurante.
-- El logo debe conservar su proporción y mostrarse completo, sin recortarlo ni deformarlo. El diseño debe acomodar logos cuadrados y horizontales de forma que el símbolo o nombre no quede reducido a una miniatura ilegible.
-- En escritorio, el logo se presenta en un contenedor de hasta 88 × 72 px junto al nombre; en móvil, hasta 56 × 48 px junto al nombre. El nombre puede ocupar varias líneas y truncarse con cuidado si es muy largo.
+- El logo se presenta dentro de un marco cuadrado y ocupa todo el marco, sin padding, borde ni fondo añadidos por la interfaz. La imagen se ajusta a ese cuadrado; los logos horizontales pueden recortarse, por lo que se recomienda subir un archivo cuadrado.
+- En escritorio, el marco mide 88 × 88 px junto al nombre; en móvil, 56 × 56 px junto al nombre. El nombre puede ocupar varias líneas y truncarse con cuidado si es muy largo.
 - Si el restaurante no tiene logo, se muestra un monograma con sus iniciales junto al nombre. No se vuelve a mostrar la marca Black&White dentro del espacio de trabajo.
 - Estas son las medidas iniciales implementadas; se pueden ajustar tras revisar el resultado visual en dispositivos reales.
 
@@ -36,11 +36,12 @@ La navegación conserva las cinco secciones fijas y coloca las opcionales activa
 4. **Delivery**, solo si está activo
 5. **Flujo de pedidos**
 6. **Cocina**, solo si está activa
+   - **Barra**, inmediatamente después de Cocina si está activa la configuración de barra separada
 7. **Salón**, solo si está activo
 8. **Catálogo**
 9. **Configuración**, siempre al final
 
-Si una necesidad opcional no está activa, se omite su espacio y se conserva el orden relativo de los demás. Cuando Cocina y Salón están activos, Cocina aparece antes que Salón. Este orden aplica a la navegación del espacio de trabajo en las vistas que la presenten.
+Si una necesidad opcional no está activa, se omite su espacio y se conserva el orden relativo de los demás. Cuando Cocina y Salón están activos, Cocina aparece antes que Salón. Barra se agrupa con Cocina y no altera el orden relativo de estos módulos. Este orden aplica a la navegación del espacio de trabajo en las vistas que la presenten.
 
 Las únicas necesidades opcionales son CRM, Cocina, Salón, Delivery y Comprobantes. Setter no administra esta lista: muestra las cinco opciones fijas al crear el restaurante. La app POS usa la selección para mostrar al administrador las configuraciones correspondientes a necesidades y secciones. Las secciones fijas nunca se eliminan. Black&White POS respeta los permisos de la cuenta autenticada y las funciones habilitadas.
 
@@ -57,5 +58,5 @@ Las únicas necesidades opcionales son CRM, Cocina, Salón, Delivery y Comproban
 - Definir variantes responsive y la composición exacta de la navegación móvil.
 - Definir estados visuales, accesibilidad, iconografía y reglas completas de contraste.
 - Aprobar arte final del logotipo y el ícono de Black&White antes de producción.
-- Revisar las medidas iniciales de marca de restaurante (88 × 72 px en escritorio y 56 × 48 px en móvil) en dispositivos reales y ajustarlas si el logo continúa viéndose pequeño.
+- Revisar las medidas iniciales del marco cuadrado de marca (88 px en escritorio y 56 px en móvil) en dispositivos reales y ajustarlas si el logo continúa viéndose pequeño.
 - Definir cómo las necesidades opcionales condicionan el comportamiento de las secciones fijas y qué ajustes ofrece Configuración.

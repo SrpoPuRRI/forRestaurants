@@ -511,18 +511,21 @@ async function initializeApp() {
 }
 // Genera los botones de navegación según el rol y la vista actual.
 function nav(m) {
-  let list = [
-    ["account", "", "Cuenta"],
-    ["stats", "", "Estadísticas"],
-    ["orders", "＋", m ? "Pedidos" : "Flujo de pedidos"],
-  ];
-  if (s.role === "Administrador") list.push(["catalog", "▤", "Catálogo"]);
-  if (s.role === "Administrador") list.push(["settings", "⚙", "Configuración"]);
-  if (s.restaurantNeeds?.includes("crm")) list.push(["crm", "◎", "CRM"]);
-  if (s.restaurantNeeds?.includes("kitchen")) list.push(["kitchen", "▦", "Cocina"]);
-  if (s.restaurantNeeds?.includes("kitchen") && s.restaurantSettings?.kitchen_has_separate_bar) list.push(["bar", "◉", "Barra"]);
-  if (s.restaurantNeeds?.includes("salon")) list.push(["salon", "⌂", "Salón"]);
-  if (s.restaurantNeeds?.includes("delivery")) list.push(["delivery", "↗", "Delivery"]);
+  const needs = s.restaurantNeeds || [];
+  const list = [["account", "", "Cuenta"]];
+  if (needs.includes("crm")) list.push(["crm", "◎", "CRM"]);
+  list.push(["stats", "", "Estadísticas"]);
+  if (needs.includes("delivery")) list.push(["delivery", "↗", "Delivery"]);
+  list.push(["orders", "＋", m ? "Pedidos" : "Flujo de pedidos"]);
+  if (needs.includes("kitchen")) {
+    list.push(["kitchen", "▦", "Cocina"]);
+    if (s.restaurantSettings?.kitchen_has_separate_bar) list.push(["bar", "◉", "Barra"]);
+  }
+  if (needs.includes("salon")) list.push(["salon", "⌂", "Salón"]);
+  if (s.role === "Administrador") {
+    list.push(["catalog", "▤", "Catálogo"]);
+    list.push(["settings", "⚙", "Configuración"]);
+  }
   const icon = (key, fallback) =>
     key === "account"
       ? '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="15.7" cy="6.7" r="3.1"/><path d="M11.5 13.2c1.1-1.3 2.5-2 4.2-2 3.5 0 5.8 2.5 5.8 6v3.4c-2.1 1.1-4.7 1.7-7.4 1.7h-1.8"/><circle cx="7.2" cy="9.1" r="4.2"/><path d="M1 21v-2.7c0-4.2 2.6-6.9 6.4-6.9h.8c3.8 0 6.4 2.7 6.4 6.9V21c-2.1 1.2-4.3 1.8-6.8 1.8S3.1 22.2 1 21Z"/></svg>'
