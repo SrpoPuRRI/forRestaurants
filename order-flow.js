@@ -330,9 +330,11 @@ export default function createOrderFlow({
         }),
       ]);
       if (ordersResult.error || countResult.error) {
+        const rpcError = ordersResult.error || countResult.error;
+        if (["Order permission required", "Location forbidden"].includes(rpcError.message))
+          stopPolling();
         data.error =
-          ordersResult.error?.message ||
-          countResult.error?.message ||
+          rpcError.message ||
           "No se pudieron cargar los pedidos abiertos.";
         if (shouldRender) renderWithMenuSearchFocus(preserveMenuSearchFocus);
         return;

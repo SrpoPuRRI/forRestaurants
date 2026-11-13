@@ -64,6 +64,7 @@ Migraciones presentes en este repositorio, en orden:
 - `202611130001_required_special_products_and_payment_rules.sql`: productos Ingreso/Egreso obligatorios, efectivo forzado y correcciones sin motivo. La sintaxis del `CASE` del trigger se corrigió agrupando la expresión; no restaurar la versión que falló con `syntax error at end of input`.
 - `202611130002_reconcile_account_roles_on_need_changes.sql`: sincroniza roles habilitados y reasigna a Empleado cuentas que quedan sin roles al retirar necesidades.
 - `202611130003_restaurant_color_schemes.sql`: agrega `restaurants.appearance` JSONB para esquemas de color claro/oscuro opcionales.
+- `202611130004_employee_cashier_base_permissions.sql`: alinea los permisos base del rol Empleado con su función conceptual de cajero cuando solo está activa la necesidad Comprobantes o no hay necesidades opcionales.
 
 El usuario indicó que desplegó los últimos cambios y que funcionan. Aun así, el Handoff no reemplaza la evidencia del historial remoto: si una nueva tarea depende de una columna/función específica, verifica `supabase_migrations.schema_migrations` o consulta el esquema remoto antes de proponer otra migración. Nunca edites migraciones ya aplicadas; agrega una con timestamp posterior.
 

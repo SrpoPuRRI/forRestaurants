@@ -65,7 +65,7 @@ Reglas acordadas:
 - **Quitar una necesidad:** se quita del conjunto de necesidades activas, se retiran del array de roles disponibles los roles que esa necesidad implicaba y se ocultan/revocan sus espacios y permisos. Se conservan los datos operativos y las configuraciones existentes; no se borra ni recrea el restaurante. Al desmarcar una necesidad activa se pide confirmación porque cambia la arquitectura y los permisos. Cancelar conserva la selección; Aceptar deja el cambio pendiente en el formulario. El cambio solo se aplica al pulsar Guardar cambios. Al guardar, se eliminan de cada cuenta los roles que dejaron de estar disponibles; si no queda ningún rol asignado, la cuenta pasa a Empleado. Los datos operativos y configuraciones se conservan.
 - **Cocina y Salón:** cada módulo tiene su cola independiente. Con ambos activos, pedidos de Cocina marcados listos pasan a Salón. Con solo Salón, debe definirse cómo evitar que el mesero vea un pedido que todavía no está listo.
 
-**Empleado** es el rol especial exclusivo que concede el conjunto de permisos disponibles en el restaurante; no se combina con otros roles.
+**Empleado** es el rol especial exclusivo que concede el conjunto de permisos disponibles en el restaurante; no se combina con otros roles. Cuando no hay necesidades opcionales distintas de Comprobantes, conserva los permisos base de Cajero (`orders` y `payments`) aunque el rol Cajero no figure en los roles disponibles.
 
 El catálogo global `roles` no tendrá `restaurant_id` ni relación con cuentas. El array de IDs habilitados se guarda en `restaurants`, y el array de IDs asignados se guarda en `accounts`. El backend debe aplicar la misma autorización efectiva que calcula la app web.
 
