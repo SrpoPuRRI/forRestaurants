@@ -1,6 +1,6 @@
 # Black&White POS — Estadísticas 001
 
-**Estado:** Diseño funcional basado en Kffe’to, adaptado a las decisiones de B&W.
+**Estado:** Especificación funcional y base de datos implementada localmente en `202611120003_paid_orders_and_statistics.sql`; la migración debe aplicarse al proyecto remoto antes de usar Estadísticas.
 **Tipo:** Sección fija para todos los restaurantes.
 
 ## Propósito
@@ -20,7 +20,7 @@ La vista principal sigue las cuatro métricas de Kffe’to:
 3. **Promedio por pedido:** saldo neto dividido entre pedidos pagados correctos.
 4. **Desglose por método de pago:** total agrupado según los métodos guardados en cada movimiento.
 
-En B&W el desglose no se limita a Yape y efectivo. Usa los métodos de pago configurados y la instantánea histórica de hasta diez importes/métodos de cada movimiento; un cambio posterior de configuración no reclasifica ventas pasadas.
+En B&W el desglose usa los métodos de pago configurados y la instantánea histórica de importes/métodos de cada movimiento; un cambio posterior no reclasifica ventas pasadas. Solo se muestra la métrica de desglose cuando hay más de un método habilitado. Si solo está habilitado efectivo, la tarjeta no se renderiza.
 
 ## Gráfica y periodos
 
@@ -54,7 +54,7 @@ Inspirados en Kffe’to, los rankings cuentan **unidades**, no importe de venta,
 - Agregados más vendidos.
 - Una clasificación elegida por configuración: categorías, grupos de categorías o etiquetas. Los grupos de categorías siguen la detección de Kffe’to a partir de las relaciones entre categorías y productos.
 
-Los rankings se calculan únicamente con movimientos correctos. Se mantienen las reglas de Configuración sobre qué rankings se muestran al administrador y cuáles puede ver cada rol.
+Los rankings se calculan únicamente con movimientos correctos. Se mantienen las reglas de Configuración sobre qué rankings se muestran al administrador y cuáles puede ver cada rol. Cuando ningún ranking está habilitado o visible para el rol, no se renderiza sección ni mensaje vacío.
 
 No se incluirán métricas de costos, márgenes, inventario ni mermas en este módulo: B&W no lleva inventario y esas métricas no forman parte del modelo actual de Kffe’to.
 

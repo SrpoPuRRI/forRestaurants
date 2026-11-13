@@ -2062,9 +2062,8 @@ function deleteAccountDialog(account) {
 function changePassword(required = false) {
   const d = document.createElement("dialog");
   d.className = "password-dialog";
-  d.innerHTML = `<form method="dialog"><div class="panel-title">${required ? "Elige una nueva contraseña" : "Cambiar contraseña"}</div><p class="meta">Ingresa tu contraseña actual y define una nueva.</p><label class="dialog-label">Contraseña actual<input name="old" type="password" required autocomplete="current-password"></label><label class="dialog-label">Contraseña nueva<input name="next" type="password" minlength="6" required autocomplete="new-password"></label><label class="dialog-label">Repite la contraseña nueva<input name="confirm" type="password" minlength="6" required autocomplete="new-password"></label><p class="password-error" role="alert"></p><div class="dialog-actions">${required ? "" : '<button class="btn secondary" value="cancel" >Cancelar</button>'}<button class="btn primary" id="save-password" value="save">Guardar</button></div></form>`;
+  d.innerHTML = `<form method="dialog"><div class="panel-title">${required ? "Elige una nueva contraseña" : "Cambiar contraseña"}</div><p class="meta">Ingresa tu contraseña actual y define una nueva.</p><label class="dialog-label">Contraseña actual<input name="old" type="password" required autocomplete="current-password"></label><label class="dialog-label">Contraseña nueva<input name="next" type="password" minlength="6" required autocomplete="new-password"></label><label class="dialog-label">Repite la contraseña nueva<input name="confirm" type="password" minlength="6" required autocomplete="new-password"></label><p class="password-error" role="alert"></p><div class="dialog-actions"><button class="btn secondary" value="cancel" formnovalidate>Cancelar</button><button class="btn primary" id="save-password" value="save">Guardar</button></div></form>`;
   document.body.appendChild(d);
-  if (required) d.addEventListener("cancel", (event) => event.preventDefault());
   d.showModal();
   d.querySelector("form").addEventListener("submit", async (e) => {
     if (!e.submitter || e.submitter.id !== "save-password") return;

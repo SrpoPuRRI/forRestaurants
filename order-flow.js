@@ -974,8 +974,13 @@ export default function createOrderFlow({
     d.className = "password-dialog special-dialog";
     const isExpense = product.product_kind === "expense";
     const currentOrder = activeOrder();
+    const correctionRoleAllowed = state.role === "Administrador"
+      ? state.restaurantSettings?.corrections_admin !== false
+      : Boolean(state.restaurantSettings?.corrections_employees) &&
+        (state.roleIds || []).some((roleId) => Boolean(state.roleSettings?.[roleId]?.corrections_allowed));
     const canCorrect =
       isExpense &&
+      correctionRoleAllowed &&
       !editing &&
       (!currentOrder || currentOrder.items.length === 0);
     let amountText = editing

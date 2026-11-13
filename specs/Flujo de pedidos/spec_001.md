@@ -25,6 +25,22 @@ Flujo de pedidos siempre está disponible. Las necesidades opcionales pueden cam
 - Las capacidades de cocina y mesas pueden activarse independientemente.
 - El flujo de impresión de Kffe’to POS no se adopta como diseño predeterminado.
 
+## Referencia investigada: Ingreso y Egreso en Kffe’to POS
+
+Esta sección resume el comportamiento observado en el código y las migraciones locales de Kffe’to POS (solo lectura; no se modificó ese proyecto). Es una referencia para decidir el flujo de Black&White, no una aprobación para copiar su esquema de una sola cafetería.
+
+- El catálogo distingue productos normales de los productos especiales `income` (**Ingreso**) y `expense` (**Egreso**). Kffe’to crea un producto de cada tipo y una variante `Monto variable` con precio cero. El importe se introduce al añadir el movimiento; por eso no se trata como inventario ni como un precio fijo de catálogo.
+- En el pedido, los especiales aparecen primero en el menú sin filtros. Al seleccionar uno, se abre un formulario propio. Cada movimiento usa cantidad uno, no admite agregados y requiere un importe manual mayor que cero, con hasta dos decimales. El concepto es opcional y se conserva como snapshot.
+- Ingreso se guarda con importe positivo. Egreso se guarda con importe negativo. Ambos se pueden incluir junto con productos normales o en un pedido compuesto solo por movimientos. Su línea conserva el nombre del producto, variante, concepto, importe firmado y medio de pago.
+- En el pago, las líneas normales se pueden asignar a un solo medio global o dividir mediante porcentaje entre Yape y efectivo. Cada línea especial se asigna completa a Yape o a efectivo; no se reparte. Una opción de sincronización propaga el medio global a los especiales, y cada especial puede cambiarse individualmente.
+- La base vuelve a calcular precios de productos y agregados desde el catálogo, valida la cantidad, el tipo de producto, el importe manual y el método de pago, y registra cabecera y líneas en una transacción. La suma de asignaciones Yape/efectivo de todas las líneas debe coincidir con la cabecera. Los detalles pagados son inmutables.
+- Egreso tiene además un camino de corrección. Si se inicia en un pedido vacío y se deja el importe en cero/vacío, la interfaz muestra pagos Correctos de hoy y ayer para la sede permitida. Elegir uno no registra un nuevo egreso: la RPC marca Erróneo el pedido original e inserta un evento con autor, snapshot del nombre, motivo y hora. El importe original permanece en el historial y se excluye de métricas limpias. Si se introduce un importe mayor que cero, el formulario vuelve al egreso normal.
+- La lista de candidatos y la corrección están protegidas por usuario, rol y sede en la RPC. La ventana de corrección de producción permite hoy y ayer; el flujo antiguo limitado a hoy fue reemplazado por la migración de ventana de corrección.
+
+### Estado de la implementación en Black&White
+
+La interfaz y Estadísticas consultan `public.orders`; el flujo de pago usa `record_paid_order`/`pay_open_order`. La migración local `202611120003_paid_orders_and_statistics.sql` implementa pedidos pagados, líneas, agregados, instantáneas de pago y correcciones auditadas, además del esquema/RPC de pedidos abiertos que consume la interfaz. La migración crea el modelo multi-restaurante y conserva hasta diez importes y sus métodos/modos históricos. Debe aplicarse al proyecto remoto para que desaparezca `PGRST205` y Estadísticas pueda cargar movimientos. No está desplegada automáticamente por editar el repositorio.
+
 ## Colas operativas opcionales
 
 ## Cierre automático de Caja y operaciones pendientes
@@ -68,7 +84,7 @@ Cada movimiento conserva un timestamp y el total, además del desglose de pagos.
 
 Configuración ofrece cinco métodos base que el administrador activa o desactiva: Efectivo, Yape, Plin, Transferencia bancaria directa y Tarjetas. Al activar un método, se habilita la modalidad manual o automática que corresponda: efectivo y transferencia bancaria directa son solo manuales; Yape, Plin y tarjetas pueden habilitarse en modalidad manual, automática o ambas. La modalidad automática requiere una integración compatible y configurada. Estos métodos no se agregan ni renombra desde Flujo de pedidos.
 
-La capacidad de persistencia del movimiento sigue siendo de hasta diez espacios de importe, aunque cada restaurante habilite como máximo esos cinco métodos base. El método y modalidad aplicados a cada importe se guardan como instantánea histórica. Falta decidir cómo se representan varios pagos o intentos del mismo método dentro de los diez espacios y cómo se relaciona la modalidad con el arreglo histórico de tipos.
+La capacidad de persistencia admite hasta diez espacios de importe. El método y modalidad de cada método usado se guardan como instantánea histórica, y la migración valida en el servidor que las asignaciones sumen el total. La interfaz actual solo permite el pago global o la división porcentual entre Yape y efectivo para productos normales; aún falta definir en la interfaz el uso de Plin, transferencia y tarjeta, además de pagos parciales/reintentos del mismo método.
 
 ## Ajustes de permisos y límites desde Configuración
 
@@ -79,4 +95,4 @@ La capacidad de persistencia del movimiento sigue siendo de hasta diez espacios 
 
 ## Pendientes
 
-Definir ciclo de vida, persistencia de borradores, estados, concurrencia, anulaciones y comportamiento cuando falte conexión. Precisar si un movimiento representa un cobro, devolución, ingreso/egreso de caja u otros eventos, y cómo se valida la suma y el snapshot de métodos en servidor.
+Definir el ciclo completo de borradores, estados de cocina/salón/delivery, anulaciones y comportamiento cuando falte conexión; también falta decidir cómo se modelan devoluciones y pagos parciales/reintentos. La migración actual registra pagos cerrados e ingresos/egresos especiales, pero no implementa el ciclo de caja ni esos estados operativos.

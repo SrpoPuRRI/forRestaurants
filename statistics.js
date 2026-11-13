@@ -25,6 +25,7 @@ export default function createStatistics({
     taxonomyError: "",
     allOrders: [],
     orders: [],
+    paymentMethods: [],
     items: [],
     addons: [],
     locations: [],
@@ -44,6 +45,17 @@ export default function createStatistics({
     dateDialog: null,
     settingsDialog: null,
   };
+
+  function loadErrorMessage(error, fallback) {
+    const message = String(error?.message || "");
+    if (
+      error?.code === "PGRST205" &&
+      message.includes("public.orders")
+    ) {
+      return "La base de datos todavía no tiene el esquema de pedidos pagados. Aplica la migración 202611120003_paid_orders_and_statistics.sql para habilitar Estadísticas.";
+    }
+    return message || fallback;
+  }
 
   // Lee las preferencias guardadas localmente.
   function readSettings() {
@@ -256,6 +268,7 @@ export default function createStatistics({
       data.error = "";
       refreshApp();
       try {
+        await loadPaymentMethods();
         let query = supabase
           .from("orders")
           .select("location_id,paid_at")
@@ -274,8 +287,10 @@ export default function createStatistics({
         await loadRange();
       } catch (error) {
         data.loading = false;
-        data.error =
-          error.message || "No se pudieron actualizar las fechas disponibles.";
+        data.error = loadErrorMessage(
+          error,
+          "No se pudieron actualizar las fechas disponibles.",
+        );
         refreshApp();
       }
       return;
@@ -308,6 +323,7 @@ export default function createStatistics({
       ]);
       data.locations = locations;
       data.allOrders = orders;
+      await loadPaymentMethods();
       // Dates and paid orders must remain available even if optional catalog ranking data fails to load.
       updateAvailableDates();
       data.initialized = true;
@@ -323,9 +339,21 @@ export default function createStatistics({
       await loadRange();
     } catch (error) {
       data.loading = false;
-      data.error = error.message || "No se pudieron cargar las estadísticas.";
+      data.error = loadErrorMessage(
+        error,
+        "No se pudieron cargar las estadísticas.",
+      );
       refreshApp();
     }
+  }
+  async function loadPaymentMethods() {
+    const { data: rows, error } = await supabase
+      .from("restaurant_payment_methods")
+      .select("method_key,enabled")
+      .eq("restaurant_id", state.restaurantId)
+      .eq("enabled", true);
+    if (error) throw error;
+    data.paymentMethods = rows || [];
   }
   // Carga los pedidos del periodo seleccionado.
   async function loadRange() {
@@ -338,7 +366,7 @@ export default function createStatistics({
       let query = supabase
         .from("orders")
         .select(
-          "id,location_id,status,amount_yape,amount_cash,total,paid_at,operator_name_snapshot,note,locations(name)",
+          "id,location_id,status,amount_yape,amount_cash,payment_amounts,payment_method_keys,total,paid_at,operator_name_snapshot,note,locations(name)",
         )
         .gte("paid_at", from)
         .lt("paid_at", until)
@@ -354,7 +382,7 @@ export default function createStatistics({
           supabase
             .from("order_items")
             .select(
-              "id,order_id,product_id,product_name_snapshot,variant_name_snapshot,line_kind,quantity,unit_price,line_total,amount_yape,amount_cash,concept",
+              "id,order_id,product_id,product_name_snapshot,variant_name_snapshot,line_kind,quantity,unit_price,line_total,amount_yape,amount_cash,payment_amounts,payment_method_keys,concept",
             )
             .in("order_id", ids)
             .order("id"),
@@ -386,9 +414,10 @@ export default function createStatistics({
       refreshApp();
     } catch (error) {
       data.loading = false;
-      data.error =
-        error.message ||
-        "No se pudieron cargar los movimientos de este periodo.";
+      data.error = loadErrorMessage(
+        error,
+        "No se pudieron cargar los movimientos de este periodo.",
+      );
       data.orders = [];
       data.items = [];
       data.addons = [];
@@ -524,12 +553,19 @@ export default function createStatistics({
       (sum, order) => sum + Number(order.amount_cash || 0),
       0,
     );
-    const total = yape + cash;
+    const total = valid.reduce((sum, order) => sum + Number(order.total || 0), 0);
+    const paymentTotals = new Map();
+    valid.forEach((order) => {
+      (order.payment_method_keys || []).forEach((method, index) => {
+        paymentTotals.set(method, (paymentTotals.get(method) || 0) + Number(order.payment_amounts?.[index] || 0));
+      });
+    });
     return {
       valid,
       yape,
       cash,
       total,
+      paymentTotals,
       average: valid.length ? total / valid.length : 0,
     };
   }
@@ -607,6 +643,11 @@ export default function createStatistics({
       '<div class="empty">No hay ventas de este tipo en el periodo.</div>'
     );
   }
+  function paymentSnapshotHtml(amounts = [], methods = []) {
+    if (data.paymentMethods.length < 2) return "";
+    const labels = { cash: "Efectivo", yape: "Yape", plin: "Plin", bank_transfer: "Transferencia bancaria", card: "Tarjeta" };
+    return `<div class="stats-detail-split">${methods.map((method, index) => `<span>${esc(labels[method] || method)} ${money(amounts[index] || 0)}</span>`).join("")}</div>`;
+  }
   // Genera una descripcion de los articulos de un pedido.
   function itemDescription(order) {
     return (
@@ -640,7 +681,16 @@ export default function createStatistics({
     const siteFilter = isEmployee
       ? `<span class="stats-site-label">${esc(state.site)}</span>`
       : `<select class="select" id="stats-site-filter"><option value="">Todas las sedes</option>${data.locations.map((loc) => `<option value="${esc(loc.id)}" ${data.selectedLocation === loc.id ? "selected" : ""}>${esc(loc.name)}</option>`).join("")}</select>`;
-    const cards = `<div class="metrics"><article class="metric"><div class="metric-label">Saldo neto</div><div class="metric-value">${money(summary.total)}</div><div class="metric-foot">Solo pedidos correctos</div></article><article class="metric"><div class="metric-label">Pedidos pagados</div><div class="metric-value">${summary.valid.length}</div><div class="metric-foot neutral">${esc(dateText)}</div></article><article class="metric"><div class="metric-label">Promedio por pedido</div><div class="metric-value">${money(summary.average)}</div><div class="metric-foot neutral">Saldo neto / pedidos correctos</div></article><article class="metric"><div class="metric-label">Desglose</div><div class="stats-payments"><span>Yape <strong>${money(summary.yape)}</strong></span><span>Efectivo <strong>${money(summary.cash)}</strong></span></div></article></div>`;
+    const showPaymentBreakdown = data.paymentMethods.length > 1;
+    const methodLabels = { cash: "Efectivo", yape: "Yape", plin: "Plin", bank_transfer: "Transferencia bancaria", card: "Tarjeta" };
+    const paymentKeys = [...new Set([
+      ...data.paymentMethods.map((row) => row.method_key),
+      ...summary.paymentTotals.keys(),
+    ])];
+    const paymentBreakdown = paymentKeys
+      .map((method) => `<span>${esc(methodLabels[method] || method)} <strong>${money(summary.paymentTotals.get(method) || 0)}</strong></span>`)
+      .join("");
+    const cards = `<div class="metrics ${showPaymentBreakdown ? "" : "metrics-compact"}"><article class="metric"><div class="metric-label">Saldo neto</div><div class="metric-value">${money(summary.total)}</div><div class="metric-foot">Solo pedidos correctos</div></article><article class="metric"><div class="metric-label">Pedidos pagados</div><div class="metric-value">${summary.valid.length}</div><div class="metric-foot neutral">${esc(dateText)}</div></article><article class="metric"><div class="metric-label">Promedio por pedido</div><div class="metric-value">${money(summary.average)}</div><div class="metric-foot neutral">Saldo neto / pedidos correctos</div></article>${showPaymentBreakdown ? `<article class="metric"><div class="metric-label">Desglose por medio de pago</div><div class="stats-payments">${paymentBreakdown || '<span>Sin movimientos en el periodo.</span>'}</div></article>` : ""}</div>`;
     const sections = [];
     if (rankVisible("products"))
       sections.push(
@@ -664,7 +714,7 @@ export default function createStatistics({
           `<article class="stats-movement ${order.status === "erroneous" ? "is-erroneous" : ""}"><div class="stats-movement-info"><div class="stats-movement-title"><strong>${esc(order.operator_name_snapshot || "Pedido")}</strong>${order.status === "erroneous" ? '<span class="badge erroneous-badge">Erróneo</span>' : ""}</div><div class="stats-movement-meta">${esc(order.locations?.name || data.locations.find((x) => x.id === order.location_id)?.name || "Sede")} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(order.paid_at))}</div><div class="stats-movement-items">${esc(itemDescription(order))}</div></div><div class="stats-movement-total"><strong>${money(order.total)}</strong><button type="button" class="btn secondary stats-view-button" data-view-movement="${esc(order.id)}">Ver</button></div></article>`,
       )
       .join("");
-    return `<section class="page-head stats-page-head"><div><div class="eyebrow">${isEmployee ? "Resumen diario" : "Visión general"}</div><h1>${isEmployee ? `Hoy en ${esc(state.site)}` : "Estadísticas"}</h1><p class="desc">${isEmployee ? "Resumen y movimientos de hoy en tu sede." : "Consulta pagos e indicadores del periodo seleccionado."}</p></div><div class="stats-toolbar">${isEmployee ? `<span class="stats-period-label">${esc(dateText)}</span>` : `<button type="button" class="icon stats-calendar-trigger" id="stats-open-date" aria-label="Elegir fechas" title="Elegir fechas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M7.5 13h2m3 0h2m-7 4h2"/></svg></button>${siteFilter}`}</div></section>${data.error ? `<div class="inline-error" role="alert">${esc(data.error)}</div>` : ""}${data.taxonomyError ? `<div class="inline-error" role="status">No se pudieron cargar los datos de categorías/etiquetas; los pagos e historial siguen disponibles. ${esc(data.taxonomyError)}</div>` : ""}${data.loading ? '<div class="stats-loading-bar">Actualizando estadísticas…</div>' : ""}${cards}<section class="panel stats-chart-panel"><div class="panel-head"><div class="panel-title">${data.mode === "single" ? "Pedidos por hora" : "Pedidos por día"}</div><span class="meta">${data.mode === "single" ? "Hora de Lima" : esc(dateText)}</span></div>${chartHtml()}</section><div class="stats-rankings">${sections.join("") || '<section class="panel"><div class="empty">No hay rankings habilitados para tu rol.</div></section>'}</div><section class="panel stats-history-panel"><div class="panel-head"><div><div class="panel-title">${isEmployee ? "Movimientos de hoy" : "Movimientos del periodo"}</div><div class="meta">${data.orders.length} registros · los erróneos se conservan y no suman al saldo</div></div><span class="stats-scroll-hint">Desplázate para ver todos</span></div><div class="stats-history-list" role="region" aria-label="Movimientos del periodo" tabindex="0">${movementRows || '<div class="empty">No hay movimientos en este periodo.</div>'}</div></section>`;
+    return `<section class="page-head stats-page-head"><div><div class="eyebrow">${isEmployee ? "Resumen diario" : "Visión general"}</div><h1>${isEmployee ? `Hoy en ${esc(state.site)}` : "Estadísticas"}</h1><p class="desc">${isEmployee ? "Resumen y movimientos de hoy en tu sede." : "Consulta pagos e indicadores del periodo seleccionado."}</p></div><div class="stats-toolbar">${isEmployee ? `<span class="stats-period-label">${esc(dateText)}</span>` : `<button type="button" class="icon stats-calendar-trigger" id="stats-open-date" aria-label="Elegir fechas" title="Elegir fechas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M7.5 13h2m3 0h2m-7 4h2"/></svg></button>${siteFilter}`}</div></section>${data.error ? `<div class="inline-error" role="alert">${esc(data.error)}</div>` : ""}${data.taxonomyError ? `<div class="inline-error" role="status">No se pudieron cargar los datos de categorías/etiquetas; los pagos e historial siguen disponibles. ${esc(data.taxonomyError)}</div>` : ""}${data.loading ? '<div class="stats-loading-bar">Actualizando estadísticas…</div>' : ""}${cards}<section class="panel stats-chart-panel"><div class="panel-head"><div class="panel-title">${data.mode === "single" ? "Pedidos por hora" : "Pedidos por día"}</div><span class="meta">${data.mode === "single" ? "Hora de Lima" : esc(dateText)}</span></div>${chartHtml()}</section>${sections.length ? `<div class="stats-rankings">${sections.join("")}</div>` : ""}<section class="panel stats-history-panel"><div class="panel-head"><div><div class="panel-title">${isEmployee ? "Movimientos de hoy" : "Movimientos del periodo"}</div><div class="meta">${data.orders.length} registros · los erróneos se conservan y no suman al saldo</div></div><span class="stats-scroll-hint">Desplázate para ver todos</span></div><div class="stats-history-list" role="region" aria-label="Movimientos del periodo" tabindex="0">${movementRows || '<div class="empty">No hay movimientos en este periodo.</div>'}</div></section>`;
   }
   // Genera el calendario para seleccionar un periodo.
   function datePickerHtml(month, selectedStart, selectedEnd, mode) {
@@ -946,7 +996,7 @@ export default function createStatistics({
               `<div class="stats-detail-addon"><span>+ ${esc(addon.addon_name_snapshot)}${addon.quantity > 1 ? ` × ${addon.quantity}` : ""}</span><span>${money(addon.line_total)}</span></div>`,
           )
           .join("");
-        return `<article class="stats-detail-line"><div class="stats-detail-line-head"><div><strong>${esc(item.product_name_snapshot)}</strong><div class="meta">${esc(item.variant_name_snapshot || "Movimiento")}${item.quantity > 1 ? ` · ${item.quantity} unidades` : ""}${item.concept ? ` · ${esc(item.concept)}` : ""}</div></div><strong>${money(item.line_total)}</strong></div>${addOns}<div class="stats-detail-split"><span>Yape ${money(item.amount_yape)}</span><span>Efectivo ${money(item.amount_cash)}</span></div></article>`;
+        return `<article class="stats-detail-line"><div class="stats-detail-line-head"><div><strong>${esc(item.product_name_snapshot)}</strong><div class="meta">${esc(item.variant_name_snapshot || "Movimiento")}${item.quantity > 1 ? ` · ${item.quantity} unidades` : ""}${item.concept ? ` · ${esc(item.concept)}` : ""}</div></div><strong>${money(item.line_total)}</strong></div>${addOns}${paymentSnapshotHtml(item.payment_amounts, item.payment_method_keys)}</article>`;
       })
       .join("");
     const location =
@@ -956,7 +1006,7 @@ export default function createStatistics({
     const correction = data.corrections.find(
       (row) => row.order_id === order.id,
     );
-    dialog.innerHTML = `<div class="stats-dialog-head"><div><div class="panel-title">Detalle del movimiento</div><div class="meta">${esc(location)} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "full", timeStyle: "short" }).format(new Date(order.paid_at))}</div></div><button type="button" class="dialog-close" data-close-detail aria-label="Cerrar">×</button></div><div class="stats-detail-summary"><div><span>Registró</span><strong>${esc(order.operator_name_snapshot || "Equipo")}</strong></div><div><span>Estado</span><strong class="${order.status === "erroneous" ? "status-error" : "status-ok"}">${order.status === "erroneous" ? "Erróneo" : "Correcto"}</strong></div></div>${correction ? `<section class="stats-detail-note correction-note"><span>Corrección</span><p>${esc(correction.reason || "Pedido marcado como erróneo")}</p><small>Confirmó ${esc(correction.operator_name_snapshot || "Equipo")} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "medium", timeStyle: "short" }).format(new Date(correction.corrected_at))}</small></section>` : ""}<section class="stats-detail-note"><span>Nota del pedido</span><p>${order.note ? esc(order.note) : "Este pedido no tiene nota."}</p></section><div class="stats-detail-lines">${rows || '<div class="empty">Este movimiento no tiene líneas de detalle.</div>'}</div><div class="stats-detail-totals"><div><span>Yape</span><strong>${money(order.amount_yape)}</strong></div><div><span>Efectivo</span><strong>${money(order.amount_cash)}</strong></div><div class="grand-total"><span>Total neto</span><strong>${money(order.total)}</strong></div></div><div class="stats-detail-footer"><button type="button" class="btn secondary" data-print-movement>Imprimir comprobante</button><button type="button" class="btn primary" data-close-detail>Cerrar</button></div>`;
+    dialog.innerHTML = `<div class="stats-dialog-head"><div><div class="panel-title">Detalle del movimiento</div><div class="meta">${esc(location)} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "full", timeStyle: "short" }).format(new Date(order.paid_at))}</div></div><button type="button" class="dialog-close" data-close-detail aria-label="Cerrar">×</button></div><div class="stats-detail-summary"><div><span>Registró</span><strong>${esc(order.operator_name_snapshot || "Equipo")}</strong></div><div><span>Estado</span><strong class="${order.status === "erroneous" ? "status-error" : "status-ok"}">${order.status === "erroneous" ? "Erróneo" : "Correcto"}</strong></div></div>${correction ? `<section class="stats-detail-note correction-note"><span>Corrección</span><p>${esc(correction.reason || "Pedido marcado como erróneo")}</p><small>Confirmó ${esc(correction.operator_name_snapshot || "Equipo")} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "medium", timeStyle: "short" }).format(new Date(correction.corrected_at))}</small></section>` : ""}<section class="stats-detail-note"><span>Nota del pedido</span><p>${order.note ? esc(order.note) : "Este pedido no tiene nota."}</p></section><div class="stats-detail-lines">${rows || '<div class="empty">Este movimiento no tiene líneas de detalle.</div>'}</div><div class="stats-detail-totals">${paymentSnapshotHtml(order.payment_amounts, order.payment_method_keys)}<div class="grand-total"><span>Total neto</span><strong>${money(order.total)}</strong></div></div><div class="stats-detail-footer"><button type="button" class="btn secondary" data-print-movement>Imprimir comprobante</button><button type="button" class="btn primary" data-close-detail>Cerrar</button></div>`;
     dialog
       .querySelectorAll("[data-close-detail]")
       .forEach((button) => (button.onclick = () => dialog.close()));
