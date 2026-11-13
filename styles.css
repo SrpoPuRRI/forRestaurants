@@ -2046,6 +2046,16 @@ body.device-mobile .new-order-mode-icon .new-order-icon{display:block;width:22px
 @media(max-width:850px){.crm-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.salon-layout{grid-template-columns:1fr}.salon-map-grid{min-height:330px}}
 @media(max-width:560px){.crm-kpis{gap:8px}.crm-kpis article{padding:12px}.crm-kpis strong{font-size:23px}.crm-toolbar{align-items:stretch;flex-direction:column}.kitchen-order-card>header{align-items:flex-start;flex-direction:column}.kitchen-order-card>header .btn{width:100%}.salon-head-actions .btn{font-size:12px;padding:9px}.salon-map-grid{min-height:300px;grid-template-rows:repeat(var(--map-rows),minmax(24px,1fr));gap:3px;padding:5px}.salon-table{font-size:13px;border-radius:8px}}
 .salon-table.is-dragging{opacity:.82;z-index:4;transform:translate(var(--drag-x,0),var(--drag-y,0)) scale(1.04);pointer-events:none}
+/* Desktop workspace navigation and pending settings save */
+@media (min-width:781px){
+  .sidebar>div:nth-child(2){display:flex;flex:1;flex-direction:column;min-height:0;overflow:hidden}
+  .sidebar .nav{display:grid;flex:1;align-content:start;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-width:none}
+  .sidebar .nav::-webkit-scrollbar{display:none;width:0;height:0}
+  .sidebar .profile{flex:none}
+}
+#save-restaurant-settings:disabled{opacity:.45;cursor:not-allowed}
+#save-restaurant-settings.settings-save-sticky{position:fixed;right:28px;bottom:24px;z-index:40;box-shadow:0 8px 24px #191a1833}
+@media(max-width:780px){#save-restaurant-settings.settings-save-sticky{right:16px;bottom:calc(84px + env(safe-area-inset-bottom))}}
 /* Per-line dining room grid sizing controls */
 .grid-size-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}.grid-size-controls>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start}.grid-size-controls>div>strong{grid-column:1/-1;font-size:12px}.grid-size-controls label{display:grid;gap:4px;color:var(--muted);font-size:11px}.grid-size-controls input{width:100%;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px}@media(max-width:600px){.grid-size-controls{grid-template-columns:1fr}}
 @media(max-width:780px){.mobile-nav{display:flex;justify-content:flex-start;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#cfc5b8 transparent}.mobile-nav button{flex:0 0 78px;min-width:78px}}.salon-head-actions .btn{display:inline-flex;align-items:center;gap:7px}

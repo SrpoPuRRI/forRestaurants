@@ -7,7 +7,7 @@ import {
   AUTH_EMAIL_BASE,
 } from "./supabase-config.js";
 import createOrderFlow from "./order-flow.js";
-import createStatistics from "./statistics.js?v=20261113-statistics-visibility";
+import createStatistics from "./statistics.js?v=20261113-settings-nav-rankings";
 import createRestaurantSettings from "./restaurant-settings.js";
 import createRestaurantWorkspaces from "./restaurant-workspaces.js";
 
@@ -2261,8 +2261,41 @@ function adaptNewOrderButton() {
     return;
   button.classList.replace("new-order-mode-stacked", "new-order-mode-icon");
 }
+function bindWorkspaceNavEdgeScroll() {
+  const nav = document.querySelector(".sidebar .nav");
+  if (!nav || nav.dataset.edgeScrollBound === "true") return;
+  nav.dataset.edgeScrollBound = "true";
+  let pointerY = null;
+  let frame = 0;
+  const edgeSize = 48;
+  const stop = () => {
+    pointerY = null;
+    if (frame) cancelAnimationFrame(frame);
+    frame = 0;
+  };
+  const tick = () => {
+    frame = 0;
+    if (pointerY === null || nav.scrollHeight <= nav.clientHeight + 1) return;
+    const rect = nav.getBoundingClientRect();
+    let delta = 0;
+    if (pointerY < rect.top + edgeSize)
+      delta = -Math.ceil(8 * (1 - Math.max(0, pointerY - rect.top) / edgeSize));
+    else if (pointerY > rect.bottom - edgeSize)
+      delta = Math.ceil(8 * (1 - Math.max(0, rect.bottom - pointerY) / edgeSize));
+    if (delta) nav.scrollTop += delta;
+    if (delta && ((delta < 0 && nav.scrollTop > 0) || (delta > 0 && nav.scrollTop + nav.clientHeight < nav.scrollHeight)))
+      frame = requestAnimationFrame(tick);
+  };
+  nav.addEventListener("pointermove", (event) => {
+    if (event.pointerType !== "mouse") return;
+    pointerY = event.clientY;
+    if (!frame) frame = requestAnimationFrame(tick);
+  });
+  nav.addEventListener("pointerleave", stop);
+}
 // Vincula los eventos de interacción de la vista actual.
 function bind() {
+  bindWorkspaceNavEdgeScroll();
   document.querySelectorAll("[data-page]").forEach(
     (b) =>
       (b.onclick = () => {

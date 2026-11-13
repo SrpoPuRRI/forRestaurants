@@ -268,7 +268,7 @@ export default function createStatistics({
       data.error = "";
       refreshApp();
       try {
-        await refreshRankingConfiguration().catch(() => {});
+        await refreshRankingConfiguration();
         await loadPaymentMethods();
         let query = supabase
           .from("orders")
@@ -300,7 +300,7 @@ export default function createStatistics({
     data.error = "";
     refreshApp();
     try {
-      await refreshRankingConfiguration().catch(() => {});
+      await refreshRankingConfiguration();
       const [locations, orders] = await Promise.all([
         supabase
           .from("locations")
