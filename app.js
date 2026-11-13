@@ -7,9 +7,10 @@ import {
   AUTH_EMAIL_BASE,
 } from "./supabase-config.js";
 import createOrderFlow from "./order-flow.js";
-import createStatistics from "./statistics.js?v=20261113-settings-nav-rankings";
-import createRestaurantSettings from "./restaurant-settings.js?v=20261113-general-needs-confirmation";
+import createStatistics from "./statistics.js?v=20261113-appearance-builder";
+import createRestaurantSettings from "./restaurant-settings.js?v=20261113-appearance-builder";
 import createRestaurantWorkspaces from "./restaurant-workspaces.js";
+import createAppearance from "./appearance.js?v=20261113-appearance-builder";
 
 //Sección de inicialización de las cuentas, función propuesta por la documentación que leí en Supabase
 const supabase =
@@ -339,6 +340,7 @@ const statistics = createStatistics({
   formatDateShort,
   formatDateLong,
 });
+const appearance = createAppearance({ state: s, supabase });
 const restaurantSettings = createRestaurantSettings({
   supabase,
   state: s,
@@ -488,6 +490,7 @@ async function loadAuthenticatedProfile(user) {
   s.authUserId = profile.auth_user_id;
   s.locationId = profile.location_id;
   await restaurantSettings.load();
+  appearance.apply();
 }
 // Valida las credenciales e inicia la sesión del usuario.
 async function submitLogin() {
@@ -741,6 +744,7 @@ function shell() {
     '</div><div class="top-sub"><span>' +
     shownLabel +
     '</span></div></div><div class="top-right">' +
+    appearance.buttonMarkup() +
     '<button class="btn secondary" id="logout" style="padding:8px 10px;font-size:10px">Salir</button></div></header><div class="content">' +
     page() +
     '</div></main><nav class="mobile-nav ' +
@@ -2142,6 +2146,7 @@ function render() {
   applyDeviceClasses();
   let root = $("#app");
   root.innerHTML = s.user ? shell() : login();
+  appearance.apply();
   bind();
   requestAnimationFrame(adaptNewOrderButton);
 }
@@ -2295,6 +2300,7 @@ function bindWorkspaceNavEdgeScroll() {
 }
 // Vincula los eventos de interacción de la vista actual.
 function bind() {
+  appearance.bind();
   bindWorkspaceNavEdgeScroll();
   document.querySelectorAll("[data-page]").forEach(
     (b) =>
@@ -2325,6 +2331,7 @@ function bind() {
     s.draft = { items: [], note: "" };
     s.orderTableId = null;
     s.orderTableLabel = "";
+    s.restaurantSettings = null;
     render();
   });
   if (s.page === "orders" || s.page === "catalog") {

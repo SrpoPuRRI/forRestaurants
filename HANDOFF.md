@@ -62,6 +62,8 @@ Migraciones presentes en este repositorio, en orden:
 - `202611120002_account_locations_and_active_usernames.sql`: sede principal y unicidad de nombres de usuario entre cuentas activas.
 - `202611120003_paid_orders_and_statistics.sql`: `orders`, `order_items`, `order_item_addons`, `order_correction_events`, `open_orders` y RPC de pedidos/pago/corrección.
 - `202611130001_required_special_products_and_payment_rules.sql`: productos Ingreso/Egreso obligatorios, efectivo forzado y correcciones sin motivo. La sintaxis del `CASE` del trigger se corrigió agrupando la expresión; no restaurar la versión que falló con `syntax error at end of input`.
+- `202611130002_reconcile_account_roles_on_need_changes.sql`: sincroniza roles habilitados y reasigna a Empleado cuentas que quedan sin roles al retirar necesidades.
+- `202611130003_restaurant_color_schemes.sql`: agrega `restaurants.appearance` JSONB para esquemas de color claro/oscuro opcionales.
 
 El usuario indicó que desplegó los últimos cambios y que funcionan. Aun así, el Handoff no reemplaza la evidencia del historial remoto: si una nueva tarea depende de una columna/función específica, verifica `supabase_migrations.schema_migrations` o consulta el esquema remoto antes de proponer otra migración. Nunca edites migraciones ya aplicadas; agrega una con timestamp posterior.
 
@@ -127,6 +129,8 @@ El catálogo de administración solo crea productos estándar. Ingreso/Egreso se
 - El historial sí conserva movimientos Erróneos con aviso. Ingreso/Egreso participa en saldo neto con signo; productos especiales no cuentan como unidades de productos vendidos.
 
 **Caja aún es diseño/spec, no flujo terminado:** hay una propuesta de boolean abierta/cerrada, registro mensual por turnos con timestamps, cierre manual con contraseña y cierre automático cerca del siguiente turno. El fin de turno no debe cerrar automáticamente la caja. No decir que esto ya existe en producción. Ver `specs/Estadísticas/spec_001.md`.
+
+La migración `202611130003_restaurant_color_schemes.sql` es necesaria para la última versión de Configuración; no se aplicó desde este entorno. El esquema activo es compartido por restaurante y el tema claro/oscuro es una preferencia personal por navegador (`localStorage`).
 
 ## Cocina, Salón y demás necesidades
 

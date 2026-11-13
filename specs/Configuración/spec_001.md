@@ -52,7 +52,7 @@ Las modalidades automática de Yape, Plin y tarjeta requieren definir proveedor,
 
 ## Capacidades de roles
 
-Los roles pertenecen a un catálogo global de la app; no hay roles mixtos predefinidos. Cuentas acumula permisos asignando varios roles simples a una persona. La app deriva los roles disponibles del restaurante a partir de sus necesidades opcionales y las opciones guardadas en Configuración. El administrador puede actualizar las necesidades después de crear el restaurante, sin recrearlo. En Configuración, las opciones de identidad y necesidades están agrupadas en la sección **General**.
+Los roles pertenecen a un catálogo global de la app; no hay roles mixtos predefinidos. Cuentas acumula permisos asignando varios roles simples a una persona. La app deriva los roles disponibles del restaurante a partir de sus necesidades opcionales y las opciones guardadas en Configuración. El administrador puede actualizar las necesidades después de crear el restaurante, sin recrearlo. En Configuración, el logo y las necesidades están agrupados en **General**. El selector de logo admite arrastrar y soltar. Debajo está **Personalización**, donde se crean esquemas opcionales claro/oscuro. Cada esquema se guarda en `restaurants.appearance` como JSON; guardarlo no lo activa. El administrador selecciona un esquema y pulsa Guardar cambios para aplicarlo a todo el restaurante. Si no se selecciona ninguno, se usan los temas predeterminados de Black&White.
 
 Reglas acordadas:
 
@@ -93,6 +93,13 @@ Los controles por rol solo pueden referirse a roles disponibles y habilitados pa
 - Flujo de pedidos obtiene de esta configuración los métodos que ofrece al cobrar. Una actualización afecta operaciones nuevas, no reinterpreta movimientos históricos.
 - Cada movimiento conserva junto a su timestamp una copia ordenada de los tipos de método usados. Así se puede interpretar su desglose aunque más adelante cambie la configuración del restaurante.
 - El formato del desglose y las reglas de conciliación quedan por detallar en la especificación de Flujo de pedidos. Los métodos se configuran dentro del POS; no requieren una arquitectura ni un catálogo genérico.
+
+## Apariencia y tema personal
+
+- La app incluye tema Claro y tema Oscuro predeterminados. Cada usuario cambia entre ellos con el botón circular del encabezado. La preferencia es personal del navegador, se guarda en `localStorage` y se conserva al cambiar de cuenta en ese navegador.
+- El esquema de colores activo es compartido por el restaurante; los usuarios solo eligen cuál de los dos modos usar.
+- Los esquemas opcionales guardan valores separados para Claro y Oscuro: fondo, superficies, textos, bordes, botones, acento, tipografía permitida, tamaño de texto y tamaño de botones. Fuentes permitidas: DM Sans, Manrope, Lato, Nunito Sans, Montserrat y Poppins.
+- Guardar un esquema lo añade al JSON de `restaurants.appearance`; seleccionarlo cambia el borrador de Configuración y Guardar cambios activa el esquema para el restaurante. Sin esquemas, el POS funciona con sus temas integrados.
 
 ## Pendientes
 

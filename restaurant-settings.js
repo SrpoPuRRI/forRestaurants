@@ -1,3 +1,5 @@
+import { ALLOWED_FONTS, DEFAULT_COLOR_THEMES } from "./appearance.js?v=20261113-appearance-builder";
+
 // Configuración operativa del restaurante, persistida en columnas y tablas de dominio.
 export default function createRestaurantSettings({ supabase, state, esc, toast, render }) {
   let savedSettingsSnapshot = null;
@@ -18,6 +20,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     "attendance_check_in_self", "attendance_check_in_peer_at_location", "attendance_check_out_self", "attendance_check_out_peer_at_location",
   ];
   const defaults = {
+    appearance: { color_schemes: [], active_color_scheme_id: null },
     employee_note_reset_mode: "manual", employee_note_reset_days: 30,
     rankings_enabled: false, rankings_products: false, rankings_variants: false, rankings_addons: false, rankings_categories: false,
     rankings_employees_enabled: false, rankings_same_for_all_roles: true,
@@ -33,6 +36,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   const roleDefaults = (role) => ({ restaurant_id: state.restaurantId, role_id: role.id, rankings_products: false, rankings_variants: false, rankings_addons: false, rankings_categories: false, order_minimum_allowed: false, order_maximum_allowed: false, corrections_allowed: false });
   const check = (key, label, value, extra = "") => `<label class="settings-check"><input type="checkbox" data-setting="${key}" ${value ? "checked" : ""} ${extra}><span>${label}</span></label>`;
   const field = (key, label, value, extra = "") => `<label class="settings-field">${label}<input data-setting="${key}" type="number" min="0" step="0.01" value="${value ?? ""}" ${extra}></label>`;
+  const safeHex = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || "")) ? value : fallback;
 
   async function load() {
     if (!supabase || !state.restaurantId) return;
@@ -87,6 +91,133 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       dialog.addEventListener("close",()=>{dialog.remove();resolve(result);});
     });
   }
+  const colorFields = [
+    ["background", "Fondo de la aplicación"], ["surface", "Paneles y tarjetas"],
+    ["surfaceAlt", "Barras y superficies secundarias"], ["text", "Texto principal"],
+    ["muted", "Texto secundario"], ["border", "Bordes"],
+    ["button", "Botones principales"], ["buttonText", "Texto de botones"],
+    ["accent", "Acento"],
+  ];
+  function currentAppearance() {
+    const appearance = state.restaurantSettings?.appearance || {};
+    return {
+      color_schemes: Array.isArray(appearance.color_schemes) ? appearance.color_schemes : [],
+      active_color_scheme_id: appearance.active_color_scheme_id || null,
+    };
+  }
+  function colorSchemeCards(selectedId = currentAppearance().active_color_scheme_id) {
+    const appearance = currentAppearance();
+    const schemes = appearance.color_schemes.map((scheme) => {
+      const theme = scheme.light || DEFAULT_COLOR_THEMES.light;
+      return `<label class="color-scheme-card ${selectedId === scheme.id ? "selected" : ""}"><input type="radio" name="active-color-scheme" data-active-color-scheme value="${esc(scheme.id)}" ${selectedId === scheme.id ? "checked" : ""}><span class="color-scheme-swatches" style="--scheme-background:${safeHex(theme.background, "#f4f1ea")};--scheme-surface:${safeHex(theme.surface, "#fffefa")};--scheme-button:${safeHex(theme.button, "#20211f")};--scheme-accent:${safeHex(theme.accent, "#b64b36")}"><i></i><i></i><i></i><i></i></span><span class="color-scheme-card-copy"><strong>${esc(scheme.name)}</strong><small>${selectedId === scheme.id ? "Seleccionado" : "Usar esquema"}</small></span></label>`;
+    }).join("");
+    return `${schemes}<button class="color-scheme-create" type="button" id="create-color-scheme"><span class="color-scheme-create-icon" aria-hidden="true">+</span><strong>Crear esquema</strong></button>`;
+  }
+  function bindColorSchemeCards() {
+    document.querySelectorAll("[data-active-color-scheme]").forEach((radio) => {
+      radio.addEventListener("change", () => {
+        document.querySelectorAll(".color-scheme-card").forEach((card) => card.classList.toggle("selected", card.querySelector("input")?.checked));
+        const reset = document.getElementById("clear-active-color-scheme");
+        if (reset) { reset.hidden = false; reset.disabled = false; reset.textContent = "Usar colores predeterminados"; }
+        syncSaveButton();
+      });
+    });
+    document.getElementById("clear-active-color-scheme")?.addEventListener("click", (event) => {
+      document.querySelectorAll("[data-active-color-scheme]").forEach((radio) => { radio.checked = false; });
+      document.querySelectorAll(".color-scheme-card").forEach((card) => card.classList.remove("selected"));
+      event.currentTarget.disabled = true;
+      event.currentTarget.textContent = "Colores predeterminados seleccionados";
+      syncSaveButton();
+    });
+    document.getElementById("create-color-scheme")?.addEventListener("click", openColorSchemeEditor);
+  }
+  function readEditorTheme(dialog, draft, mode) {
+    const theme = { ...draft[mode] };
+    dialog.querySelectorAll("[data-theme-value]").forEach((input) => {
+      const key = input.dataset.themeValue;
+      theme[key] = input.type === "number" ? Math.min(18, Math.max(12, Number(input.value) || 14)) : input.value;
+    });
+    draft[mode] = theme;
+  }
+  function themeEditorFields(theme) {
+    const colors = colorFields.map(([key, label]) => `<label class="theme-editor-color"><span>${label}</span><input type="color" data-theme-value="${key}" value="${esc(theme[key])}"></label>`).join("");
+    const fonts = ALLOWED_FONTS.map((font) => `<option value="${esc(font)}" ${theme.font === font ? "selected" : ""}>${esc(font)}</option>`).join("");
+    return `<div class="theme-editor-colors">${colors}</div><div class="theme-editor-options"><label class="settings-field">Tipografía<select data-theme-value="font">${fonts}</select></label><label class="settings-field">Tamaño del texto<input type="number" min="12" max="18" step="1" data-theme-value="fontSize" value="${Number(theme.fontSize) || 14}"></label><label class="settings-field">Tamaño de los botones<select data-theme-value="buttonSize"><option value="small" ${theme.buttonSize === "small" ? "selected" : ""}>Compacto</option><option value="medium" ${!theme.buttonSize || theme.buttonSize === "medium" ? "selected" : ""}>Mediano</option><option value="large" ${theme.buttonSize === "large" ? "selected" : ""}>Grande</option></select></label></div>`;
+  }
+  function openColorSchemeEditor() {
+    const draft = {
+      light: { ...DEFAULT_COLOR_THEMES.light },
+      dark: { ...DEFAULT_COLOR_THEMES.dark },
+    };
+    const dialog = document.createElement("dialog");
+    dialog.className = "password-dialog color-scheme-editor";
+    dialog.innerHTML = `<div class="color-scheme-editor-head"><div><div class="panel-title">Crear esquema de colores</div><p class="meta">Guárdalo para poder seleccionarlo después en Configuración.</p></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div><label class="settings-field">Nombre del esquema<input type="text" id="color-scheme-name" maxlength="40" placeholder="Ej. El Sabor"></label><div class="theme-editor-tabs" role="tablist"><button type="button" class="active" role="tab" aria-selected="true" data-theme-tab="light">Claro</button><button type="button" role="tab" aria-selected="false" data-theme-tab="dark">Oscuro</button></div><div id="theme-editor-fields">${themeEditorFields(draft.light)}</div><div class="theme-editor-preview" id="theme-editor-preview"><span>Vista previa</span><button type="button">Botón</button></div><p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="button" class="btn primary" data-save>Guardar esquema</button></div>`;
+    document.body.appendChild(dialog);
+    let mode = "light";
+    const updatePreview = () => {
+      readEditorTheme(dialog, draft, mode);
+      const theme = draft[mode];
+      const preview = dialog.querySelector("#theme-editor-preview");
+      preview.style.setProperty("--preview-bg", theme.background);
+      preview.style.setProperty("--preview-surface", theme.surface);
+      preview.style.setProperty("--preview-text", theme.text);
+      preview.style.setProperty("--preview-button", theme.button);
+      preview.style.setProperty("--preview-button-text", theme.buttonText);
+    };
+    const renderTab = (nextMode) => {
+      readEditorTheme(dialog, draft, mode);
+      mode = nextMode;
+      dialog.querySelectorAll("[data-theme-tab]").forEach((tab) => {
+        const active = tab.dataset.themeTab === mode;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+      });
+      dialog.querySelector("#theme-editor-fields").innerHTML = themeEditorFields(draft[mode]);
+      dialog.querySelectorAll("[data-theme-value]").forEach((input) => input.addEventListener("input", updatePreview));
+      updatePreview();
+    };
+    dialog.querySelectorAll("[data-theme-tab]").forEach((tab) => tab.addEventListener("click", () => renderTab(tab.dataset.themeTab)));
+    dialog.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
+    dialog.querySelector(".dialog-close").addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => dialog.remove(), { once: true });
+    dialog.querySelector("[data-save]").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const name = dialog.querySelector("#color-scheme-name").value.trim();
+      const error = dialog.querySelector(".appearance-editor-error");
+      error.textContent = "";
+      if (!name) {
+        error.textContent = "Escribe un nombre para el esquema.";
+        dialog.querySelector("#color-scheme-name").focus();
+        return;
+      }
+      readEditorTheme(dialog, draft, mode);
+      const currentSelection = document.querySelector("[data-active-color-scheme]:checked")?.value || currentAppearance().active_color_scheme_id;
+      const appearance = currentAppearance();
+      const schema = { id: crypto.randomUUID(), name, light: draft.light, dark: draft.dark };
+      const nextAppearance = { ...appearance, color_schemes: [...appearance.color_schemes, schema] };
+      button.disabled = true;
+      try {
+        const { error: saveError } = await supabase.from("restaurants").update({ appearance: nextAppearance }).eq("id", state.restaurantId);
+        if (saveError) throw saveError;
+        state.restaurantSettings.appearance = nextAppearance;
+        dialog.close();
+        const container = document.getElementById("color-scheme-list");
+        if (container) {
+          container.innerHTML = colorSchemeCards(currentSelection);
+          bindColorSchemeCards();
+        }
+        syncSaveButton();
+        toast("Esquema guardado.");
+      } catch (saveError) {
+        error.textContent = saveError.message || "No se pudo guardar el esquema.";
+        button.disabled = false;
+      }
+    });
+    dialog.showModal();
+    dialog.querySelector("#color-scheme-name").focus();
+    dialog.querySelectorAll("[data-theme-value]").forEach((input) => input.addEventListener("input", updatePreview));
+    updatePreview();
+  }
   function renderPage() {
     if (state.settingsLoading) return '<section class="panel"><div class="empty">Cargando configuración…</div></section>';
     const v = { ...defaults, ...(state.restaurantSettings || {}) };
@@ -100,25 +231,29 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       return `<details class="settings-role"><summary>${esc(role.name)} <span class="meta">Editar permisos</span></summary><div class="settings-checks">${check(`role:${role.id}:rankings_products`, "Productos más vendidos", rs.rankings_products)}${check(`role:${role.id}:rankings_variants`, "Variantes más vendidas", rs.rankings_variants)}${check(`role:${role.id}:rankings_addons`, "Agregados más vendidos", rs.rankings_addons)}${check(`role:${role.id}:rankings_categories`, "Categorías más vendidas", rs.rankings_categories)}${check(`role:${role.id}:order_minimum_allowed`, "Puede aplicar pedido mínimo", rs.order_minimum_allowed)}${check(`role:${role.id}:order_maximum_allowed`, "Puede aplicar pedido máximo", rs.order_maximum_allowed)}${check(`role:${role.id}:corrections_allowed`, "Puede corregir pagos", rs.corrections_allowed)}</div></details>`;
     }).join("");
     const showRoles = (v.rankings_employees_enabled && !v.rankings_same_for_all_roles) || v.order_minimum_employees || v.order_maximum_employees || v.corrections_employees;
-    const logoSection = `<div class="restaurant-logo-setting"><div class="restaurant-logo-preview" id="restaurant-logo-preview">${state.restaurantLogoUrl ? `<img src="${esc(state.restaurantLogoUrl)}" alt="Logo del restaurante">` : '<span>Logo</span>'}</div><div class="restaurant-logo-controls"><label class="settings-field" for="restaurant-logo-file">Logo del restaurante<input id="restaurant-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml"></label><p class="meta">Se muestra en Setter y en el espacio de trabajo. PNG, JPG, WebP o SVG · máximo 5 MB.</p>${state.restaurantLogoPath ? '<label class="settings-check"><input id="restaurant-logo-remove" type="checkbox"><span>Quitar logo</span></label>' : ""}</div></div>`;
+    const logoSection = `<div class="restaurant-logo-setting"><div class="restaurant-logo-preview" id="restaurant-logo-preview">${state.restaurantLogoUrl ? `<img src="${esc(state.restaurantLogoUrl)}" alt="Logo del restaurante">` : '<span>Logo</span>'}</div><div class="restaurant-logo-controls"><div class="logo-drop-zone" id="logo-drop-zone" role="button" tabindex="0" aria-label="Arrastra una imagen o elige un archivo"><input id="restaurant-logo-file" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v3A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5v-3"/></svg><strong>Arrastra y suelta tu logo</strong><span>o <button type="button" class="logo-browse" id="choose-restaurant-logo">elige un archivo</button></span><small>PNG, JPG, WebP o SVG · máximo 5 MB</small></div><p class="logo-upload-error" id="logo-upload-error" role="alert"></p>${state.restaurantLogoPath ? '<label class="settings-check"><input id="restaurant-logo-remove" type="checkbox"><span>Quitar logo</span></label>' : ""}</div></div>`;
     const needChoices = [["crm","CRM"],["kitchen","Cocina"],["salon","Salón"],["delivery","Delivery"],["receipts","Comprobantes"]];
     const needsSection = `<div class="settings-general-needs"><div class="panel-title">Necesidades del restaurante</div><div class="meta">Activa los espacios de trabajo que usa tu restaurante.</div><div class="settings-checks">${needChoices.map(([key,label]) => `<label class="settings-check"><input type="checkbox" data-restaurant-need="${key}" ${(state.restaurantNeeds || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("")}</div></div>`;
     const generalSection = `<section class="panel settings-panel settings-general-panel"><div class="panel-head"><div><div class="panel-title">General</div><div class="meta">Personaliza la identidad y las necesidades de tu restaurante.</div></div></div>${logoSection}${needsSection}</section>`;
+    const appearanceSection = `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Personalización</div><div class="meta">Crea esquemas propios o selecciona uno para todo tu restaurante.</div></div><button type="button" class="rowaction" id="clear-active-color-scheme" ${v.appearance?.active_color_scheme_id ? "" : "hidden disabled"}>Usar colores predeterminados</button></div><div class="color-scheme-grid" id="color-scheme-list">${colorSchemeCards(v.appearance?.active_color_scheme_id)}</div><p class="meta">Sin un esquema seleccionado, se usan los colores predeterminados de Black&amp;White.</p></section>`;
     const attendanceSettings = `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Asistencia</div><div class="meta">Define quién puede marcar entradas y salidas.</div></div></div><div class="settings-checks">${check("attendance_check_in_self", "Cada persona puede marcar su propia entrada", v.attendance_check_in_self)}${check("attendance_check_in_peer_at_location", "Un compañero puede marcar la entrada desde la misma sede", v.attendance_check_in_peer_at_location)}${check("attendance_check_out_self", "Cada persona puede marcar su propia salida", v.attendance_check_out_self)}${check("attendance_check_out_peer_at_location", "Un compañero puede marcar la salida desde la misma sede", v.attendance_check_out_peer_at_location)}</div><p class="meta">El administrador puede registrar una marca actual o corregir una marca de hoy o ayer.</p></section>`;
     const receiptSection = (state.restaurantNeeds || []).includes("receipts") ? `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Comprobantes</div><div class="meta">Configura el sistema de impresión del restaurante.</div></div></div><button class="btn secondary" type="button" id="configure-printing">Configurar sistema de impresión</button></section>` : "";
     const moduleSettings = ((state.restaurantNeeds || []).includes("kitchen") || (state.restaurantNeeds || []).includes("salon") || ((state.restaurantNeeds || []).includes("delivery") && (state.restaurantNeeds || []).includes("kitchen"))) ? `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cierre de pedidos por Cocina y Salón</div><div class="meta">Estos ajustes aparecen solo para las necesidades activas.</div></div></div>${(state.restaurantNeeds || []).includes("kitchen") ? `${check("kitchen_has_separate_bar", "Tengo una barra separada de la cocina", v.kitchen_has_separate_bar)}<label class="settings-field">Cocina integra pedidos desde<select data-setting="kitchen_entry_mode"><option value="open" ${v.kitchen_entry_mode === "open" ? "selected" : ""}>Pedido abierto</option><option value="paid" ${v.kitchen_entry_mode === "paid" ? "selected" : ""}>Pedido pagado</option></select></label>` : ""}${(state.restaurantNeeds || []).includes("salon") ? `<label class="settings-field">Salón integra pedidos desde<select data-setting="salon_entry_mode"><option value="open" ${v.salon_entry_mode === "open" ? "selected" : ""}>Pedido abierto</option><option value="paid" ${v.salon_entry_mode === "paid" ? "selected" : ""}>Pedido pagado</option></select></label><div class="settings-checks">${check("salon_waiter_map_edit", "Mesero puede editar el mapa", v.salon_waiter_map_edit)}${check("salon_host_map_edit", "Portero puede editar el mapa", v.salon_host_map_edit)}${check("salon_show_seats", "Mostrar cantidad de sillas por piso", v.salon_show_seats)}</div><p class="meta">Define las sillas dentro de cada piso en el mapa. Es una referencia visual; no se editan posiciones de sillas.</p>` : ""}${(state.restaurantNeeds || []).includes("delivery") && (state.restaurantNeeds || []).includes("kitchen") ? check("delivery_kitchen_after_virtual_payment", "Delivery entra a Cocina cuando se confirma su pago virtual", v.delivery_kitchen_after_virtual_payment) : ""}</section>` : "";
-    return `<div class="settings-save-bar" id="settings-save-bar" hidden><div class="settings-save-bar-inner"><button class="btn primary" id="save-restaurant-settings" type="button">Guardar cambios</button></div></div><section class="page-head"><div><div class="eyebrow">Administración</div><h1>Configuración</h1><p class="desc">Ajustes de las secciones fijas de tu restaurante.</p></div></section>${state.settingsError ? `<div class="inline-error" role="alert">${esc(state.settingsError)}</div>` : ""}${generalSection}${attendanceSettings}<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Métodos de pago</div><div class="meta">Activa los métodos que tu negocio recibe.</div></div></div><div class="settings-options">${paymentCards}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cuentas</div><div class="meta">Nota personal de cada empleado.</div></div></div><div class="settings-form-grid"><label class="settings-field">Reinicio de la nota<select data-setting="employee_note_reset_mode"><option value="manual" ${v.employee_note_reset_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${v.employee_note_reset_mode === "automatic" ? "selected" : ""}>Automático</option></select></label><label class="settings-field">Intervalo<select data-setting="employee_note_reset_days" ${v.employee_note_reset_mode !== "automatic" ? "disabled" : ""}>${[7,15,30].map((day) => `<option value="${day}" ${Number(v.employee_note_reset_days) === day ? "selected" : ""}>Cada ${day} días</option>`).join("")}</select></label></div><p class="meta">La nota no se borrará automáticamente hasta definir archivo, retención y fecha de reinicio.</p></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Estadísticas</div><div class="meta">Configura rankings visibles por rol.</div></div></div><div class="settings-checks">${check("rankings_enabled", "Habilitar rankings", v.rankings_enabled)}${check("rankings_products", "Productos más vendidos", v.rankings_products)}${check("rankings_variants", "Variantes más vendidas", v.rankings_variants)}${check("rankings_addons", "Agregados más vendidos", v.rankings_addons)}${check("rankings_categories", "Categorías más vendidas", v.rankings_categories, "disabled title='Disponible cuando el catálogo multi-restaurante esté migrado'")}${check("rankings_employees_enabled", "Empleados ven rankings", v.rankings_employees_enabled)}${check("rankings_same_for_all_roles", "Mismo conjunto para todos los roles", v.rankings_same_for_all_roles, v.rankings_employees_enabled ? "" : "disabled")}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Flujo de pedidos</div><div class="meta">Los límites y permisos se guardan para el restaurante.</div></div></div><div class="settings-form-grid">${check("order_minimum_enabled", "Usar importe mínimo", v.order_minimum_enabled)}${field("order_minimum_amount", "Importe mínimo (S/)", v.order_minimum_amount, v.order_minimum_enabled ? "required" : "disabled")}${check("order_minimum_admin", "Aplicar al administrador", v.order_minimum_admin)}${check("order_minimum_employees", "Aplicar a empleados", v.order_minimum_employees)}${check("order_maximum_enabled", "Usar importe máximo", v.order_maximum_enabled)}${field("order_maximum_amount", "Importe máximo (S/)", v.order_maximum_amount, v.order_maximum_enabled ? "required" : "disabled")}${check("order_maximum_admin", "Aplicar al administrador", v.order_maximum_admin)}${check("order_maximum_employees", "Aplicar a empleados", v.order_maximum_employees)}${check("corrections_admin", "Administrador puede corregir pagos", v.corrections_admin)}${check("corrections_employees", "Habilitar corrección de pagos a empleados", v.corrections_employees)}</div><div class="settings-role-list" id="settings-role-options" ${showRoles ? "" : "hidden"}><strong>Permisos por rol</strong>${roleRows}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Catálogo</div><div class="meta">Activa las herramientas que el restaurante necesita.</div></div></div><div class="settings-checks">${check("catalog_addons_enabled", "Agregados", v.catalog_addons_enabled)}${check("catalog_category_groups_enabled", "Grupos de categorías", v.catalog_category_groups_enabled)}${check("catalog_promotions_enabled", "Promociones", v.catalog_promotions_enabled)}</div><p class="meta">La administración y aplicación de promociones se habilitará junto con la migración del catálogo y el cobro.</p></section>${moduleSettings}${receiptSection}`;
+    return `<div class="settings-save-bar" id="settings-save-bar" hidden><div class="settings-save-bar-inner"><button class="btn primary" id="save-restaurant-settings" type="button">Guardar cambios</button></div></div><section class="page-head"><div><div class="eyebrow">Administración</div><h1>Configuración</h1><p class="desc">Ajustes de las secciones fijas de tu restaurante.</p></div></section>${state.settingsError ? `<div class="inline-error" role="alert">${esc(state.settingsError)}</div>` : ""}${generalSection}${appearanceSection}${attendanceSettings}<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Métodos de pago</div><div class="meta">Activa los métodos que tu negocio recibe.</div></div></div><div class="settings-options">${paymentCards}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cuentas</div><div class="meta">Nota personal de cada empleado.</div></div></div><div class="settings-form-grid"><label class="settings-field">Reinicio de la nota<select data-setting="employee_note_reset_mode"><option value="manual" ${v.employee_note_reset_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${v.employee_note_reset_mode === "automatic" ? "selected" : ""}>Automático</option></select></label><label class="settings-field">Intervalo<select data-setting="employee_note_reset_days" ${v.employee_note_reset_mode !== "automatic" ? "disabled" : ""}>${[7,15,30].map((day) => `<option value="${day}" ${Number(v.employee_note_reset_days) === day ? "selected" : ""}>Cada ${day} días</option>`).join("")}</select></label></div><p class="meta">La nota no se borrará automáticamente hasta definir archivo, retención y fecha de reinicio.</p></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Estadísticas</div><div class="meta">Configura rankings visibles por rol.</div></div></div><div class="settings-checks">${check("rankings_enabled", "Habilitar rankings", v.rankings_enabled)}${check("rankings_products", "Productos más vendidos", v.rankings_products)}${check("rankings_variants", "Variantes más vendidas", v.rankings_variants)}${check("rankings_addons", "Agregados más vendidos", v.rankings_addons)}${check("rankings_categories", "Categorías más vendidas", v.rankings_categories, "disabled title='Disponible cuando el catálogo multi-restaurante esté migrado'")}${check("rankings_employees_enabled", "Empleados ven rankings", v.rankings_employees_enabled)}${check("rankings_same_for_all_roles", "Mismo conjunto para todos los roles", v.rankings_same_for_all_roles, v.rankings_employees_enabled ? "" : "disabled")}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Flujo de pedidos</div><div class="meta">Los límites y permisos se guardan para el restaurante.</div></div></div><div class="settings-form-grid">${check("order_minimum_enabled", "Usar importe mínimo", v.order_minimum_enabled)}${field("order_minimum_amount", "Importe mínimo (S/)", v.order_minimum_amount, v.order_minimum_enabled ? "required" : "disabled")}${check("order_minimum_admin", "Aplicar al administrador", v.order_minimum_admin)}${check("order_minimum_employees", "Aplicar a empleados", v.order_minimum_employees)}${check("order_maximum_enabled", "Usar importe máximo", v.order_maximum_enabled)}${field("order_maximum_amount", "Importe máximo (S/)", v.order_maximum_amount, v.order_maximum_enabled ? "required" : "disabled")}${check("order_maximum_admin", "Aplicar al administrador", v.order_maximum_admin)}${check("order_maximum_employees", "Aplicar a empleados", v.order_maximum_employees)}${check("corrections_admin", "Administrador puede corregir pagos", v.corrections_admin)}${check("corrections_employees", "Habilitar corrección de pagos a empleados", v.corrections_employees)}</div><div class="settings-role-list" id="settings-role-options" ${showRoles ? "" : "hidden"}><strong>Permisos por rol</strong>${roleRows}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Catálogo</div><div class="meta">Activa las herramientas que el restaurante necesita.</div></div></div><div class="settings-checks">${check("catalog_addons_enabled", "Agregados", v.catalog_addons_enabled)}${check("catalog_category_groups_enabled", "Grupos de categorías", v.catalog_category_groups_enabled)}${check("catalog_promotions_enabled", "Promociones", v.catalog_promotions_enabled)}</div><p class="meta">La administración y aplicación de promociones se habilitará junto con la migración del catálogo y el cobro.</p></section>${moduleSettings}${receiptSection}`;
   }
   function settingsSnapshot() {
     const controls = [
       ...document.querySelectorAll("[data-setting], [data-restaurant-need], #restaurant-logo-file, #restaurant-logo-remove"),
     ];
-    return JSON.stringify(controls.map((input) => [
-      input.dataset.setting || input.dataset.restaurantNeed || input.id,
-      input.type === "checkbox" ? input.checked : input.type === "file"
-        ? [...(input.files || [])].map((file) => [file.name, file.size, file.lastModified])
-        : input.value,
-    ]));
+    return JSON.stringify([
+      ...controls.map((input) => [
+        input.dataset.setting || input.dataset.restaurantNeed || input.id,
+        input.type === "checkbox" ? input.checked : input.type === "file"
+          ? [...(input.files || [])].map((file) => [file.name, file.size, file.lastModified])
+          : input.value,
+      ]),
+      ["activeColorScheme", document.querySelector("[data-active-color-scheme]:checked")?.value || ""],
+    ]);
   }
   function syncSaveButton() {
     const button = document.getElementById("save-restaurant-settings");
@@ -161,6 +296,10 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         v[key] = input.type === "checkbox" ? input.checked : input.type === "number" ? (input.value === "" ? null : Number(input.value)) : input.value;
       });
       v.needs = [...document.querySelectorAll("[data-restaurant-need]:checked")].map((input) => input.dataset.restaurantNeed);
+      v.appearance = {
+        ...currentAppearance(),
+        active_color_scheme_id: document.querySelector("[data-active-color-scheme]:checked")?.value || null,
+      };
       const logoInput = document.getElementById("restaurant-logo-file");
       const logoFile = logoInput?.files?.[0] || null;
       const removeLogo = document.getElementById("restaurant-logo-remove")?.checked === true;
@@ -236,6 +375,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     savedSettingsSnapshot = settingsSnapshot();
     syncSaveButton();
     saveButton?.addEventListener("click", save);
+    bindColorSchemeCards();
     document.querySelectorAll("[data-setting], [data-restaurant-need], #restaurant-logo-file, #restaurant-logo-remove").forEach((input) => {
       input.addEventListener("input", syncSaveButton);
       input.addEventListener("change", syncSaveButton);
@@ -247,10 +387,25 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         confirmNeedRemoval(input, name);
       });
     });
-    document.getElementById("restaurant-logo-file")?.addEventListener("change", (event) => {
-      const file = event.target.files?.[0];
+    const logoInput = document.getElementById("restaurant-logo-file");
+    const dropZone = document.getElementById("logo-drop-zone");
+    const useLogoFile = (file) => {
+      const error = document.getElementById("logo-upload-error");
+      if (error) error.textContent = "";
+      if (!file) return;
+      if (!new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]).has(file.type) || file.size > 5 * 1024 * 1024) {
+        if (error) error.textContent = "Usa PNG, JPG, WebP o SVG de hasta 5 MB.";
+        if (logoInput) logoInput.value = "";
+        syncSaveButton();
+        return;
+      }
+      if (logoInput && file !== logoInput.files?.[0]) {
+        const transfer = new DataTransfer();
+        transfer.items.add(file);
+        logoInput.files = transfer.files;
+      }
       const preview = document.getElementById("restaurant-logo-preview");
-      if (!file || !preview) return;
+      if (!preview) return;
       const previousUrl = preview.dataset.objectUrl;
       if (previousUrl) URL.revokeObjectURL(previousUrl);
       const url = URL.createObjectURL(file);
@@ -258,6 +413,28 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       preview.innerHTML = `<img src="${url}" alt="Vista previa del logo">`;
       const remove = document.getElementById("restaurant-logo-remove");
       if (remove) remove.checked = false;
+      syncSaveButton();
+    };
+    logoInput?.addEventListener("change", (event) => useLogoFile(event.target.files?.[0]));
+    document.getElementById("choose-restaurant-logo")?.addEventListener("click", () => logoInput?.click());
+    dropZone?.addEventListener("click", (event) => {
+      if (!event.target.closest("button")) logoInput?.click();
+    });
+    dropZone?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        logoInput?.click();
+      }
+    });
+    ["dragenter", "dragover"].forEach((name) => dropZone?.addEventListener(name, (event) => {
+      event.preventDefault();
+      dropZone.classList.add("drag-over");
+    }));
+    ["dragleave", "dragend"].forEach((name) => dropZone?.addEventListener(name, () => dropZone?.classList.remove("drag-over")));
+    dropZone?.addEventListener("drop", (event) => {
+      event.preventDefault();
+      dropZone.classList.remove("drag-over");
+      useLogoFile(event.dataTransfer?.files?.[0]);
     });
     document.getElementById("restaurant-logo-remove")?.addEventListener("change", (event) => {
       const input = document.getElementById("restaurant-logo-file");
