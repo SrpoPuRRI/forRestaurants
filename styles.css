@@ -2071,6 +2071,8 @@ body{background:var(--app-background,#f4f1ea);color:var(--ink);font-family:var(-
 .page-head h1,.top-title,.panel-title,.brand,.metric-value,.order-title{font-family:var(--app-font-family,"Manrope",system-ui,sans-serif)}
 .restaurant-logo-setting{align-items:flex-start}
 .restaurant-logo-controls{flex:0 1 50%;max-width:600px}
+#restaurant-logo-file[hidden]{display:none}
+.settings-general-personalization{display:grid;gap:10px;margin-top:19px;padding-top:17px;border-top:1px solid var(--line)}
 .logo-drop-zone{position:relative;min-height:160px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;padding:18px;border:1.5px dashed #cfc3b1;border-radius:16px;background:linear-gradient(145deg,var(--surface-alt,#f8f6f1),var(--white,#fffefa));color:var(--ink);text-align:center;cursor:pointer;transition:border-color .18s,background .18s,transform .18s}
 .logo-drop-zone:hover,.logo-drop-zone.drag-over{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 7%,var(--white));transform:translateY(-1px)}
 .logo-drop-zone:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
