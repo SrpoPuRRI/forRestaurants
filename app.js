@@ -7,7 +7,7 @@ import {
   AUTH_EMAIL_BASE,
 } from "./supabase-config.js";
 import createOrderFlow from "./order-flow.js";
-import createStatistics from "./statistics.js";
+import createStatistics from "./statistics.js?v=20261113-statistics-visibility";
 import createRestaurantSettings from "./restaurant-settings.js";
 import createRestaurantWorkspaces from "./restaurant-workspaces.js";
 
