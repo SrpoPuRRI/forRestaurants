@@ -52,7 +52,7 @@ Las modalidades automática de Yape, Plin y tarjeta requieren definir proveedor,
 
 ## Capacidades de roles
 
-Los roles pertenecen a un catálogo global de la app; no hay roles mixtos predefinidos. Cuentas acumula permisos asignando varios roles simples a una persona. La app deriva los roles disponibles del restaurante a partir de sus necesidades opcionales y las opciones guardadas en Configuración. El administrador puede actualizar las necesidades después de crear el restaurante, sin recrearlo. La ubicación exacta del control en la interfaz queda pendiente.
+Los roles pertenecen a un catálogo global de la app; no hay roles mixtos predefinidos. Cuentas acumula permisos asignando varios roles simples a una persona. La app deriva los roles disponibles del restaurante a partir de sus necesidades opcionales y las opciones guardadas en Configuración. El administrador puede actualizar las necesidades después de crear el restaurante, sin recrearlo. En Configuración, las opciones de identidad y necesidades están agrupadas en la sección **General**.
 
 Reglas acordadas:
 
@@ -62,7 +62,7 @@ Reglas acordadas:
 - **Delivery:** habilita Repartidor cuando se activen las configuraciones requeridas; esas opciones quedan pendientes.
 - **Comprobantes:** no habilita roles ni espacios de trabajo adicionales por sí sola.
 - **Cajero:** si el restaurante tiene al menos una necesidad opcional distinta de Comprobantes, se incluye Cajero entre los roles disponibles junto con los roles implicados por las necesidades. Al quitar la última necesidad distinta de Comprobantes, se quita Cajero; con solo Administrador y Empleado, Empleado cubre conceptualmente la función de caja.
-- **Quitar una necesidad:** se quita del conjunto de necesidades activas, se retiran del array de roles disponibles los roles que esa necesidad implicaba y se ocultan/revocan sus espacios y permisos. Se conservan los datos operativos y las configuraciones existentes; no se borra ni recrea el restaurante. La forma de preservar y reactivar asignaciones de rol individuales cuando una necesidad se quita y luego se vuelve a añadir queda por definir.
+- **Quitar una necesidad:** se quita del conjunto de necesidades activas, se retiran del array de roles disponibles los roles que esa necesidad implicaba y se ocultan/revocan sus espacios y permisos. Se conservan los datos operativos y las configuraciones existentes; no se borra ni recrea el restaurante. Al desmarcar una necesidad activa se pide confirmación porque cambia la arquitectura y los permisos. Cancelar conserva la selección; Aceptar deja el cambio pendiente en el formulario. El cambio solo se aplica al pulsar Guardar cambios. Al guardar, se eliminan de cada cuenta los roles que dejaron de estar disponibles; si no queda ningún rol asignado, la cuenta pasa a Empleado. Los datos operativos y configuraciones se conservan.
 - **Cocina y Salón:** cada módulo tiene su cola independiente. Con ambos activos, pedidos de Cocina marcados listos pasan a Salón. Con solo Salón, debe definirse cómo evitar que el mesero vea un pedido que todavía no está listo.
 
 **Empleado** es el rol especial exclusivo que concede el conjunto de permisos disponibles en el restaurante; no se combina con otros roles.

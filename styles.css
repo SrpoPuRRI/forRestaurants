@@ -2058,6 +2058,9 @@ body.device-mobile .new-order-mode-icon .new-order-icon{display:block;width:22px
 .settings-save-bar-inner{display:flex;justify-content:flex-end;max-width:1440px;margin:auto}
 #save-restaurant-settings:disabled{opacity:.5;cursor:wait}
 @media(max-width:650px){.settings-save-bar{margin:-18px -16px 16px;padding:10px 16px}}
+.settings-general-panel .panel-head{margin-bottom:18px}
+.settings-general-needs{display:grid;gap:10px;margin-top:18px;padding-top:17px;border-top:1px solid var(--line)}
+.settings-need-dialog .meta{font-size:13px;line-height:1.55;margin:12px 0}
 /* Per-line dining room grid sizing controls */
 .grid-size-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:14px}.grid-size-controls>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-content:start}.grid-size-controls>div>strong{grid-column:1/-1;font-size:12px}.grid-size-controls label{display:grid;gap:4px;color:var(--muted);font-size:11px}.grid-size-controls input{width:100%;min-width:0;padding:7px;border:1px solid var(--line);border-radius:7px}@media(max-width:600px){.grid-size-controls{grid-template-columns:1fr}}
 @media(max-width:780px){.mobile-nav{display:flex;justify-content:flex-start;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#cfc5b8 transparent}.mobile-nav button{flex:0 0 78px;min-width:78px}}.salon-head-actions .btn{display:inline-flex;align-items:center;gap:7px}

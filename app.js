@@ -8,7 +8,7 @@ import {
 } from "./supabase-config.js";
 import createOrderFlow from "./order-flow.js";
 import createStatistics from "./statistics.js?v=20261113-settings-nav-rankings";
-import createRestaurantSettings from "./restaurant-settings.js?v=20261113-settings-save-bar";
+import createRestaurantSettings from "./restaurant-settings.js?v=20261113-general-needs-confirmation";
 import createRestaurantWorkspaces from "./restaurant-workspaces.js";
 
 //Sección de inicialización de las cuentas, función propuesta por la documentación que leí en Supabase
