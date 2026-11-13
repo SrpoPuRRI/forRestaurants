@@ -268,6 +268,7 @@ export default function createStatistics({
       data.error = "";
       refreshApp();
       try {
+        await refreshRankingConfiguration().catch(() => {});
         await loadPaymentMethods();
         let query = supabase
           .from("orders")
@@ -299,6 +300,7 @@ export default function createStatistics({
     data.error = "";
     refreshApp();
     try {
+      await refreshRankingConfiguration().catch(() => {});
       const [locations, orders] = await Promise.all([
         supabase
           .from("locations")
@@ -349,11 +351,34 @@ export default function createStatistics({
   async function loadPaymentMethods() {
     const { data: rows, error } = await supabase
       .from("restaurant_payment_methods")
-      .select("method_key,enabled")
+      .select("method_key,enabled,manual_enabled")
       .eq("restaurant_id", state.restaurantId)
-      .eq("enabled", true);
+      .eq("enabled", true)
+      .eq("manual_enabled", true);
     if (error) throw error;
     data.paymentMethods = rows || [];
+  }
+  async function refreshRankingConfiguration() {
+    const [restaurant, roleSettings] = await Promise.all([
+      supabase
+        .from("restaurants")
+        .select("rankings_enabled,rankings_products,rankings_variants,rankings_addons,rankings_categories,rankings_employees_enabled,rankings_same_for_all_roles")
+        .eq("id", state.restaurantId)
+        .single(),
+      supabase
+        .from("restaurant_role_settings")
+        .select("role_id,rankings_products,rankings_variants,rankings_addons,rankings_categories")
+        .eq("restaurant_id", state.restaurantId),
+    ]);
+    if (restaurant.error || roleSettings.error)
+      throw restaurant.error || roleSettings.error;
+    state.restaurantSettings = {
+      ...(state.restaurantSettings || {}),
+      ...(restaurant.data || {}),
+    };
+    state.roleSettings = Object.fromEntries(
+      (roleSettings.data || []).map((row) => [row.role_id, row]),
+    );
   }
   // Carga los pedidos del periodo seleccionado.
   async function loadRange() {
@@ -669,7 +694,7 @@ export default function createStatistics({
     const roleStored = (state.roleSettings || {})[state.roleId] || {};
     const canSeeRankings = !isEmployee || Boolean(stored.rankings_employees_enabled);
     const rankVisible = (key) => {
-      if (!canSeeRankings || !stored.rankings_enabled) return false;
+      if (!canSeeRankings || stored.rankings_enabled !== true) return false;
       if (!isEmployee) return Boolean(stored[`rankings_${key}`]);
       if (stored.rankings_same_for_all_roles) return Boolean(stored[`rankings_${key}`]);
       return Boolean(roleStored[`rankings_${key}`]);
@@ -683,10 +708,7 @@ export default function createStatistics({
       : `<select class="select" id="stats-site-filter"><option value="">Todas las sedes</option>${data.locations.map((loc) => `<option value="${esc(loc.id)}" ${data.selectedLocation === loc.id ? "selected" : ""}>${esc(loc.name)}</option>`).join("")}</select>`;
     const showPaymentBreakdown = data.paymentMethods.length > 1;
     const methodLabels = { cash: "Efectivo", yape: "Yape", plin: "Plin", bank_transfer: "Transferencia bancaria", card: "Tarjeta" };
-    const paymentKeys = [...new Set([
-      ...data.paymentMethods.map((row) => row.method_key),
-      ...summary.paymentTotals.keys(),
-    ])];
+    const paymentKeys = [...new Set(data.paymentMethods.map((row) => row.method_key))];
     const paymentBreakdown = paymentKeys
       .map((method) => `<span>${esc(methodLabels[method] || method)} <strong>${money(summary.paymentTotals.get(method) || 0)}</strong></span>`)
       .join("");

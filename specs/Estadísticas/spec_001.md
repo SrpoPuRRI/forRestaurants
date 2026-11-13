@@ -20,7 +20,7 @@ La vista principal sigue las cuatro métricas de Kffe’to:
 3. **Promedio por pedido:** saldo neto dividido entre pedidos pagados correctos.
 4. **Desglose por método de pago:** total agrupado según los métodos guardados en cada movimiento.
 
-En B&W el desglose usa los métodos de pago configurados y la instantánea histórica de importes/métodos de cada movimiento; un cambio posterior no reclasifica ventas pasadas. Solo se muestra la métrica de desglose cuando hay más de un método habilitado. Si solo está habilitado efectivo, la tarjeta no se renderiza.
+En B&W el desglose usa los métodos de pago habilitados para cobro manual y la instantánea histórica de importes/métodos de cada movimiento; un cambio posterior no reclasifica ventas pasadas. Solo se muestra la métrica de desglose cuando hay más de un método habilitado para cobro manual. Si solo está habilitado efectivo, la tarjeta no se renderiza ni aparecen métodos desactivados en ella.
 
 ## Gráfica y periodos
 

@@ -36,6 +36,7 @@ export default function createOrderFlow({
     query: "",
     groups: [],
     selectedMenuProduct: "",
+    specialDialogBusy: false,
     saveBusy: false,
     saveQueued: false,
     pollTimer: null,
@@ -72,6 +73,14 @@ export default function createOrderFlow({
       label: paymentMethodLabels[row.method_key] || row.method_key,
     }));
   };
+  async function refreshPaymentMethods() {
+    const { data: rows, error } = await supabase
+      .from("restaurant_payment_methods")
+      .select("method_key,enabled,manual_enabled")
+      .eq("restaurant_id", state.restaurantId);
+    if (error) throw error;
+    data.paymentMethods = rows || [];
+  }
 
   // Indica si el usuario actual tiene permisos de administrador.
   const isAdmin = () => state.role === "Administrador";
@@ -991,7 +1000,16 @@ export default function createOrderFlow({
   }
 
   // Muestra el diálogo para registrar o editar un movimiento especial.
-  function specialDialog(product, editingIndex = null) {
+  async function specialDialog(product, editingIndex = null) {
+    if (data.specialDialogBusy) return;
+    data.specialDialogBusy = true;
+    try {
+      await refreshPaymentMethods();
+    } catch (error) {
+      data.specialDialogBusy = false;
+      toast(error.message || "No se pudieron cargar los medios de pago.");
+      return;
+    }
     const editing =
       editingIndex == null ? null : activeOrder()?.items[editingIndex];
     const d = document.createElement("dialog");
@@ -1076,15 +1094,14 @@ export default function createOrderFlow({
       d.querySelector('[name="concept"]').oninput = (event) => {
         conceptText = event.target.value;
       };
-      d.querySelectorAll("[data-method]").forEach(
-        (b) =>
-          (b.onclick = () => {
-            method = b.dataset.method;
-            d.querySelectorAll("[data-method]").forEach((x) =>
-              x.classList.toggle("active", x === b),
-            );
-          }),
-      );
+      d.querySelectorAll("[data-method]").forEach((button) => {
+        button.onclick = () => {
+          method = button.dataset.method;
+          d.querySelectorAll("[data-method]").forEach((option) =>
+            option.classList.toggle("active", option === button),
+          );
+        };
+      });
       d.querySelectorAll("[data-correction-candidate]").forEach(
         (b) =>
           (b.onclick = () => {
@@ -1218,15 +1235,24 @@ export default function createOrderFlow({
     document.body.appendChild(d);
     d.showModal();
     d.querySelector('[name="amount"]').focus();
-    d.addEventListener("close", () => d.remove());
+    d.addEventListener("close", () => {
+      d.remove();
+      data.specialDialogBusy = false;
+    });
     if (canCorrect) loadCorrectionCandidates();
   }
 
   // Muestra el diálogo para confirmar el pago del pedido.
-  function payDialog() {
+  async function payDialog() {
     const order = activeOrder();
     if (!order?.items?.length) {
       toast("Agrega al menos un producto o movimiento.");
+      return;
+    }
+    try {
+      await refreshPaymentMethods();
+    } catch (error) {
+      toast(error.message || "No se pudieron cargar los medios de pago.");
       return;
     }
     const normalSubtotal = order.items
