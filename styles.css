@@ -612,11 +612,12 @@
 
 .method-choice{
     display:flex;
+    flex-wrap:wrap;
     gap:7px
 }
 
 .method-choice button{
-    flex:1;
+    flex:1 1 92px;
     border:1px solid var(--line);
     border-radius:9px;
     background:var(--white);

@@ -46,22 +46,21 @@ Hay funciones `catalog_*_visible` para determinar si productos, variantes y comp
 - `orders`: sede, operador y su snapshot, nota, estado, montos `amount_yape`, `amount_cash`, `total`, `paid_at` y `created_at`.
 - `order_items`: snapshots del nombre de producto/variante, tipo de línea, cantidad, precio unitario, total y desglose Yape/efectivo. La cantidad es positiva y el desglose debe sumar el total de línea.
 - `order_item_addons`: snapshot del complemento, cantidad, precio y total de línea.
-- `order_correction_events`: pedido, actor, snapshot del operador, motivo y fecha de corrección.
+- `order_correction_events`: pedido, actor, snapshot del operador y fecha de corrección. Para B&W, la corrección no pide motivo; el contexto del empleado corresponde a sus notas.
 
-Los nombres y definiciones de trigger muestran protecciones de mutación y validación de totales; el snapshot no trae sus cuerpos, así que los detalles de implementación se deben confirmar antes de replicarlos. Las correcciones aparecen modeladas como eventos con motivo, en vez de una edición libre evidente del historial financiero.
+Los nombres y definiciones de trigger muestran protecciones de mutación y validación de totales; el snapshot no trae sus cuerpos, así que los detalles de implementación se deben confirmar antes de replicarlos. Las correcciones se modelan como eventos que conservan el historial financiero, sin exigir una explicación del empleado en el flujo B&W.
 
-#### Productos especiales: flujo observado en la aplicación
+#### Productos especiales: código B&W actual y decisiones acordadas
 
-La lectura de `app.js`, `order-flow.js`, `statistics.js` y las migraciones de pedidos de este repositorio confirma el flujo operativo:
+La lectura de `order-flow.js`, `statistics.js` y las migraciones de Black&White describe el código local. La especificación de producto que prevalece para B&W es:
 
-1. El catálogo contiene los tipos `standard`, `income` y `expense`; se inicializan **Ingreso** y **Egreso** con una variante de precio variable cero. El formulario solicita el monto real por movimiento.
-2. Al seleccionar Ingreso/Egreso en el menú del pedido, se abre el diálogo especial. Solicita monto (mayor que cero), concepto opcional y medio Yape o efectivo. Una línea especial siempre tiene cantidad 1 y no admite agregados.
-3. Se firma el importe: Ingreso suma y Egreso resta. Los movimientos pueden convivir con productos en una venta o ser las únicas líneas de un pedido.
-4. Al pagar, productos normales se reparten por medio global o porcentaje; cada línea especial se asigna entera a Yape o efectivo. La sincronización opcional propone el medio global para los especiales y el usuario todavía puede cambiar cada uno.
-5. La RPC recalcula precios y validaciones desde el catálogo y escribe encabezado, líneas y snapshots de forma atómica. Reglas diferibles hacen coincidir los totales por medio de pago; las líneas financieras pagadas son inmutables.
-6. Al iniciar Egreso con el borrador vacío y monto cero/vacío, se ofrece corregir en vez de registrar gasto. Se listan pedidos Correctos de hoy y ayer de la sede autorizada. Confirmar cambia el pedido existente a Erróneo y registra un evento de corrección; no crea un segundo movimiento ni altera los importes originales. El historial muestra el movimiento y Estadísticas excluye sus valores de las métricas limpias.
+1. Todos los restaurantes deben crearse con exactamente un producto obligatorio **Ingreso** y uno **Egreso**, cada uno con variante de monto variable. No se crean desde el editor estándar del catálogo ni se pueden eliminar.
+2. Al seleccionarlos en el flujo de pedidos, se abre un formulario que pide un importe positivo y permite un concepto opcional. La línea especial tiene cantidad uno y no admite agregados.
+3. Ingreso suma y Egreso resta. Ambos pueden convivir con productos normales o formar un movimiento por sí solos.
+4. El pago especial muestra en un modal los medios habilitados para ese restaurante; Efectivo siempre está disponible. Cada línea especial se asigna entera a un método.
+5. Corregir un pago marca erróneo el movimiento original y lo conserva en el historial; no requiere explicación. Las notas del empleado guardan el contexto correspondiente. Si se acuerda representar una devolución con un producto, se registra como producto/concepto separado según el procedimiento interno del restaurante; no se confunde automáticamente con la corrección de un pedido.
 
-La aplicación cambia al formulario de egreso normal al ingresar un monto mayor que cero. La corrección respeta usuario/rol/sede y está limitada a hoy/ayer por la migración de ventana. Esta lógica se investigó en Kffe’to; para B&W se debe adaptar a `restaurant_id`, permisos globales/múltiples y métodos configurables, sin fijar Yape/efectivo como únicos.
+La implementación se completa con `202611130001_required_special_products_and_payment_rules.sql`: la base siembra los productos y variantes requeridos en cada restaurante nuevo y en los ya existentes, protege su disponibilidad y borrado, obliga a mantener Efectivo habilitado y permite correcciones sin motivo. La interfaz obtiene los métodos manuales activos del restaurante para sus opciones de pago. La migración se debe aplicar y luego desplegar el frontend actualizado.
 
 ### Impresión
 
@@ -89,7 +88,7 @@ Las RPC financieras y administrativas aparecen mayormente como `SECURITY DEFINER
 1. **Separar identidad y operación.** El usuario Auth se vincula a un perfil; el perfil determina rol y sede. Para B&W se agrega restaurante y rol configurable.
 2. **Normalizar los nombres de usuario en la base.** La unicidad debe protegerse también ante escrituras que no pasen por el formulario.
 3. **Conservar snapshots en transacciones.** Los nombres y precios de pedidos históricos no deberían cambiar cuando se edita el catálogo o el perfil de una persona.
-4. **Tratar pedidos financieros como historial protegido.** Validar el reparto de pagos y registrar correcciones con actor y motivo.
+4. **Tratar pedidos financieros como historial protegido.** Validar el reparto de pagos y registrar correcciones con actor y fecha, sin pedir motivo.
 5. **Controlar concurrencia de pedidos abiertos.** `revision` y el argumento de revisión esperada evitan que una edición pise otra.
 6. **Aplicar sede y rol en la base.** La visibilidad de catálogo y datos operativos no depende solo de ocultar controles en la UI.
 7. **Mantener necesidades del cliente en modelo configurable.** Kffe’to usa roles fijos y montos específicos Yape/efectivo; B&W debe ofrecer roles y configuraciones según las necesidades seleccionadas, con métodos de pago configurables por restaurante.
@@ -107,9 +106,9 @@ Estas son ideas para discutir. **No están aprobadas y no se han añadido al SQL
    - La tabla actual `account_schedules` tiene una fila por horario asignado y ya admite varios horarios por cuenta mediante varias filas; no ofrece horarios reutilizables. El propietario planteó reemplazar la referencia `auth_user_id` por una relación basada en IDs de horarios desde `accounts`. El formato final (columna con varios IDs u otra relación explícita) queda por resolver antes de migrar.
    - Cada asistencia debe guardar la sede real donde se marcó y la hora exacta. Para evaluar el mapa en una fecha pasada, debe poder relacionarse con la asignación y el horario vigentes ese día. `account_schedules` sin vigencia ni sede asignada no basta para reconstruirlo.
 4. **Catálogo multi-restaurante y por sede.** La migración `202611100001_restaurant_catalog.sql` define productos, variantes, agregados y relaciones aisladas por `restaurant_id`, con disponibilidad por sede. B&W usa `is_active` como disponibilidad de venta y mantiene visibles los registros fuera de stock; no agrega inventario por cantidad. La migración está en el repositorio, pendiente de aplicar al proyecto remoto.
-5. **Pedidos abiertos y pedidos pagados.** La migración local `202611120003_paid_orders_and_statistics.sql` crea el esquema multi-restaurante `orders`, `order_items`, `order_item_addons`, `order_correction_events` y `open_orders`, con snapshots históricos de hasta diez importes/métodos/modos de pago, correcciones auditadas e invariantes de sede/restaurante. También implementa las RPC que ya invocan Estadísticas y Flujo de pedidos. Aún se debe aplicar la migración al proyecto remoto. Las decisiones de flujo no cubiertas por el alcance de esta migración siguen indicadas en `specs/Flujo de pedidos/spec_001.md`.
+5. **Pedidos abiertos y pedidos pagados.** La migración `202611120003_paid_orders_and_statistics.sql` crea el esquema multi-restaurante `orders`, `order_items`, `order_item_addons`, `order_correction_events` y `open_orders`, con snapshots históricos de hasta diez importes/métodos/modos de pago, correcciones auditadas e invariantes de sede/restaurante. También implementa las RPC que invocan Estadísticas y Flujo de pedidos. Según la verificación del 2026-11-13, está aplicada en producción. La migración posterior `202611130001_required_special_products_and_payment_rules.sql` añade Ingreso/Egreso obligatorios, efectivo inhabilitable solo de forma aparente y correcciones sin motivo; debe aplicarse antes de desplegar el frontend correspondiente. Las decisiones de flujo restantes siguen indicadas en `specs/Flujo de pedidos/spec_001.md`.
 6. **Cobros escalables.** La migración registra hasta diez importes y arrays paralelos con método/modalidad histórica. La RPC valida métodos configurados y la suma del pedido. La interfaz actual aún está limitada principalmente a Yape y efectivo; integrar los otros métodos y pagos parciales queda pendiente.
-7. **Historial financiero protegido.** Las filas pagadas y sus líneas/agregados son inmutables; las correcciones se guardan como eventos con motivo, cuenta y hora y cambian el estado de Correcto a Erróneo sin borrar importes.
+7. **Historial financiero protegido.** Las filas pagadas y sus líneas/agregados son inmutables; las correcciones se guardan como eventos con cuenta y hora, y cambian el estado de Correcto a Erróneo sin borrar importes. B&W no pide un motivo para corregir.
 8. **RLS multi-tenant.** Cada tabla operativa tendría que aplicar `restaurant_id`; las sedes y funciones de autorización deben validar pertenencia al restaurante. Dado que los roles globales no pertenecen a un restaurante, cada asignación debe validar que su ID esté incluido en la lista de roles habilitados del restaurante. La sede complementa el aislamiento por restaurante; no lo reemplaza.
 9. **Impresión propia.** Si se crea una cola, diseñar sus estados y payload para B&W desde sus requisitos; no copiar `printer_templates` ni el formato de tickets de Kffe’to.
 

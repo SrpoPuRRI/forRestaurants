@@ -21,6 +21,7 @@ export default function createOrderFlow({
     productTags: [],
     productAddons: [],
     variantLocations: [],
+    paymentMethods: [],
     locations: [],
     orderLocationId: "",
     openFilterLocationId: "",
@@ -52,6 +53,24 @@ export default function createOrderFlow({
     if (!/^\d+(?:\.\d*)?$/.test(text)) return false;
     const decimals = text.split(".")[1] || "";
     return decimals.length <= 1 || /^0+$/.test(decimals.slice(1));
+  };
+  const paymentMethodLabels = {
+    cash: "Efectivo",
+    yape: "Yape",
+    plin: "Plin",
+    bank_transfer: "Transferencia bancaria directa",
+    card: "Tarjetas",
+  };
+  const availableManualPaymentMethods = () => {
+    const configured = data.paymentMethods.filter(
+      (row) => row.enabled && row.manual_enabled,
+    );
+    if (!configured.some((row) => row.method_key === "cash"))
+      configured.unshift({ method_key: "cash", enabled: true, manual_enabled: true });
+    return configured.map((row) => ({
+      key: row.method_key,
+      label: paymentMethodLabels[row.method_key] || row.method_key,
+    }));
   };
 
   // Indica si el usuario actual tiene permisos de administrador.
@@ -233,6 +252,10 @@ export default function createOrderFlow({
       supabase
         .from("variant_locations")
         .select("variant_id,location_id,is_available"),
+      supabase
+        .from("restaurant_payment_methods")
+        .select("method_key,enabled,manual_enabled")
+        .eq("restaurant_id", state.restaurantId),
     ]);
     const failed = results.find((x) => x.error);
     data.loading = false;
@@ -253,6 +276,7 @@ export default function createOrderFlow({
       data.productTags,
       data.productAddons,
       data.variantLocations,
+      data.paymentMethods,
     ] = results.map((x) => x.data || []);
     // Preserve compatibility with products created before the many-to-many category relation.
     for (const product of data.products)
@@ -989,7 +1013,10 @@ export default function createOrderFlow({
         ? "0"
         : "";
     let conceptText = editing?.concept || "";
-    let method = editing?.payment_method || "yape";
+    const paymentMethods = availableManualPaymentMethods();
+    const defaultMethod = paymentMethods.find((x) => x.key === "cash") || paymentMethods[0];
+    let method = editing?.payment_method || defaultMethod.key;
+    if (!paymentMethods.some((x) => x.key === method)) method = defaultMethod.key;
     let candidates = [],
       loadingCandidates = canCorrect,
       candidateError = "",
@@ -1020,9 +1047,9 @@ export default function createOrderFlow({
           return `<button type="button" class="correction-candidate ${selectedCandidateId === candidate.order_id ? "selected" : ""}" data-correction-candidate="${esc(candidate.order_id)}" aria-pressed="${selectedCandidateId === candidate.order_id}"><span class="correction-candidate-top"><strong>${dateTime(candidate.paid_at)} · ${esc(candidate.location_name || "Sede")}</strong><strong>${money(candidate.total)}</strong></span><span>${esc(candidate.operator_name || "Equipo")}</span><span class="meta">Yape ${money(candidate.amount_yape)} · Efectivo ${money(candidate.amount_cash)}</span><span class="meta correction-items">${items || "Sin detalle de productos"}</span></button>`;
         })
         .join("");
-      d.innerHTML = `<form method="dialog"><div class="panel-title">${editing ? "Editar movimiento" : "Agregar egreso"}</div><p class="meta">${esc(product.name)}</p><label class="dialog-label">Monto (S/)<input name="amount" required inputmode="decimal" type="number" min="${canCorrect ? "0" : "0.01"}" step="any" value="${esc(amountText)}" placeholder="0.00"></label>
+      d.innerHTML = `<form method="dialog"><div class="panel-title">${editing ? "Editar movimiento" : product.product_kind === "income" ? "Agregar ingreso" : "Agregar egreso"}</div><p class="meta">${esc(product.name)}</p><label class="dialog-label">Monto (S/)<input name="amount" required inputmode="decimal" type="number" min="${canCorrect ? "0" : "0.01"}" step="any" value="${esc(amountText)}" placeholder="0.00"></label>
         ${canCorrect ? `<section class="expense-corrections" data-correction-panel ${correctionMode ? "" : "hidden"}><div class="correction-heading"><strong>Corregir un pago</strong><span class="meta">Pagos correctos de hoy y ayer</span></div>${loadingCandidates ? '<div class="empty">Buscando pagos…</div>' : candidateError ? `<div class="correction-error">${esc(candidateError)}</div>` : rows || '<div class="empty">No hay pagos correctos de hoy ni de ayer en esta sede.</div>'}<button type="button" class="btn primary full" data-run-correction ${selectedCandidateId && !saving ? "" : "disabled"}>${saving ? "Corrigiendo…" : "Corregir pago seleccionado"}</button><p class="correction-warning">El pago se conservará en el historial y quedará marcado como erróneo.</p></section>` : ""}
-        <label class="dialog-label" data-concept-wrap ${correctionMode ? "hidden" : ""}>Concepto (opcional)<input name="concept" maxlength="120" value="${esc(conceptText)}" placeholder="Ej. compra de insumos"></label><div class="special-methods" data-method-wrap ${correctionMode ? "hidden" : ""}><span class="dialog-label">Medio de pago</span><div class="method-choice"><button type="button" data-method="yape" class="${method === "yape" ? "active" : ""}">Yape</button><button type="button" data-method="cash" class="${method === "cash" ? "active" : ""}">Efectivo</button></div></div><p class="password-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel-special>Cancelar</button><button type="submit" class="btn primary" data-add-special ${correctionMode ? "disabled" : ""} ${correctionMode ? 'aria-disabled="true"' : ""}>${editing ? "Guardar cambios" : "Agregar monto"}</button></div></form>`;
+        <label class="dialog-label" data-concept-wrap ${correctionMode ? "hidden" : ""}>Concepto (opcional)<input name="concept" maxlength="120" value="${esc(conceptText)}" placeholder="Ej. compra de insumos"></label><div class="special-methods" data-method-wrap ${correctionMode ? "hidden" : ""}><span class="dialog-label">Medio de pago</span><div class="method-choice">${paymentMethods.map((option) => `<button type="button" data-method="${esc(option.key)}" class="${method === option.key ? "active" : ""}">${esc(option.label)}</button>`).join("")}</div></div><p class="password-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel-special>Cancelar</button><button type="submit" class="btn primary" data-add-special ${correctionMode ? "disabled" : ""} ${correctionMode ? 'aria-disabled="true"' : ""}>${editing ? "Guardar cambios" : "Agregar monto"}</button></div></form>`;
       d.querySelector("[data-cancel-special]").onclick = () => d.close();
       const amountInput = d.querySelector('[name="amount"]');
       amountInput.oninput = () => {
@@ -1175,7 +1202,6 @@ export default function createOrderFlow({
       draw();
       const { error } = await supabase.rpc("correct_paid_order", {
         p_order_id: candidate.order_id,
-        p_reason: "Corrección solicitada desde el flujo de egreso",
       });
       if (error) {
         saving = false;
@@ -1214,11 +1240,18 @@ export default function createOrderFlow({
       .reduce((sum, x) => sum + lineAmount(x), 0);
     const roundToTenth = (value) =>
       Math.floor((Number(value) || 0) * 10 + 0.500000001) / 10;
+    const paymentMethods = availableManualPaymentMethods();
+    const defaultMethod = paymentMethods.find((x) => x.key === "cash") || paymentMethods[0];
+    const canSplitYapeCash = paymentMethods.some((x) => x.key === "yape");
     let universalize = true,
-      method = "yape",
+      method = defaultMethod.key,
       syncSpecials = false,
       yapeAmount = roundToTenth(normalSubtotal / 2);
-    let specialMethods = order.items.map((x) => x.payment_method || "yape");
+    let specialMethods = order.items.map((x) =>
+      paymentMethods.some((option) => option.key === x.payment_method)
+        ? x.payment_method
+        : defaultMethod.key,
+    );
     let printerCheckBusy = false;
     let printerAvailable = false;
     let printerStatusTimer = null;
@@ -1248,13 +1281,17 @@ export default function createOrderFlow({
             ["income", "expense"].includes(item.product_kind) ||
             ["income", "expense"].includes(item.line_kind),
         );
+      current.items.forEach((item, index) => {
+        if ((item.product_kind === "income" || item.product_kind === "expense" || item.line_kind === "income" || item.line_kind === "expense") && !paymentMethods.some((option) => option.key === specialMethods[index]))
+          specialMethods[index] = defaultMethod.key;
+      });
       d.innerHTML = `<form method="dialog"><div class="panel-title">Registrar pago</div>
-        <div class="payment-global"><div class="payment-row"><div><div class="panel-title small-title">${universalize ? "Saldo sin productos especiales" : "Asignar Yape a productos"}</div><div class="payment-amount">${money(currentNormal)}</div></div>${universalize ? `<div class="method-choice large"><button type="button" data-global-method="yape" class="${method === "yape" ? "active" : ""}">Yape</button><button type="button" data-global-method="cash" class="${method === "cash" ? "active" : ""}">Efectivo</button></div>` : `<label class="yape-input">Yape<input type="number" min="0" max="${currentNormal}" step="0.1" value="${yapeAmount.toFixed(2)}" data-yape-input></label>`}</div>
+        <div class="payment-global"><div class="payment-row"><div><div class="panel-title small-title">${universalize ? "Saldo sin productos especiales" : "Asignar Yape a productos"}</div><div class="payment-amount">${money(currentNormal)}</div></div>${universalize ? `<div class="method-choice large">${paymentMethods.map((option) => `<button type="button" data-global-method="${esc(option.key)}" class="${method === option.key ? "active" : ""}">${esc(option.label)}</button>`).join("")}</div>` : `<label class="yape-input">Yape<input type="number" min="0" max="${currentNormal}" step="0.1" value="${yapeAmount.toFixed(2)}" data-yape-input></label>`}</div>
         ${universalize ? "" : `<div class="split-control"><input type="range" min="0" max="${currentNormal}" step="0.01" value="${yapeAmount}" data-yape-range><div class="split-values"><span>Yape: <strong data-yape-value>${money(yapeAmount)}</strong></span><span>Efectivo: <strong data-cash-value>${money(currentNormal - yapeAmount)}</strong></span></div></div>`}
-        <label class="toggle-row"><input type="checkbox" data-universalize ${universalize ? "checked" : ""}> Universalizar</label>
+        <label class="toggle-row"><input type="checkbox" data-universalize ${universalize ? "checked" : ""} ${canSplitYapeCash ? "" : "disabled"}> Universalizar</label>
         <label class="toggle-row printer-option"><input type="checkbox" data-print-ticket ${printRequested ? "checked" : ""} ${printerAvailable ? "" : "disabled"}><span>Imprimir comprobante de pago</span><span class="meta" data-printer-status>${printerAvailable ? "Dispositivo disponible" : "Comprobando dispositivo…"}</span></label>
         ${universalize && specials.length ? `<label class="toggle-row"><input type="checkbox" data-sync ${syncSpecials ? "checked" : ""}> Sincronizar movimientos con el medio general</label>` : ""}</div>
-        ${specials.length ? `<section class="payment-specials"><div class="panel-title small-title">Productos especiales</div>${specials.map(({ item, index }) => `<div class="special-payment-row"><div><strong>${esc(lineName(item))}</strong><span class="meta">${money(Math.abs(lineAmount(item)))}</span></div><div class="method-choice"><button type="button" data-special-method="yape" data-special-index="${index}" class="${specialMethods[index] === "yape" ? "active" : ""}">Yape</button><button type="button" data-special-method="cash" data-special-index="${index}" class="${specialMethods[index] === "cash" ? "active" : ""}">Efectivo</button></div></div>`).join("")}</section>` : ""}
+        ${specials.length ? `<section class="payment-specials"><div class="panel-title small-title">Productos especiales</div>${specials.map(({ item, index }) => `<div class="special-payment-row"><div><strong>${esc(lineName(item))}</strong><span class="meta">${money(Math.abs(lineAmount(item)))}</span></div><div class="method-choice">${paymentMethods.map((option) => `<button type="button" data-special-method="${esc(option.key)}" data-special-index="${index}" class="${specialMethods[index] === option.key ? "active" : ""}">${esc(option.label)}</button>`).join("")}</div></div>`).join("")}</section>` : ""}
         <div class="payment-total"><span>Total del pedido</span><strong>${money(orderTotal(current.items))}</strong></div><p class="password-error payment-error" data-payment-error role="alert"></p>
         <div class="dialog-actions"><button type="button" class="btn secondary" data-cancel-payment>Cancelar</button><button type="submit" class="btn primary" data-confirm-payment>Registrar</button></div></form>`;
       d.querySelector("[data-cancel-payment]").onclick = () => d.close();
@@ -1263,7 +1300,7 @@ export default function createOrderFlow({
         printRequested = printCheckbox.checked;
       };
       d.querySelector("[data-universalize]").onchange = (e) => {
-        universalize = e.target.checked;
+        universalize = canSplitYapeCash ? e.target.checked : true;
         draw();
       };
       d.querySelector("[data-sync]")?.addEventListener("change", (e) => {

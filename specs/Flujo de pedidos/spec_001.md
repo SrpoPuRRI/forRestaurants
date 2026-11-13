@@ -39,7 +39,16 @@ Esta sección resume el comportamiento observado en el código y las migraciones
 
 ### Estado de la implementación en Black&White
 
-La interfaz y Estadísticas consultan `public.orders`; el flujo de pago usa `record_paid_order`/`pay_open_order`. La migración local `202611120003_paid_orders_and_statistics.sql` implementa pedidos pagados, líneas, agregados, instantáneas de pago y correcciones auditadas, además del esquema/RPC de pedidos abiertos que consume la interfaz. La migración crea el modelo multi-restaurante y conserva hasta diez importes y sus métodos/modos históricos. Debe aplicarse al proyecto remoto para que desaparezca `PGRST205` y Estadísticas pueda cargar movimientos. No está desplegada automáticamente por editar el repositorio.
+Las decisiones propias de B&W para los productos especiales son:
+
+- Cada restaurante nace con exactamente un producto **Ingreso** y uno **Egreso**, cada uno con su variante de monto variable. Son productos obligatorios: no se crean desde el editor normal del catálogo y no se pueden eliminar. La creación ocurre como parte de la creación del restaurante.
+- Para pagar el pedido, el modal muestra como opciones los métodos habilitados para cobro manual en ese restaurante. **Efectivo siempre está habilitado**; Yape y los demás medios dependen de la configuración. Cada línea especial se asigna completa a un medio.
+- Corregir un pago consiste en marcar el movimiento original como erróneo y conservarlo en el historial; no exige escribir un motivo. El contexto de desempeño o conducta se registra en las notas del empleado.
+- Un Egreso no se interpreta automáticamente como una devolución ni activa por sí mismo una corrección. Si un restaurante acuerda representar devoluciones con un producto, ese producto/concepto se registra por separado según su procedimiento interno; su representación concreta en el catálogo queda pendiente de definir.
+
+En el código local, la interfaz y Estadísticas consultan `public.orders`; el flujo de pago usa `record_paid_order`/`pay_open_order`. La migración `202611120003_paid_orders_and_statistics.sql` implementa pedidos pagados, líneas, agregados, snapshots de pagos y eventos de corrección, además del esquema/RPC de pedidos abiertos. Está aplicada en Supabase producción. La migración `202611130001_required_special_products_and_payment_rules.sql` completa estas reglas para Ingreso/Egreso, efectivo y correcciones; debe aplicarse en Supabase antes de desplegar la interfaz actualizada.
+
+La interfaz ahora carga los métodos manuales habilitados del restaurante y los ofrece como opciones de pago, tanto al registrar Ingreso/Egreso como al pagar productos normales. El efectivo aparece siempre y no se puede desactivar; también queda forzado por la base de datos. Al corregir, la interfaz no solicita ni manda un motivo y el evento guarda actor y hora. El catálogo solo permite crear productos normales, y la base de datos impide borrar, renombrar, cambiar de tipo o desactivar Ingreso/Egreso y su variante obligatoria.
 
 ## Colas operativas opcionales
 
@@ -89,7 +98,7 @@ La capacidad de persistencia admite hasta diez espacios de importe. El método y
 ## Ajustes de permisos y límites desde Configuración
 
 - El administrador puede habilitar límites de importe mínimo y máximo del pedido, definir los valores y elegir si aplican al administrador, a empleados o a ambos. Si aplican a empleados, selecciona los roles autorizados.
-- El administrador puede habilitar pedidos correctivos y devoluciones para sí mismo y, de forma independiente, para empleados. Si se habilitan para empleados, selecciona explícitamente los roles autorizados.
+- El administrador puede habilitar correcciones de pagos para sí mismo y, de forma independiente, para empleados. Si se habilitan para empleados, selecciona explícitamente los roles autorizados. Las devoluciones registradas como movimientos se representan por separado, mediante el producto/concepto que acuerde cada restaurante.
 - Qué sucede cuando un pedido supera o no alcanza los límites (bloqueo, advertencia o excepción autorizada), así como el alcance exacto de «pedido correctivo», todavía queda por definir.
 - Los permisos deben validarse en el servidor; ocultar o mostrar botones según el rol no es suficiente.
 
