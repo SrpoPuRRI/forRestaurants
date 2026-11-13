@@ -1,192 +1,183 @@
-# Traspaso de contexto — Black&White POS
+# Handoff de Black&White POS
 
-**Actualizado:** 11 de noviembre de 2026
-**Objetivo:** permitir que otra sesión continúe el trabajo sin repetir descubrimientos ni confundir lo especificado con lo que ya está implementado.
+**Actualizado:** 13 de noviembre de 2026
+**Repositorio:** `F:\PROYECTOS\forRestaurants`
+**Rama y corte local:** `main`, commit `61a6ae4` (`ankfasnkfamkafamfak`). El árbol estaba limpio antes de actualizar este documento.
+**Estado de publicación:** el propietario confirmó que subió a producción los últimos cambios y que funcionan. No se consultaron directamente GitHub Actions, Cloudflare Pages ni el historial remoto de Supabase en esta sesión; verifica esos estados antes de asumir que una migración se aplicó.
 
-## Continuación inmediata para la nueva cuenta (11 de noviembre)
+## Instrucciones importantes para el siguiente agente
 
-El último problema reportado en producción es al cambiar el logo desde **Setter → Editar restaurante**: `permission denied for table restaurants`. Se rastreó en el código antes de cambiar nada: Setter envía esa acción a la Edge Function `setter-admin`; esta usa el cliente Supabase con `service_role` para leer `restaurants.id,logo_path` y luego actualizar `restaurants.logo_path`. `BYPASSRLS` evita RLS, pero no otorga permisos SQL de tabla. La migración inicial otorgaba permisos a `authenticated`, no los permisos `SELECT` y `UPDATE` que esta operación necesita para `service_role`.
+- El proyecto principal es este repositorio, **forRestaurants / Black&White POS**.
+- `F:\PROYECTOS\Kffeto POS` es una aplicación de producción usada solo como inspiración e investigación. **No editar sus archivos.** El usuario dijo que no se toque ese código.
+- `F:\PROYECTOS\dosMiniProyectos\setter` es el configurador separado. Se puede modificar, pero lee primero su documentación y comprueba su estado actual.
+- No asumir que una regla escrita en una spec ya existe en código. Distinguir siempre entre decisión aprobada, implementación local y estado desplegado.
+- El usuario suele probar personalmente la interfaz y prioriza flujos directos y prácticos para restaurantes pequeños. No volver a pedir decisiones ya registradas en las specs.
+- No insertar contraseñas, service keys ni tokens en repositorios, logs o documentación.
 
-La corrección de origen ya está en `202611110003_setter_restaurant_service_access.sql` y otorga únicamente `SELECT, UPDATE` sobre `public.restaurants` a `service_role`. El commit actual de forRestaurants es `dd5df2c` (`aaijasf`); incluye esa migración y la nota de despliegue en `supabase/README.md`. El repo estaba limpio y alineado con `origin/main` al documentar esto. **No se ha confirmado aquí que GitHub Actions haya aplicado esta migración ni que el flujo de logo ya funcione en producción.** Próximo paso: revisar la acción de Supabase correspondiente a `dd5df2c`, comprobar que `supabase db push` terminó bien y volver a probar el cambio desde Setter. Si la acción falla, detenerse y diagnosticar antes de pedir otro despliegue. No hace falta cambiar el bucket para este error concreto; las políticas/bucket de logo están en `202611110002_restaurant_logo_storage.sql` y cubren el flujo de Storage.
+## Resumen del producto
 
-La llamada a Supabase Edge Functions usa ahora explícitamente el bearer del service key como medida defensiva. Eso no era la causa de `permission denied for table restaurants`; la causa identificada es el GRANT ausente. `setter-admin` también emite errores diferenciados para carga de objeto y escritura de metadatos, con eventos `setter_restaurant_logo_upload_failed` y `setter_restaurant_update_failed`, para que el próximo diagnóstico distinga Storage de Postgres.
+Black&White POS es un POS multi-restaurante. Setter da de alta restaurantes y sus necesidades; la aplicación POS autentica al personal, calcula los permisos según los roles asignados y las necesidades/configuraciones, y muestra los espacios de trabajo del restaurante. Kffe’to ayuda a entender comportamientos operativos reales, pero su esquema no es el diseño final de B&W.
 
-El repo Setter separado (`F:\PROYECTOS\dosMiniProyectos\setter`) tiene como último commit local/remoto `9fa4a9b` (`I should be able to set a logo for a certain restaurant`) y estaba limpio. El formulario de creación acepta logo opcional; contraseña mínima de seis caracteres; Enter abre confirmación y la confirmación separa Cancelar de Aceptar y crear. El formulario de edición de Setter permite cambiar/quitar el logo. El POS también permite al admin del restaurante cambiar/quitar el logo desde Configuración. Los logos se almacenan en el bucket privado `restaurant-assets`, la base conserva `logo_path`, y la interfaz usa URL firmada temporal. Setter y POS son despliegues frontend independientes; la migración/funciones se despliegan desde forRestaurants.
+Las secciones fijas son **Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración**. Las necesidades opcionales son **CRM, Cocina, Salón, Delivery y Comprobantes**. Orden en la navegación:
 
-### Incidente de inicio de sesión (11 de noviembre)
+1. Cuentas.
+2. CRM, si está activo.
+3. Estadísticas.
+4. Delivery, si está activo.
+5. Flujo de pedidos.
+6. Cocina, si está activa.
+7. Barra, después de Cocina, si se configuró barra separada.
+8. Salón, si está activo.
+9. Catálogo.
+10. Configuración, al final.
 
-La autenticación con contraseña llegaba a Supabase Auth, pero el login B&W añadía una llamada a `restaurant-access`, que respondía `authentication_required`. Kffe’to carga la cuenta directamente desde `accounts`; B&W ahora sigue ese patrón y resuelve desde el cliente autenticado `accounts` (RLS de cuenta propia), `restaurants` (restaurante activo) y `roles`, sin llamar a `restaurant-access` al iniciar/restaurar sesión. La función queda protegida con `verify_jwt = true` para cualquier otro uso. `index.html` agrega una versión al URL de `app.js` para evitar que el navegador conserve el módulo anterior. Estos cambios requieren publicar el frontend de forRestaurants y confirmar el despliegue Pages; no requieren cambiar el esquema.
+El POS autenticado muestra el nombre y logo del restaurante como marca principal. El login conserva la marca Black&White.
 
-### Marca del restaurante dentro del POS (primera implementación)
+## Estado de producción más reciente
 
-El dueño probó el logo del restaurante «El Sabor» y compartió una captura: dentro del POS aún se lee «BLACK&WHITE POS» como marca principal y el logo subido aparece como un icono pequeño. La intención acordada es que el login conserve la identidad Black&White para dejar claro qué producto se está usando, pero una vez autenticado el encabezado de trabajo muestre de forma prominente el nombre y el logo del restaurante para que el espacio se sienta propio del negocio. No basta con reemplazar la imagen: también debe cambiar el texto de marca.
+El usuario confirmó que subió el commit `61a6ae4` a producción y que los cambios de pagos y Estadísticas funcionan. Ese corte incorpora:
 
-El login sigue mostrando Black&White. El shell autenticado muestra el nombre y el logo del restaurante tanto en escritorio como en móvil, y ya no pone «BLACK&WHITE POS» como marca principal. El logo ocupa un marco cuadrado sin padding (88 × 88 px en escritorio y 56 × 56 px en móvil) con ajuste `cover`; se recomienda cargar archivos cuadrados porque un logo horizontal puede recortarse. Si falta, se usa un monograma de las iniciales. Las medidas son una primera versión para revisar en el dispositivo de prueba. La especificación de diseño registra el comportamiento implementado.
+- Recargar la configuración de rankings desde la base al entrar a Estadísticas; exigir que los rankings estén habilitados y permitidos para el rol para mostrar sus secciones.
+- Cargar únicamente métodos de pago habilitados para cobro manual en Estadísticas. Mostrar el desglose cuando hay más de un método manual disponible; no renderizar el desglose ni los métodos desactivados si solo está activo Efectivo.
+- Actualizar los métodos manuales antes de abrir el modal de Ingreso/Egreso y antes de confirmar el pago, para que la lista refleje la configuración actual del restaurante.
+- El modal de pago ofrece opciones configuradas, no una lista fija de Yape/Efectivo.
 
-**Estado de trabajo al corte de este handoff:** comprobar `git status` y el último commit, porque el fix de inicio de sesión descrito arriba puede estar pendiente de publicar.
+**Producción:** según el propietario, los cambios recién publicados funcionan. El agente que retome no necesita volver a pedir que se repita esa prueba; si aparece un problema nuevo, leer primero el código exacto del commit publicado y comparar los datos de configuración.
 
-## Estado rápido
+## Base de datos y migraciones
 
-- Repositorio POS/backend: `F:\PROYECTOS\forRestaurants`, rama `main`, remoto `SrpoPuRRI/forRestaurants`.
-- Último despliegue que está confirmado en el historial previo: `65d482a` — `Fix duplicate staff schedule insertion`; GitHub Actions #10 terminó correctamente. Esto no confirma el despliegue de los commits posteriores.
-- El último commit de código de base/backend que se comprobó localmente es `dd5df2c` (`aaijasf`), alineado con `origin/main`, y contiene la migración `202611110003_setter_restaurant_service_access.sql`. **Revisar Actions para saber si ya se aplicó en Supabase.**
-- El último run de Supabase previamente confirmado fue [run 42526209757](https://github.com/SrpoPuRRI/forRestaurants/actions/runs/42526209757), asociado al despliegue anterior; no asumir que cubre `dd5df2c`.
-- El check de Cloudflare Pages asociado a aquel despliegue previo terminó correctamente: [Cloudflare Pages](https://github.com/SrpoPuRRI/forRestaurants/runs/128862361196). No asumir que verifica los últimos cambios del frontend.
-- Repositorio Setter: `F:\PROYECTOS\dosMiniProyectos\setter`, rama `main`, remoto `SrpoPuRRI/BandWConfig`. Último commit publicado comprobado: `9fa4a9b` — `I should be able to set a logo for a certain restaurant`; el árbol estaba limpio. La URL de GitHub Pages comprobada anteriormente es `https://srpopurri.github.io/BandWConfig/`.
-- Las migraciones y Edge Functions se aplican mediante el workflow descrito abajo. Para el arreglo actual de permisos de Setter hay que confirmar la acción posterior al commit `dd5df2c`; no declarar resuelto el incidente solo porque el commit exista.
-- Los despliegues verdes **no significan que el POS esté listo para incorporar restaurantes clientes**. Las tablas y RPC operativas heredadas de Kffe’to todavía no tienen aislamiento multi-restaurante suficiente.
+El workflow `.github/workflows/deploy-supabase.yml` aplica migraciones y despliega Edge Functions al llegar cambios a `main`. Cloudflare Pages publica el frontend desde su repositorio configurado. Son despliegues separados: comprobar ambos cuando corresponda.
 
-## Producto y decisiones vigentes
+Migraciones presentes en este repositorio, en orden:
 
-Black&White POS es un POS multi-restaurante que se adapta a la operación de cada negocio. Kffe’to POS sirve como referencia operativa real, no como esquema final. La identidad elegida usa el conector como símbolo y una paleta cálida; ver `assetsIdent/` y `specs/Diseño de la app/spec_001.md`.
+- `202611060001_platform_core.sql`: plataforma, restaurantes, cuentas, sedes, roles/identidad inicial, RLS y almacenamiento de logos.
+- `202611070001_setter_architecture_catalog.sql` y `202611070002_fix_service_role_claim.sql`: cambios transitorios/compatibilidad de Setter; parte de ese modelo es legado.
+- `202611080001_fixed_optional_needs.sql`: necesidades fijas y restricciones de Setter.
+- `202611080002_restaurant_operational_settings.sql`: métodos de pago, preferencias y notas por restaurante.
+- `202611100001_restaurant_catalog.sql`: catálogo multi-restaurante, variantes, agregados, disponibilidad por sede y formato de comprobante.
+- `202611110001_restaurant_workspaces.sql`: estructuras y RPC de pisos, mesas, colas de cocina/salón y estados de progreso.
+- `202611110002_restaurant_logo_storage.sql`: bucket privado y políticas de logo.
+- `202611110003_setter_restaurant_service_access.sql`: concede `SELECT`/`UPDATE` de `restaurants` al `service_role` que usa Setter. `BYPASSRLS` por sí solo no concede privilegios SQL.
+- `202611120001_accounts_roles_attendance.sql`: catálogo global de roles, arrays de roles, horarios reutilizables y tablas de asistencia.
+- `202611120002_account_locations_and_active_usernames.sql`: sede principal y unicidad de nombres de usuario entre cuentas activas.
+- `202611120003_paid_orders_and_statistics.sql`: `orders`, `order_items`, `order_item_addons`, `order_correction_events`, `open_orders` y RPC de pedidos/pago/corrección.
+- `202611130001_required_special_products_and_payment_rules.sql`: productos Ingreso/Egreso obligatorios, efectivo forzado y correcciones sin motivo. La sintaxis del `CASE` del trigger se corrigió agrupando la expresión; no restaurar la versión que falló con `syntax error at end of input`.
 
-Hay dos aplicaciones con límites diferentes:
+El usuario indicó que desplegó los últimos cambios y que funcionan. Aun así, el Handoff no reemplaza la evidencia del historial remoto: si una nueva tarea depende de una columna/función específica, verifica `supabase_migrations.schema_migrations` o consulta el esquema remoto antes de proponer otra migración. Nunca edites migraciones ya aplicadas; agrega una con timestamp posterior.
 
-1. **Configurador de Black&White (Setter):** herramienta privada de plataforma. Usa Auth y la lista `platform_operators` para autorizar al operador, pero no muestra una cuenta/nombre de operador en su interfaz ni pide credenciales de restaurante. Permite ver restaurantes, crear uno, seleccionar necesidades fijas, ver estado y gestionar cuentas de restaurante dentro del alcance acordado. No administra configuraciones operativas ni catálogos de necesidades.
-2. **Black&White POS:** inicio de sesión de cuentas del restaurante; determina el restaurante y el rol desde la membresía, sin preguntar al usuario qué restaurante quiere abrir. El encabezado/espacio de trabajo debe comunicar la identidad del restaurante.
+El primer intento remoto del catálogo falló con `relation "categories" already exists`. Se compartieron introspecciones para reconciliar diferencias de esquema. No resuelvas discrepancias con `IF NOT EXISTS` a ciegas ni marcando una migración como aplicada sin verificar todas sus tablas, índices, políticas, funciones y triggers.
 
-Las secciones fijas de cada restaurante son **Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración**. Orden de navegación: Cuentas; CRM si está activo; Estadísticas; Delivery si está activo; Flujo de pedidos; Cocina si está activa; Barra inmediatamente después de Cocina si está configurada; Salón si está activo; Catálogo; Configuración siempre al final. Las únicas necesidades opcionales seleccionables en Setter son **CRM (`crm`), Cocina (`kitchen`), Salón (`salon`), Delivery (`delivery`) y Comprobantes (`receipts`)**. No agregar necesidades para pestañas fijas ni reintroducir selector de arquitectura/versiones. Las necesidades y configuraciones determinan qué roles/permisos estarán disponibles en el POS.
+## Roles, necesidades y Cuentas
 
-**Roles y necesidades implementados en código y migración `202611120001_accounts_roles_attendance.sql`:** `roles` es global; `restaurants.available_role_ids` guarda IDs habilitados y `accounts.role_ids` permite varios roles sin mezclas predefinidas. La configuración de necesidades recalcula la disponibilidad, y el backend valida asignaciones y permisos. Cocina → Cocinero; barra separada → Barista/Bartender; Salón → Mesero/Portero; CRM → Social Manager; Delivery → Repartidor; Cajero se habilita si existe una necesidad distinta de Comprobantes. Administrador y Empleado siempre están disponibles. Empleado es exclusivo y hereda la unión de permisos habilitados sin privilegios de administrador. La asignación a una cuenta desactivada por una necesidad retirada pierde efecto al instante; los datos operativos se conservan.
+Los roles son permisos globales, no roles mixtos predefinidos:
 
-El usuario quiere un flujo claro y no ambiguo, datos específicos por restaurante, permisos aplicados en servidor/RLS además de la interfaz, y que el admin del restaurante configure la operación desde Configuración del POS. La información de cada restaurante debe sentirse propia del cliente.
+- `roles` es el catálogo global, sin relación con restaurante ni cuenta.
+- `restaurants.available_role_ids` contiene los roles habilitados para ese restaurante.
+- `accounts.role_ids` permite asignar varios roles y acumular sus permisos.
+- `Administrador` y `Empleado` siempre existen. `Empleado` es exclusivo y representa la unión de permisos de los roles disponibles para ese restaurante, sin permisos de admin.
+- Los roles disponibles derivan de necesidades y configuraciones: Cocina → Cocinero; barra separada → Barista, Bartender y espacio Barra; Salón → Mesero y Portero; CRM → Social Manager; Delivery → Repartidor. Cajero se incluye cuando hay una necesidad activa distinta de Comprobantes. Al retirar necesidades se eliminan roles de la lista habilitada, pero se conservan datos.
+- El administrador del POS puede añadir o quitar necesidades después del alta. Una sede principal es requisito del restaurante.
 
-## Lo último que se implementó
+Cuentas permite crear, editar y desactivar cuentas; la interfaz no reactiva cuentas desactivadas. Los nombres de usuario son únicos entre cuentas activas, los nombres completos pueden repetirse. Los horarios múltiples se asignan a la cuenta, requieren entradas/salidas válidas y no superpuestas. La baja no borra el historial.
 
-### Cuentas, roles y asistencia (12 de noviembre de 2026)
+Asistencia usa `attendance_objects` (un objeto por empleado) y `attendance_records` (marcas). La cuenta apunta al objeto. Se conserva hora efectiva, hora de registro, actor, sede, método y motivo de corrección de marca; no confundir el motivo de corrección de asistencia con el de pago. Asistencia no es lo mismo que los turnos/caja de Estadísticas.
 
-Las migraciones `202611120001_accounts_roles_attendance.sql` y `202611120002_account_locations_and_active_usernames.sql` están aplicadas y confirmadas en Supabase producción. Reemplazan roles por restaurante por un catálogo global/múltiple, convierten horarios en bloques reutilizables, crean objetos y eventos de asistencia, y hacen que cada restaurante tenga al menos una sede. La segunda migración añadió «Sede principal» a «El Sabor», permite reutilizar nombres de usuario de cuentas inactivas y mantiene únicos los nombres entre cuentas activas. Las cuentas desactivadas no se reactivan desde la app; sus accesos Auth se bloquean y se aparta su correo de acceso para permitir reutilizar el nombre de usuario sin borrar el historial.
+### Nota pendiente sobre contraseña en `accounts`
 
-En Cuentas, el selector de tipo tiene Administrador, Empleado y «Ninguna de las anteriores»; esta última muestra roles combinables. Los horarios requieren día, entrada/salida válidas y no superpuestas. Solo queda un horario como mínimo y su botón de quitar se desactiva. La dirección/horario semanal de sede se administra desde Cuentas. El propietario corregirá/pulirá la interfaz y probará los flujos.
+El propietario añadió manualmente una columna `accounts.passwords` en Supabase y pidió conservar la contraseña legible. En el `app.js` actual, el flujo de cambio de contraseña actualiza primero Supabase Auth e intenta después `accounts.update({ passwords: ... })`, pero no comprueba ni reporta el error de esa actualización. No hay una migración del repositorio que cree esa columna ni consta aquí que el alta inicial de cuentas la rellene. **No afirmar que la copia en `accounts.passwords` está funcionando** sin inspeccionar esquema y respuesta de la operación. El login y la contraseña efectiva siguen dependiendo de Supabase Auth.
 
-El historial remoto confirma ambas migraciones aplicadas. En «El Sabor» están disponibles Admin, Empleado, Cajero, Cocinero, Mesero, Portero, Social Manager y Repartidor; Barista/Bartender aparecen si se activa barra separada. La cuenta Admin conserva su rol y tiene objeto de asistencia. Los cambios de app y Edge Functions siguen locales hasta publicar sus repositorios. El error reportado al entrar a Setter (`column roles.restaurant_id does not exist`) viene de la versión publicada anterior: en el Setter local, el selector consulta el catálogo global y filtra por `restaurants.available_role_ids`; su publicación aún está pendiente.
+## Catálogo
 
-### Prototipos y espacios opcionales (11 de noviembre de 2026)
+El catálogo multi-restaurante tiene productos estándar, categorías, etiquetas, variantes, agregados y disponibilidad por sede. `is_active` significa disponible para vender; lo inactivo sigue visible en la búsqueda, pero no se añade al pedido y la app presenta un diálogo propio. Desactivar no equivale a eliminar. No hay inventario por cantidad.
 
-- CRM ahora tiene un prototipo visual independiente de la base de datos.
-- Delivery muestra un espacio «Próximamente»; el rol Repartidor aún no habilita operaciones.
-- Comprobantes muestra el botón «Configurar sistema de impresión» y un diálogo «Próximamente».
-- Se añadió en el POS la UI de Cocina (colas, marcar pedido/artículo/unidad listo o fuera de stock) y Salón (pisos, grilla, mesas, servicio, edición configurable y sillas por piso). La Barra separada tiene una pantalla informativa: aún no se distribuyen artículos entre Cocina y Barra.
-- La migración `202611110001_restaurant_workspaces.sql` añade tablas/RPC con aislamiento por restaurante para pisos, mesas, colas de Cocina/Salón y eventos de progreso. Está aplicada según el historial remoto; los flujos aún necesitan prueba funcional completa.
-- La cola se limpia al abrir Cocina y elimina pedidos completados con más de dos días; no hay proceso programado en servidor. El alta/pago del pedido heredado y su entrada a cola son llamadas separadas, no una transacción única.
-- La UI y las validaciones de base ya usan roles globales y asignaciones múltiples. Los cambios del frontend y Edge Functions deben publicarse para que el despliegue use esas validaciones.
-- El mapa y las colas son funcionales en el código local. `salon_open_order_links` vincula la cuenta abierta con su mesa para recuperar esa relación al reabrirla; la migración todavía debe aplicarse y probarse en Supabase. La unión de mesas conserva las mesas y sus números como grupo visual (no crea una mesa física consolidada).
+El catálogo de administración solo crea productos estándar. Ingreso/Egreso se gestionan como productos especiales protegidos, descritos abajo. Formato de ticket se ofrece desde Configuración solo si el restaurante tiene Comprobantes; la configuración de impresión todavía muestra «Próximamente».
 
-El commit `b7563c8` contiene:
+## Flujo de pedidos, pagos y productos especiales
 
-- Pantalla **Configuración**, solo visible para cuentas con rol `admin`.
-- Nuevas columnas tipadas en `restaurants` para preferencias de notas, rankings, límites y capacidades del catálogo.
-- `restaurant_payment_methods` con RLS para los cinco métodos acordados: efectivo, Yape, Plin, transferencia bancaria y tarjetas.
-- `restaurant_role_settings` para permisos de rankings/pedidos por rol, con FK compuesta al restaurante.
-- `employee_notes` con RLS: cada empleado escribe/lee su nota y el admin puede leer notas de su restaurante.
-- UI de nota propia del empleado y vista administrativa de notas de equipo.
-- Estadísticas lee ahora preferencias persistidas para mostrar rankings al admin/empleados según la configuración.
-- README de Supabase actualizado para advertir del límite multi-tenant.
+### Implementado en el modelo actual
 
-Archivos principales:
+- `open_orders` conserva borradores abiertos por sede y operador con revisión optimista.
+- `orders` guarda movimientos pagados y snapshots de importes/métodos/modos, total, operador, sede y timestamps.
+- `order_items` y `order_item_addons` conservan nombres/precios como snapshots.
+- La persistencia admite hasta diez importes/métodos por movimiento; la base valida sumas y conserva snapshots históricos.
+- `correct_paid_order` marca el pedido original Erróneo y crea un evento de corrección; no borra el movimiento original. Solo muestra candidatos de hoy/ayer según permisos y sede. Estadísticas excluye los movimientos erróneos de métricas limpias, pero conserva su aviso en el historial.
 
-- `restaurant-settings.js`: lectura, presentación y guardado de las preferencias.
-- `app.js`: ruta, navegación, carga de ajustes y UI de notas en Cuentas.
-- `statistics.js`: filtrado de rankings según preferencias guardadas.
-- `supabase/migrations/202611080002_restaurant_operational_settings.sql`: migración más reciente.
-- `supabase/README.md`: despliegue, autenticación y advertencias de producción.
+### Reglas actuales de Ingreso y Egreso
 
-En esta sesión se hizo `node --check` de `app.js`, `statistics.js` y `restaurant-settings.js`, y `git diff --check`; pasaron. No se hicieron pruebas de integración contra un restaurante real.
+- Todo restaurante debe tener un producto **Ingreso** y uno **Egreso**, con variante **Monto variable** de precio cero. La migración `202611130001...` los siembra para restaurantes existentes y un trigger los crea al insertar futuros restaurantes.
+- Son obligatorios: no se crean a mano desde Catálogo, no se pueden eliminar, renombrar, cambiar de tipo ni desactivar. La variante también está protegida.
+- Al registrar un movimiento, el empleado introduce un monto mayor que cero y puede escribir concepto opcional. Ingreso suma; Egreso resta. Cada línea especial tiene cantidad uno, sin agregados.
+- El modal muestra métodos habilitados para cobro manual del restaurante. **Efectivo es obligatorio para todos los restaurantes** y la interfaz/base impiden desactivarlo. Yape, Plin, transferencia y tarjeta aparecen solo si se habilitaron para cobro manual.
+- Corregir un pago no pide explicación. La base conserva actor y hora; el contexto del empleado pertenece a sus notas. La columna histórica `reason` de eventos de corrección puede quedar en `NULL` por compatibilidad.
+- Egreso no significa automáticamente devolución ni activa por sí mismo una corrección. Si el restaurante necesita simbolizar una devolución como movimiento, acuerda un producto/concepto separado según su política interna.
 
-## Lo que la interfaz todavía no hace cumplir
+### Límites que aún deben respetarse
 
-No presentar las siguientes opciones como funcionalidades de operación listas:
+- La UI permite elegir cualquier método manual habilitado para un pago global y para los movimientos especiales. El pago dividido de productos estándar sigue siendo específicamente entre Yape y Efectivo; un split genérico entre cualquier pareja de métodos no está implementado.
+- Métodos automáticos no tienen proveedor integrado y siguen deshabilitados.
+- No hay ciclo completo de anulaciones, devolución financiera, caja ni control de turnos.
+- Límite mínimo/máximo y permisos relacionados tienen configuración guardada, pero verificar en `record_paid_order` si se aplican antes de prometerlo: no inferir cumplimiento por la UI de Configuración.
 
-- **Pagos:** se guardan preferencias manuales por método. La modalidad automática está desactivada en UI porque no hay proveedor integrado. El checkout actual sigue usando el modelo antiguo (Yape/efectivo); no lee la configuración nueva ni admite todos los métodos.
-- **Límite mínimo/máximo y pedidos correctivos/devoluciones:** valores y permisos por rol se guardan, pero el flujo/RPC de pedidos no los aplica.
-- **Rankings:** la visibilidad usa la configuración existente, pero los datos se consultan desde el modelo operativo heredado. Tras adoptar la clasificación de Kffe’to (categorías, grupos o etiquetas), la base aún debe guardar el tipo elegido y sus permisos; los pedidos multi-restaurante deben guardar sus relaciones con catálogo.
-- **Catálogo:** se añadió al repositorio un catálogo multi-restaurante inspirado en Kffe’to (productos, categorías, etiquetas, variantes, agregados y disponibilidad por sede), con RLS y UI. `is_active` indica si se puede vender; los registros fuera de stock siguen visibles y muestran un diálogo al intentar agregarlos. Admin administra Catálogo y Empleado puede cambiar disponibilidad desde el menú por una operación de servidor limitada. Falta aplicar la migración `202611100001_restaurant_catalog.sql` a Supabase. Los interruptores de agregados, grupos y promociones aún no gobiernan esos flujos; las promociones no tienen editor ni aplicación al cobro.
-- **Notas:** lectura/escritura y visibilidad administrativa están implementadas. No se ha construido reinicio manual ni automático. El campo modo/intervalo se guarda; la nota no se borra porque faltan fecha exacta, retención y archivo/historial definidos.
-- **Estadísticas y caja:** la especificación sigue las métricas de Kffe’to y agrupa la interfaz por la fecha de apertura de Caja. Caja tiene estado booleano y un registro mensual por restaurante organizado por fecha, turno y timestamps de apertura/cierre. Solo hay un periodo por turno; cerrar manualmente exige contraseña y solo el administrador puede reabrir, eliminando la marca de cierre del JSON. El fin del turno no cierra Caja: muestra un aviso y permite seguir cobrando. Un proceso automático, aun sin cuentas iniciadas, cierra Caja a menos de cinco minutos del cambio al siguiente turno. Esto es preventivo para operaciones pendientes futuras, no significa que hoy haya una; si un flujo afectado devuelve `closedCashier`, es un error y no cuenta en Estadísticas. Se avisa al administrador que respete los horarios. Cada turno obtiene sus pagos consultando sus periodos de Caja. Configuración de Estadísticas puede mostrar separadores visuales sin alterar movimientos o cálculos. Falta definir qué retención tiene el JSON al reiniciar cada mes; cada movimiento conserva su timestamp real.
+## Estadísticas y Caja
 
-La pantalla de Configuración advierte que cobro, promociones y límites necesitan migración del flujo operativo multi-restaurante. Mantener esa transparencia.
+- Estadísticas usa la fecha/rango del timestamp del movimiento y zona `America/Lima`; para un solo día grafica pedidos por hora, para rango por día.
+- Métricas limpias incluyen solo movimientos Correctos: saldo neto, cantidad, promedio y desglose cuando existen varios métodos de pago manual habilitados.
+- Rankings respetan el switch global, los switches por tipo y los permisos de rol. Si no hay ninguno habilitado/visible, no debe salir la sección ni un «no hay rankings». El último cambio recarga la configuración al entrar a Estadísticas para evitar valores antiguos en memoria.
+- El desglose lista métodos activos para cobro manual; con solo efectivo se oculta, y no deben aparecer métodos desactivados.
+- El historial sí conserva movimientos Erróneos con aviso. Ingreso/Egreso participa en saldo neto con signo; productos especiales no cuentan como unidades de productos vendidos.
 
-## Bloqueo de producto antes de incorporar clientes
+**Caja aún es diseño/spec, no flujo terminado:** hay una propuesta de boolean abierta/cerrada, registro mensual por turnos con timestamps, cierre manual con contraseña y cierre automático cerca del siguiente turno. El fin de turno no debe cerrar automáticamente la caja. No decir que esto ya existe en producción. Ver `specs/Estadísticas/spec_001.md`.
 
-`supabase/README.md` documenta la condición principal: `orders`, `open_orders` y RPC financieras/asistencia siguen sin un modelo uniforme `restaurant_id` con RLS multi-tenant verificada. La migración del catálogo aislado ya está en el repositorio, pero aún no aplicada al proyecto Supabase. La tabla de restaurantes/cuentas/roles tiene base compartida; eso no aísla automáticamente pedidos ni pagos. **No conectar clientes reales ni usar sus operaciones hasta completar y verificar ese aislamiento.**
+## Cocina, Salón y demás necesidades
 
-El primer restaurante de prueba con Cocina/Salón también depende de aplicar las migraciones de catálogo y workspaces. Incluso después, debe probarse con datos aislados: el modelo de pedidos heredado y el esquema de roles siguen siendo bloqueos conocidos para validar un restaurante completo.
+El modelo contempla colas separadas por necesidad, referencias a pedidos y estados de Cocina/Salón. Cocina puede marcar pedido, ítem o unidades listas y declarar disponibilidad fuera de stock; Salón tiene pisos, mapa de grilla, mesas y flujo de servicio. Las necesidades desactivadas no deben borrar datos operativos. Revisa `specs/Cocina/spec_001.md` y `specs/Salón/spec_001.md` antes de tocar esas áreas.
 
-El siguiente trabajo de arquitectura debería definir/migrar primero:
+La UI/código local de Cocina y Salón ya contiene trabajo sustancial (colas, progreso, pisos, grillas, mesas, permisos de edición y sillas por piso). Sin embargo, el flujo completo y todas las combinaciones siguen pendientes de prueba con datos reales. No asumir reglas finales para Solo Salón, Solo Cocina, Cocina+Delivery sin Salón o Cocina+Salón+Delivery. La cola no sustituye `open_orders` ni `orders`.
 
-1. Aplicar y verificar la migración del catálogo; luego conectar estadísticas de categoría y flujos promocionales.
-2. Pedidos abiertos, movimientos, items, pagos divididos y correcciones con pertenencia al restaurante, snapshots y autorización en RLS/RPC.
-3. Pagos: hasta diez importes por movimiento y una lista ordenada de métodos históricos alineada con esos importes; total y validación de suma en servidor. No renombrar movimientos históricos al cambiar los métodos actuales.
-4. Pruebas de aislamiento con dos restaurantes distintos y roles diferentes, antes de publicar la operación a clientes.
+- CRM: prototipo visual; no necesita conexión a base todavía.
+- Delivery: espacio «Próximamente»; el rol Repartidor aún no ejecuta el flujo.
+- Comprobantes: botón de configuración e interfaz «Próximamente»; falta integrar impresión.
+- Barra: espacio informativo si el restaurante separó barra; no hay reparto operativo de artículos entre Cocina y Barra.
 
-Lee `specs/Database/kffeto_production_reference_001.md` antes de proponer SQL. Ese documento resume el esquema de Kffe’to recibido y sus límites; sirve de inspiración, no incluye cuerpos de RPC ni autoriza copiar su diseño.
+## Setter, logo, autenticación y publicación
 
-## Diferencia entre spec y el código actual que hay que resolver
+Setter es un proyecto separado en `F:\PROYECTOS\dosMiniProyectos\setter`. La cuenta está permitida por `platform_operators`. El login POS consulta la cuenta autenticada y restaurante directamente usando RLS; el error anterior `UNAUTHORIZED_NO_AUTH_HEADER` se abordó evitando la llamada extra `restaurant-access` durante el inicio/restauración de sesión. No reintroducirla sin revisar el flujo actual.
 
-Los detalles restantes de Cuentas son: dirección y horario de atención por sede, turnos nocturnos, historial de sede/horario y de acciones administrativas, y revisión del criterio de Delivery que habilita Repartidor. La nota personal tampoco se reinicia automáticamente hasta decidir su retención. El catálogo global, los roles múltiples y las tablas de asistencia ya están migrados a código; confirmar el estado remoto antes de desplegar las Edge Functions dependientes.
+El logo se guarda en Storage privado `restaurant-assets`; `restaurants.logo_path` solo conserva la ruta. POS admin puede cambiarlo desde Configuración y Setter desde edición/creación. El error `permission denied for table restaurants` venía de privilegios SQL ausentes para `service_role`, no del bucket: revisa `202611110003_setter_restaurant_service_access.sql` si vuelve a aparecer.
 
-En el árbol local se confirmó que `staff-admin/index.ts` declaraba `schedules` dos veces y ejecutaba dos inserciones de los mismos horarios al crear una cuenta. Se eliminó el bloque duplicado. `deno check` pasó para las cuatro Edge Functions (`setter-create-restaurant`, `setter-admin`, `staff-admin` y `restaurant-access`). La corrección se publicó en el commit `65d482a`; GitHub Actions #10 terminó correctamente y desplegó las Edge Functions.
+El sitio público usa Cloudflare Pages. El usuario compró `bnw.cash` y configuró DNS/Pages; en los últimos mensajes seguía pendiente de propagación/verificación de Namecheap y DNS. El estado actual del dominio debe comprobarse si vuelve a ser relevante; no asumir que está resuelto solo porque Pages publique en `*.pages.dev`.
 
-## Supabase, Auth y publicación
+El portafolio comercial está especificado en `specs/Portafolio/spec_001.md`. El directorio indicado por el usuario se llama literalmente `protfolio/`; en un corte anterior no apareció dentro de `F:\PROYECTOS`. Confirma su ubicación actual antes de escribir archivos. El objetivo es Github Pages y un subdominio de `bnw.cash` que redirija al portafolio; no mezclarlo con el runtime del POS.
 
-- Proyecto Supabase compartido: referencia `yqrilxnldkzmbhxzagaz`.
-- POS usa Supabase Auth con usuario escrito por el cliente y alias interno del Gmail base `AUTH_EMAIL_BASE`; las contraseñas viven en Auth, no en `accounts`.
-- Setter valida el usuario autenticado contra `platform_operators`. No introducir service role key en frontend, repositorios ni logs.
-- Migración inicial: `202611060001_platform_core.sql`.
-- Migración transitoria de catálogo de arquitectura: `202611070001_setter_architecture_catalog.sql`.
-- Migración vigente de necesidades fijas y eliminación del catálogo genérico: `202611080001_fixed_optional_needs.sql`.
-- Migración de preferencias operativas: `202611080002_restaurant_operational_settings.sql`.
-- Migración de catálogo multi-restaurante y formatos de comprobante: `202611100001_restaurant_catalog.sql` (pendiente de aplicar al proyecto remoto).
-- Migración de espacios de trabajo de Cocina/Salón: `202611110001_restaurant_workspaces.sql` (estado remoto por confirmar).
-- Migraciones de bucket/logos y privilegios del servicio: `202611110002_restaurant_logo_storage.sql` y `202611110003_setter_restaurant_service_access.sql` (el segundo está incluido en `dd5df2c`; estado remoto por confirmar).
-- Workflow `.github/workflows/deploy-supabase.yml`: cuando cambia `supabase/**`, `main` enlaza proyecto, ejecuta `supabase db push --yes --remote` y despliega cuatro Edge Functions.
-- Secrets de GitHub Actions ya funcionaban en el último run. En GitHub están como nombres `SUPABASE_ACCESS_TOKEN` y `SUPABASE_DB_PASSWORD`; nunca documentar sus valores.
-- El proyecto Cloudflare Pages está conectado al repositorio. Los cambios bajo `supabase/**` despliegan Supabase mediante Actions; los cambios de frontend publican Pages. Comprobar el despliegue que corresponda a cada cambio.
-- No repetir ni permitir que se suba `supaSecret.txt` u otro token personal. Push protection de GitHub bloqueó ese archivo anteriormente; el archivo/commit con token no debe volver a estar en historial.
+## Documentación para continuar
 
-### Historial de error al aplicar migraciones
+Antes de implementar un módulo, lee su spec y sus dependencias:
 
-El propietario reportó que `supabase db push --yes --remote` se detuvo en `202611100001_restaurant_catalog.sql`, al crear `public.categories`, con `ERROR: relation "categories" already exists` (`SQLSTATE 42P07`). Esto demuestra que el esquema remoto ya tenía al menos esa relación cuando la migración intentó crearla; no asumir que la base remota coincide con el historial local de migraciones. El usuario compartió resultados de introspección de tablas, funciones y otros objetos para reconciliar la diferencia. Antes de volver a ejecutar `db push`, revisar el estado actual de `supabase_migrations.schema_migrations` y comparar el esquema remoto con **todas** las sentencias de `202611100001_restaurant_catalog.sql`; hacer una reparación segura y repetible. No resolverlo con `IF NOT EXISTS` a ciegas, marcando la migración como aplicada sin validar cada objeto/policy/RPC, ni editando una migración que ya se haya aplicado en algún entorno. Hasta reconciliar esto, la acción del commit `dd5df2c` podría volver a detenerse antes de llegar al GRANT de `202611110003`.
+- `specs/README.md`: decisiones generales y mapa de documentos.
+- `specs/Setter/`: Setter.
+- `specs/Cuentas/`: cuentas, roles, necesidades y asistencia.
+- `specs/Flujo de pedidos/`: pedidos, pagos, especiales y colas.
+- `specs/Estadísticas/`: métricas, Caja y rankings.
+- `specs/Catálogo/`: productos y disponibilidad.
+- `specs/Cocina/`, `specs/Salón/`: cocina y mapa/servicio.
+- `specs/Configuración/`: preferencias disponibles.
+- `specs/Pendientes por definir/`: preguntas aún abiertas.
+- `specs/Database/kffeto_production_reference_001.md`: referencia investigada en Kffe’to, solo lectura.
+- `HANDOFF.md`: estado de implementación y despliegue, actualizado aquí.
 
-## Especificaciones disponibles
+## Próximas verificaciones y trabajo posible
 
-`specs/README.md` enlaza a las specs separadas de Setter, diseño, Cuentas, CRM, Flujo de pedidos, Salón, Cocina, Estadísticas, Catálogo y Configuración. Antes de modificar un área, leer su spec y verificar si una decisión es final, borrador o pendiente.
+1. Mantener este handoff y las specs sincronizados cuando una decisión cambie.
+2. Cuando se toque pagos, comprobar modal con solo Efectivo, con Efectivo+Yape y con un método alterno manual (Plin/transferencia/tarjeta); comprobar también cambio de configuración dentro de una sesión.
+3. Cuando se toque Estadísticas, comprobar que desactivar global/individualmente los rankings oculta por completo sus secciones, que empleados respeten su rol y que con solo Efectivo no aparezca desglose.
+4. Continuar definiendo y probando el ciclo abierto→cocina→salón→cobro, especialmente las combinaciones pendientes en la spec. El flujo de Caja y los turnos aún requiere discusión e implementación.
+5. Resolver la divergencia de la columna manual `accounts.passwords`: confirmar existencia/permisos/altas y errores en `app.js`; no afirmar que el valor se actualiza si el resultado de Supabase no se valida.
+6. Si hay que tocar producción, comprobar antes el estado remoto de migraciones y el deployment de Pages. El usuario reportó que el commit `61a6ae4` funciona en producción, pero no se consultó el run desde esta sesión.
 
-Detalles recientes del usuario ya reflejados en las specs:
+## Preferencias de trabajo del propietario
 
-- Roles globales compartidos, arrays de IDs de roles habilitados en cada restaurante y asignados a cuentas. No hay roles mixtos; los permisos se acumulan con varios roles simples. `Empleado` es exclusivo y acumula todos los permisos disponibles para el restaurante.
-- Mapeo acordado: Cocina habilita Cocinero; «Tengo una barra separada de la cocina» añade Barista, Bartender y el espacio Barra; Salón habilita Mesero y Portero; CRM habilita Social Manager; Delivery habilitará Repartidor cuando se definan sus configuraciones; Comprobantes no añade rol. Si existe alguna necesidad activa distinta de Comprobantes, incluir Cajero; si se quitan todas, quitar Cajero.
-- El administrador puede añadir/quitar necesidades después del alta. Quitar una necesidad revoca sus roles y acceso sin borrar sus datos. Falta decidir qué ocurre con roles asignados a cuentas al reactivar esa necesidad.
-- Arquitectura de colas propuesta: pedido abierto/pagado sigue como flujo base; Cocina y Salón agregan colas solo si sus necesidades están activas. Cocina marca listo y, si hay Salón, pasa a su cola para servir. Configuración independiente define entrada desde Pedido abierto o Pedido pagado para Cocina/Salón; Delivery tiene control separado para mandar a cocinar tras pago virtual. Salón propone una fila por restaurante con array de mesas. Falta definir la forma física de colas, reglas de Salon sin Cocina, Cocina sin Salón, Cocina+Delivery sin Salón y los tres módulos juntos.
-- Salón tendrá uno o varios pisos; cada piso guarda una grilla con celdas redimensionables manualmente. Cada mesa del array registra piso y coordenada. Al crear, se asigna número y celda en orden cardinal. Botón Editar es visible al admin; Configuración puede permitirlo también a Mesero y Portero. Mantener 3s activa el estado de arrastre; si no se arrastra, a los 7s aparece menú Renombrar/Redimensionar/Fusionar. Renombrar usa números únicos 1–100; Redimensionar ocupa líneas/celdas libres; Fusionar requiere vecino tocando un lado (no diagonal). Al soltar un movimiento, el realce se va en 2s. Modo visión no edita mesas ni sillas. Configuración puede mostrar total de sillas por piso y una representación visual no editable; no se guardan posiciones de sillas. Con un piso, pedidos muestran «Mesa N»; con varios, «Piso N · Mesa N» a Cocina y Salón. Pendientes: orientación cardinal exacta, resultado/deshacer fusión, distribución visual de sillas y modelo de datos.
-- `account_schedules` actual admite varias filas por cuenta, pero no ofrece horarios reutilizables. Se discutió migrar a asignaciones basadas en IDs de horarios; la forma final está pendiente.
-- Black&White no tiene tabla de registros de asistencia ni `open_orders`/pedidos pagados. Dirección acordada para asistencia: al crear la cuenta de empleado se crea también su `attendance_object`, aunque no tenga marcas; la cuenta apunta a ese objeto y agrupa cero o muchos `attendance_records` en una tabla compartida por restaurantes. Sigue pendiente si hace falta una referencia inversa y el diseño de columnas/flujo de cada marca. El pedido pagado debe conservar cabecera, líneas, agregados y snapshots equivalentes a la información de las tres tablas financieras de Kffe’to; su forma física queda pendiente.
-
-- Pagos activos/desactivados, con manual/automático por método (efectivo y transferencia solo manual; Yape/Plin/tarjeta admiten ambas modalidades, pero automático requiere proveedor).
-- Notas de cuenta para fin de mes; reinicio manual o 7/15/30 días, sin borrar automáticamente hasta decidir la política.
-- Rankings: productos, variantes, agregados y categorías; admin configura visibilidad; empleados ven el mismo conjunto o uno por rol. Categoría requiere escoger una categoría válida.
-- Límites mínimo/máximo y permisos para pedidos correctivos/devoluciones configurados para admin y roles de empleados.
-- Catálogo: interruptores para agregados, grupos de categorías y promociones; el admin define promociones en Catálogo y empleados las aplican solo al cobrar si cumplen condiciones.
-- Asistencia futura: marcas separadas de entrada/salida, actor y sede efectiva; permisos configurables para uno mismo o compañeros de sede; heatmap calculado de eventos, no persistir colores.
-
-## Próximos pasos recomendados
-
-### Sitio comercial en GitHub Pages
-
-El usuario decidió preparar un portafolio web para presentar y vender Black&White POS. El plan está en `specs/Portafolio/spec_001.md`. El sitio se desarrollará separado del POS en la carpeta indicada `protfolio/`, se publicará en GitHub Pages y un subdominio de `bnw.cash` redirigirá a la publicación mediante Cloudflare. La página deberá distinguir funciones listas de prototipos/pendientes y revisar contenido, contacto, capturas, adaptación móvil, metadatos y enlaces antes de darla por terminada. Documentar al cierre el repositorio, la URL pública, el subdominio, la regla de redirección y el método de publicación.
-
-Al actualizar este handoff, la carpeta `protfolio/` no aparecía en `F:\PROYECTOS` ni dentro de este repositorio. Confirmar su ubicación antes de empezar a escribir los archivos del sitio; no mezclarlo accidentalmente con el runtime del POS.
-
-1. Revisar la UX en producción de Configuración/Cuentas con una cuenta de prueba, sin cargar datos reales de clientes.
-2. Diseñar e implementar el catálogo global de roles y la asignación multirrol, con permisos calculados desde necesidades/configuración y validados en servidor.
-3. Diseñar y migrar el catálogo/pedidos/cobros a un esquema con aislamiento multi-restaurante y policies/RPC seguras.
-4. Conectar el checkout a las modalidades manuales configuradas; después integrar pagos automáticos y definir proveedor.
-5. Implementar efectivamente límites, devoluciones/correcciones y promociones, con validación en servidor.
-6. Definir la política de reinicio de notas, ranking de categorías y permisos de turno nocturno antes de automatizar/mostrar datos históricos.
-
-## Cuidado al continuar
-
-- El dueño autorizó aplicar cambios y publicar a producción en la conversación anterior. Ese permiso no implica que cada migración destructiva o cambio de datos se deba hacer sin revisar el impacto.
-- No modificar una migración ya aplicada en producción; crear otra nueva con timestamp posterior.
-- No desplegar un cambio que haga creer que un ajuste se hace cumplir si solo se guarda en la interfaz/base.
-- Mantener el repositorio sin secretos; la clave pública Supabase es publicable, las credenciales de servicio y tokens no.
+- Leer código y documentación antes de diagnosticar problemas; el propietario se frustra con hipótesis sin revisar el repo.
+- No tocar el código de Kffe’to POS; es inspiración de solo lectura.
+- No implementar una devolución como motivo obligatorio de corrección. Una corrección financiera no pide explicación; las notas de empleados guardan contexto. Las devoluciones como movimientos se registran aparte conforme al acuerdo del restaurante.
+- Efectivo siempre está disponible. Los demás métodos se configuran por restaurante.
+- No borrar datos por desactivar necesidades, productos o mesas fuera de las reglas expresas de cada spec.

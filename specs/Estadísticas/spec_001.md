@@ -1,6 +1,6 @@
 # Black&White POS — Estadísticas 001
 
-**Estado:** Especificación funcional y base de datos implementada localmente en `202611120003_paid_orders_and_statistics.sql`; la migración debe aplicarse al proyecto remoto antes de usar Estadísticas.
+**Estado:** `orders`, pagos y estadísticas están implementados con `202611120003_paid_orders_and_statistics.sql`; productos obligatorios y reglas de pago se completan con `202611130001_required_special_products_and_payment_rules.sql`. El propietario confirmó que los últimos cambios se publicaron y funcionan en producción el 13 de noviembre de 2026; verificar el historial remoto si una tarea posterior depende de una migración específica.
 **Tipo:** Sección fija para todos los restaurantes.
 
 ## Propósito
@@ -60,9 +60,9 @@ No se incluirán métricas de costos, márgenes, inventario ni mermas en este m�
 
 ## Historial de movimientos
 
-El historial muestra los movimientos del periodo, incluidos los que fueron corregidos, devueltos o cerrados con error por Caja (`closedCashier`), con su timestamp real. Esos movimientos quedan claramente marcados y **no participan** en saldo neto, cantidad de pedidos, promedio, gráfica ni rankings. Al abrir su detalle se muestra el aviso correspondiente, junto con actor, motivo y timestamp cuando esos datos correspondan.
+El historial muestra los movimientos del periodo, incluidos los que fueron corregidos, devueltos o cerrados con error por Caja (`closedCashier`), con su timestamp real. Esos movimientos quedan claramente marcados y **no participan** en saldo neto, cantidad de pedidos, promedio, gráfica ni rankings. Al abrir su detalle se muestra el aviso correspondiente y el actor/timestamp; la corrección de pagos no lleva motivo.
 
-Los pedidos erróneos se conservan en historial en vez de eliminarse. En Kffe’to una corrección muestra el estado erróneo y el evento con motivo, quién confirmó y cuándo; B&W usará el mismo principio de historial visible y métricas limpias.
+Los pedidos erróneos se conservan en historial en vez de eliminarse. B&W muestra el estado erróneo, quién confirmó y cuándo; corregir un pago no exige motivo. El contexto del empleado va en sus notas.
 
 ## Rankings y acceso por rol
 
@@ -85,6 +85,6 @@ La sección Estadísticas está siempre disponible para todos los restaurantes. 
 
 Los reportes leen los timestamps propios de cada movimiento y el método histórico asociado a cada importe. No hace falta duplicar una fecha operativa en cada fila de movimientos: la interfaz agrupa por la fecha de apertura de caja.
 
-Falta definir cómo se valida la contraseña al cierre manual y si el reinicio mensual del JSON conserva el historial anterior en otra fila/archivo. También falta definir la representación de devoluciones cuando el flujo de pedidos se implemente.
+Caja todavía no está implementada: falta definir cómo se valida la contraseña al cierre manual y si el reinicio mensual del JSON conserva el historial anterior en otra fila/archivo. Las devoluciones como movimiento se registran separadas de la corrección de un pago, según el producto/concepto que acuerde cada restaurante.
 
 La configuración actual de base de datos solo guarda `rankings_categories`; falta migrar los ajustes para guardar qué tipo de clasificación se eligió (categorías, grupos o etiquetas) y los permisos por rol correspondientes.

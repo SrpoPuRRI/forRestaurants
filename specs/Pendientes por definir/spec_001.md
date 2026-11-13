@@ -65,4 +65,4 @@ Métricas, periodos, rankings, zona horaria y agrupación después de medianoche
 
 ## Estado de implementación de base de datos
 
-La migración `202611100001_restaurant_catalog.sql` está en el repositorio local, en el commit `a4ca71f`, pero aún no se ha enviado ni aplicado a Supabase. Los esquemas de pedidos, asistencia, roles globales y múltiples, colas de Cocina/Salón y mapa de mesas siguen pendientes de implementación.
+El catálogo, los roles globales y múltiples, la asistencia y los pedidos abiertos/pagados ya tienen tablas y RPC en las migraciones del repositorio; el propietario confirmó el 13 de noviembre de 2026 que los últimos cambios están en producción. Las decisiones de Caja, varias combinaciones de Cocina/Salón/Delivery, pagos divididos genéricos, el tipo/permisos del ranking de taxonomía y algunos detalles de asistencia siguen pendientes de especificar o terminar. Consulta cada spec y verifica el historial remoto antes de una migración posterior.

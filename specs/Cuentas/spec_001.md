@@ -37,7 +37,7 @@ Ejemplo: Setter crea el restaurante con la necesidad **Cocina**; quedan disponib
 
 ## Alcance implementado en primera versión
 
-- Perfil, alta, edición, baja de acceso y restauración de cuentas del restaurante.
+- Perfil, alta, edición y baja de acceso a cuentas del restaurante. La interfaz no reactiva una cuenta desactivada.
 - Roles múltiples, permisos por módulo y asignación de sede.
 - Las necesidades y configuraciones del restaurante determinan los IDs de roles habilitados que guarda `restaurants`; Cuentas permite asignar a cada cuenta uno o varios de esos roles en `accounts`.
 - El administrador del restaurante puede añadir o quitar necesidades opcionales después de crear el restaurante, sin recrearlo. La edición controla disponibilidad de módulos y roles; no borra registros existentes ni los mueve a otro restaurante.
@@ -46,11 +46,11 @@ Ejemplo: Setter crea el restaurante con la necesidad **Cocina**; quedan disponib
 - Cada empleado puede tener asignado uno o más bloques reutilizables de horario.
 - Cada horario debe indicar día, entrada y salida; la salida debe ser posterior a la entrada y los bloques del mismo día no se pueden cruzar.
 - El administrador puede establecer una contraseña temporal de al menos seis caracteres; la persona debe cambiarla al siguiente inicio de sesión y confirmar esa contraseña temporal como contraseña actual.
-- Cambiar contraseña siempre requiere verificar primero la contraseña actual, incluso cuando se exige cambiar una contraseña temporal. La nueva contraseña se guarda mediante Supabase Auth; las tablas de la aplicación no almacenan contraseñas en texto plano ni hashes propios.
+- Cambiar contraseña verifica primero la contraseña actual, incluso cuando se exige cambiar una contraseña temporal. Supabase Auth conserva la credencial efectiva. El propietario también pidió guardar una copia legible en `accounts.passwords`; la implementación local intenta actualizar esa columna al cambiar la contraseña, pero el campo no existe en una migración del repositorio, la operación no comprueba el error y el alta de cuenta aún no tiene persistencia confirmada. No tratar esta copia como implementada hasta revisar base, permisos y flujo de alta/cambio.
 - Las cuentas se desactivan sin borrar su historial y no se restauran desde la interfaz.
 - Las operaciones administrativas protegen al último administrador activo.
 
-El alta todavía usa una contraseña inicial definida por el administrador, no invitación por correo. No hay un historial general de acciones administrativas ni sesiones. No se crea una columna de contraseña en `accounts`: Supabase Auth administra las credenciales y permite actualizar o restablecer contraseñas sin revelar la contraseña anterior.
+El alta todavía usa una contraseña inicial definida por el administrador, no invitación por correo. No hay un historial general de acciones administrativas ni sesiones. Supabase Auth administra el login, cambios y restablecimientos. La solicitud de guardar una copia legible en `accounts.passwords` está pendiente de una implementación coherente en alta/cambio y de verificar el esquema real; revisar el estado con el propietario antes de modificarlo.
 
 ## Nota personal de fin de mes
 
