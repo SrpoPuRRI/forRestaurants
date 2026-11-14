@@ -1280,9 +1280,6 @@ export default function createOrderFlow({
         ? x.payment_method
         : defaultMethod.key,
     );
-    let printerCheckBusy = false;
-    let printerAvailable = false;
-    let printerStatusTimer = null;
     let printRequested = false;
     const d = document.createElement("dialog");
     d.className = "password-dialog payment-dialog";
@@ -1317,7 +1314,7 @@ export default function createOrderFlow({
         <div class="payment-global"><div class="payment-row"><div><div class="panel-title small-title">${universalize ? "Saldo sin productos especiales" : "Asignar Yape a productos"}</div><div class="payment-amount">${money(currentNormal)}</div></div>${universalize ? `<div class="method-choice large">${paymentMethods.map((option) => `<button type="button" data-global-method="${esc(option.key)}" class="${method === option.key ? "active" : ""}">${esc(option.label)}</button>`).join("")}</div>` : `<label class="yape-input">Yape<input type="number" min="0" max="${currentNormal}" step="0.1" value="${yapeAmount.toFixed(2)}" data-yape-input></label>`}</div>
         ${universalize ? "" : `<div class="split-control"><input type="range" min="0" max="${currentNormal}" step="0.01" value="${yapeAmount}" data-yape-range><div class="split-values"><span>Yape: <strong data-yape-value>${money(yapeAmount)}</strong></span><span>Efectivo: <strong data-cash-value>${money(currentNormal - yapeAmount)}</strong></span></div></div>`}
         <label class="toggle-row"><input type="checkbox" data-universalize ${universalize ? "checked" : ""} ${canSplitYapeCash ? "" : "disabled"}> Universalizar</label>
-        <label class="toggle-row printer-option"><input type="checkbox" data-print-ticket ${printRequested ? "checked" : ""} ${printerAvailable ? "" : "disabled"}><span>Imprimir comprobante de pago</span><span class="meta" data-printer-status>${printerAvailable ? "Dispositivo disponible" : "Comprobando dispositivo…"}</span></label>
+        ${(state.restaurantNeeds || []).includes("printing_systems") ? `<label class="toggle-row printer-option"><input type="checkbox" data-print-ticket ${printRequested ? "checked" : ""}><span>Enviar a impresión al registrar el pago</span></label>` : ""}
         ${universalize && specials.length ? `<label class="toggle-row"><input type="checkbox" data-sync ${syncSpecials ? "checked" : ""}> Sincronizar movimientos con el medio general</label>` : ""}</div>
         ${specials.length ? `<section class="payment-specials"><div class="panel-title small-title">Productos especiales</div>${specials.map(({ item, index }) => `<div class="special-payment-row"><div><strong>${esc(lineName(item))}</strong><span class="meta">${money(Math.abs(lineAmount(item)))}</span></div><div class="method-choice">${paymentMethods.map((option) => `<button type="button" data-special-method="${esc(option.key)}" data-special-index="${index}" class="${specialMethods[index] === option.key ? "active" : ""}">${esc(option.label)}</button>`).join("")}</div></div>`).join("")}</section>` : ""}
         <div class="payment-total"><span>Total del pedido</span><strong>${money(orderTotal(current.items))}</strong></div><p class="password-error payment-error" data-payment-error role="alert"></p>
@@ -1508,37 +1505,7 @@ export default function createOrderFlow({
     draw();
     document.body.appendChild(d);
     d.showModal();
-    const updatePrinterStatus = async () => {
-      if (printerCheckBusy || !d.open) return;
-      printerCheckBusy = true;
-      try {
-        const { data: available, error } = await supabase.rpc("get_my_printer_status");
-        printerAvailable = !error && available === true;
-        const checkbox = d.querySelector("[data-print-ticket]");
-        const status = d.querySelector("[data-printer-status]");
-        if (checkbox) {
-          checkbox.disabled = !printerAvailable;
-          if (!printerAvailable) {
-            checkbox.checked = false;
-            printRequested = false;
-          }
-        }
-        if (status)
-          status.textContent = printerAvailable
-            ? "Dispositivo disponible"
-            : "No hay dispositivo conectado";
-      } catch {
-        printerAvailable = false;
-      } finally {
-        printerCheckBusy = false;
-      }
-    };
-    void updatePrinterStatus();
-    printerStatusTimer = window.setInterval(updatePrinterStatus, 1000);
-    d.addEventListener("close", () => {
-      if (printerStatusTimer) window.clearInterval(printerStatusTimer);
-      d.remove();
-    });
+    d.addEventListener("close", () => d.remove());
   }
 
   function showPrinterResultDialog({ title, message, success = false }) {
@@ -1581,121 +1548,70 @@ export default function createOrderFlow({
     accept.focus();
   }
 
-  async function printTicket(orderId, { paymentJustRegistered = false } = {}) {
-    const unavailableMessage = "No tienes dispositivos que puedan procesar esta solicitud.";
-    const notify = (message) => showPrinterResultDialog({
-      title: paymentJustRegistered ? "Pago registrado · impresión no disponible" : "Impresión no disponible",
-      message: paymentJustRegistered
-        ? `El pago se registró correctamente, pero ${message.charAt(0).toLowerCase()}${message.slice(1)}`
-        : message,
-    });
+  async function printTicket(eventOrId, options = {}) {
+    const event = typeof eventOrId === "string"
+      ? { type: options.paymentJustRegistered ? "paid_order_created" : "manual_reprint", data: { order_id: eventOrId } }
+      : eventOrId;
+    const eventKey = event?.type || event?.event_key;
+    const payload = { ...(event?.data || event?.payload || {}) };
+    if (!eventKey) throw new Error("printTicket requiere un tipo de evento.");
+    if (!supabase) throw new Error("No hay conexión con la base de datos.");
     try {
-      // La disponibilidad se consulta primero aquí y se vuelve a validar al encolar.
-      const { data: available, error: availabilityError } = await supabase.rpc("get_my_printer_status");
-      if (availabilityError || available !== true) {
-        notify(unavailableMessage);
+      if (payload.order_id && ["paid_order_created", "payment_corrected", "manual_reprint"].includes(eventKey)) {
+        const [{ data: order, error: orderError }, { data: items, error: itemsError }] = await Promise.all([
+          supabase.from("orders").select("*").eq("id", payload.order_id).single(),
+          supabase.from("order_items").select("*").eq("order_id", payload.order_id).order("created_at"),
+        ]);
+        if (orderError) throw orderError;
+        if (itemsError) throw itemsError;
+        const itemIds = (items || []).map((item) => item.id);
+        let addons = [];
+        if (itemIds.length) {
+          const { data, error } = await supabase.from("order_item_addons")
+            .select("order_item_id,addon_name_snapshot,quantity,unit_price,line_total")
+            .in("order_item_id", itemIds);
+          if (error) throw error;
+          addons = data || [];
+        }
+        let locationName = null;
+        if (order.location_id) {
+          const { data } = await supabase.from("locations").select("name").eq("id", order.location_id).maybeSingle();
+          locationName = data?.name || null;
+        }
+        payload.order = {
+          id: order.id, paid_at: order.paid_at, location: locationName,
+          operator: order.operator_name_snapshot, note: order.note, status: order.status,
+          total: order.total, payment_amounts: order.payment_amounts,
+          payment_method_keys: order.payment_method_keys,
+        };
+        payload.items = (items || []).map((item) => ({
+          name: item.product_name_snapshot, variant: item.variant_name_snapshot,
+          kind: item.line_kind, quantity: item.quantity, unit_price: item.unit_price,
+          line_total: item.line_total, concept: item.concept,
+          addons: addons.filter((addon) => addon.order_item_id === item.id).map((addon) => ({
+            name: addon.addon_name_snapshot, quantity: addon.quantity,
+            unit_price: addon.unit_price, line_total: addon.line_total,
+          })),
+        }));
+        payload.schema_version = 1;
+      }
+      const { data, error } = await supabase.rpc("enqueue_print_event", {
+        p_event_key: eventKey,
+        p_payload: payload,
+        p_event_id: options.eventId || crypto.randomUUID(),
+      });
+      if (error) throw error;
+      const result = Array.isArray(data) ? data[0] : data;
+      if (result?.status === "no_matching_flow") {
+        toast("No hay un flujo de impresión activo para este evento.");
         return false;
       }
-
-      const [{ data: order, error: orderError }, { data: location, error: locationError }, { data: items, error: itemsError }] = await Promise.all([
-        supabase.from("orders").select("*").eq("id", orderId).single(),
-        supabase.from("orders").select("location_id, locations(name)").eq("id", orderId).single(),
-        supabase.from("order_items").select("*").eq("order_id", orderId).order("created_at"),
-      ]);
-      if (orderError) throw orderError;
-      if (locationError) throw locationError;
-      if (itemsError) throw itemsError;
-      const itemIds = (items || []).map((item) => item.id);
-      let addons = [];
-      if (itemIds.length) {
-        const { data, error } = await supabase
-          .from("order_item_addons")
-          .select("order_item_id, addon_name_snapshot, quantity, unit_price, line_total")
-          .in("order_item_id", itemIds);
-        if (error) throw error;
-        addons = data || [];
-      }
-      const payload = {
-        schema_version: 1,
-        order: {
-          id: order.id,
-          paid_at: order.paid_at,
-          location: location?.locations?.name || "Sede",
-          operator: order.operator_name_snapshot,
-          note: order.note,
-          status: order.status,
-          total: order.total,
-          amount_yape: order.amount_yape,
-          amount_cash: order.amount_cash,
-        },
-        items: (items || []).map((item) => ({
-          name: item.product_name_snapshot,
-          variant: item.variant_name_snapshot,
-          kind: item.line_kind,
-          quantity: item.quantity,
-          unit_price: item.unit_price,
-          line_total: item.line_total,
-          amount_yape: item.amount_yape,
-          amount_cash: item.amount_cash,
-          concept: item.concept,
-          addons: addons
-            .filter((addon) => addon.order_item_id === item.id)
-            .map(({ addon_name_snapshot, quantity, unit_price, line_total }) => ({
-              name: addon_name_snapshot,
-              quantity,
-              unit_price,
-              line_total,
-            })),
-        })),
-      };
-      const { data: requestId, error: enqueueError } = await supabase.rpc("create_print_request", {
-        p_paid_order_id: orderId,
-        p_payload: payload,
-      });
-      if (enqueueError) {
-        if (/No printer device available/i.test(enqueueError.message || "")) {
-          notify(unavailableMessage);
-          return false;
-        }
-        throw enqueueError;
-      }
-      toast(paymentJustRegistered
-        ? "Pago registrado correctamente. En breve se imprimirá el comprobante."
-        : "Solicitud de impresión enviada.");
-
-      while (true) {
-        await new Promise((resolve) => window.setTimeout(resolve, 1000));
-        const { data: printerAlive, error: printerError } = await supabase.rpc("get_my_printer_status");
-        if (printerError) continue;
-        const { data: result, error: statusError } = await supabase.rpc("get_print_request_status", {
-          p_request_id: requestId,
-        });
-        if (statusError) continue;
-        const status = Array.isArray(result) ? result[0] : result;
-        if (printerAlive !== true && status?.status === "pending") continue;
-        if (status?.status === "succeeded" || status?.status === "failed") {
-          const succeeded = status.status === "succeeded";
-          showPrinterResultDialog({
-            title: succeeded ? "Solicitud de impresión completada" : "No se pudo imprimir",
-            message: succeeded
-              ? "La impresora recibió el comprobante. Verifica que haya salido el papel."
-              : `${paymentJustRegistered ? "El pago se registró correctamente, pero no se pudo imprimir el comprobante" : "No se pudo imprimir el comprobante"}${status.result_message ? `: ${status.result_message}` : "."}`,
-            success: succeeded,
-          });
-          const { error: deleteError } = await supabase.rpc("delete_print_request", {
-            p_request_id: requestId,
-          });
-          if (deleteError) console.error("No se pudo limpiar la solicitud de impresión", deleteError);
-          return status.status === "succeeded";
-        }
-      }
+      toast(`${result?.queued || 0} trabajo${result?.queued === 1 ? "" : "s"} enviado${result?.queued === 1 ? "" : "s"} a la cola de impresión.`);
+      return result;
     } catch (error) {
-      const details = error?.message || "No se pudo iniciar la solicitud de impresión.";
       showPrinterResultDialog({
-        title: paymentJustRegistered ? "Pago registrado · impresión fallida" : "Error de impresión",
-        message: paymentJustRegistered
-          ? `El pago se registró correctamente, pero ocurrió un error al imprimir: ${details}`
-          : details,
+        title: "No se pudo enviar a impresión",
+        message: error?.message || "Ocurrió un error al crear el trabajo de impresión.",
       });
       return false;
     }

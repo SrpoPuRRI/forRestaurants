@@ -18,7 +18,7 @@
 
 Black&White POS es un POS multi-restaurante. Setter da de alta restaurantes y sus necesidades; la aplicación POS autentica al personal, calcula los permisos según los roles asignados y las necesidades/configuraciones, y muestra los espacios de trabajo del restaurante. Kffe’to ayuda a entender comportamientos operativos reales, pero su esquema no es el diseño final de B&W.
 
-Las secciones fijas son **Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración**. Las necesidades opcionales son **CRM, Cocina, Salón, Delivery y Comprobantes**. Orden en la navegación:
+Las secciones fijas son **Cuentas, Estadísticas, Flujo de pedidos, Catálogo y Configuración**. Las necesidades opcionales son **CRM, Cocina, Salón, Delivery y Sistemas de Impresión**. Orden en la navegación:
 
 1. Cuentas.
 2. CRM, si está activo.
@@ -64,7 +64,9 @@ Migraciones presentes en este repositorio, en orden:
 - `202611130001_required_special_products_and_payment_rules.sql`: productos Ingreso/Egreso obligatorios, efectivo forzado y correcciones sin motivo. La sintaxis del `CASE` del trigger se corrigió agrupando la expresión; no restaurar la versión que falló con `syntax error at end of input`.
 - `202611130002_reconcile_account_roles_on_need_changes.sql`: sincroniza roles habilitados y reasigna a Empleado cuentas que quedan sin roles al retirar necesidades.
 - `202611130003_restaurant_color_schemes.sql`: agrega `restaurants.appearance` JSONB para esquemas de color claro/oscuro opcionales.
-- `202611130004_employee_cashier_base_permissions.sql`: alinea los permisos base del rol Empleado con su función conceptual de cajero cuando solo está activa la necesidad Comprobantes o no hay necesidades opcionales.
+- `202611130004_employee_cashier_base_permissions.sql`: alinea los permisos base del rol Empleado con su función conceptual de cajero cuando solo está activa la necesidad Sistemas de Impresión o no hay necesidades opcionales.
+- `202611130007_printing_systems.sql`: renombra la necesidad guardada a `printing_systems`, migra el formato único heredado y agrega puntos, flujos, rutas, formatos y cola genérica. El encolado está disponible; los editores de Configuración, el agente local y la impresión física/SUNAT siguen pendientes.
+- `202611130007_printing_systems.sql`: renombra la necesidad guardada a `printing_systems`, migra el formato único heredado y agrega puntos, flujos, rutas, formatos y cola genérica. El encolado está disponible; los editores de Configuración, el agente local y la impresión física/SUNAT siguen pendientes.
 
 El usuario indicó que desplegó los últimos cambios y que funcionan. Aun así, el Handoff no reemplaza la evidencia del historial remoto: si una nueva tarea depende de una columna/función específica, verifica `supabase_migrations.schema_migrations` o consulta el esquema remoto antes de proponer otra migración. Nunca edites migraciones ya aplicadas; agrega una con timestamp posterior.
 
@@ -78,7 +80,7 @@ Los roles son permisos globales, no roles mixtos predefinidos:
 - `restaurants.available_role_ids` contiene los roles habilitados para ese restaurante.
 - `accounts.role_ids` permite asignar varios roles y acumular sus permisos.
 - `Administrador` y `Empleado` siempre existen. `Empleado` es exclusivo y representa la unión de permisos de los roles disponibles para ese restaurante, sin permisos de admin.
-- Los roles disponibles derivan de necesidades y configuraciones: Cocina → Cocinero; barra separada → Barista, Bartender y espacio Barra; Salón → Mesero y Portero; CRM → Social Manager; Delivery → Repartidor. Cajero se incluye cuando hay una necesidad activa distinta de Comprobantes. Al retirar necesidades se eliminan roles de la lista habilitada, pero se conservan datos.
+- Los roles disponibles derivan de necesidades y configuraciones: Cocina → Cocinero; barra separada → Barista, Bartender y espacio Barra; Salón → Mesero y Portero; CRM → Social Manager; Delivery → Repartidor. Cajero se incluye cuando hay una necesidad activa distinta de Sistemas de Impresión. Al retirar necesidades se eliminan roles de la lista habilitada, pero se conservan datos.
 - El administrador del POS puede añadir o quitar necesidades después del alta. Una sede principal es requisito del restaurante.
 
 Cuentas permite crear, editar y desactivar cuentas; la interfaz no reactiva cuentas desactivadas. Los nombres de usuario son únicos entre cuentas activas, los nombres completos pueden repetirse. Los horarios múltiples se asignan a la cuenta, requieren entradas/salidas válidas y no superpuestas. La baja no borra el historial.
@@ -93,7 +95,7 @@ El propietario añadió manualmente una columna `accounts.passwords` en Supabase
 
 El catálogo multi-restaurante tiene productos estándar, categorías, etiquetas, variantes, agregados y disponibilidad por sede. `is_active` significa disponible para vender; lo inactivo sigue visible en la búsqueda, pero no se añade al pedido y la app presenta un diálogo propio. Desactivar no equivale a eliminar. No hay inventario por cantidad.
 
-El catálogo de administración solo crea productos estándar. Ingreso/Egreso se gestionan como productos especiales protegidos, descritos abajo. Formato de ticket se ofrece desde Configuración solo si el restaurante tiene Comprobantes; la configuración de impresión todavía muestra «Próximamente».
+El catálogo de administración solo crea productos estándar. Ingreso/Egreso se gestionan como productos especiales protegidos, descritos abajo. La necesidad Sistemas de Impresión muestra las áreas Puntos de Impresión, Flujos de impresión y Formatos de ticket. `printTicket(event)` crea trabajos en cola cuando hay rutas configuradas; todavía no hay configuración CRUD de esas áreas ni dispositivo que los consuma.
 
 ## Flujo de pedidos, pagos y productos especiales
 
@@ -141,7 +143,7 @@ La UI/código local de Cocina y Salón ya contiene trabajo sustancial (colas, pr
 
 - CRM: prototipo visual; no necesita conexión a base todavía.
 - Delivery: espacio «Próximamente»; el rol Repartidor aún no ejecuta el flujo.
-- Comprobantes: botón de configuración e interfaz «Próximamente»; falta integrar impresión.
+- Sistemas de Impresión: la cola y el modelo están creados; falta la interfaz de configuración, agente de impresora y proveedores físicos/SUNAT.
 - Barra: espacio informativo si el restaurante separó barra; no hay reparto operativo de artículos entre Cocina y Barra.
 
 ## Setter, logo, autenticación y publicación

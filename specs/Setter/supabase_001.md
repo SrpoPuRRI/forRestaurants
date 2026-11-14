@@ -12,7 +12,7 @@ La siguiente tabla describe el modelo que ya se implementó y desplegó para el 
 | `restaurants` | Nombre, estado activo/dado de baja, necesidades opcionales seleccionadas, ajustes tipados de dominio y ruta del logo. No guarda arquitectura, tipo ni ciudad. |
 | `accounts` | Perfil de una persona autenticada, su `auth.users.id`, nombre de usuario global, restaurante, rol y estado. La clave de acceso y contraseña no se guardan en esta tabla. |
 | `roles` | Roles habilitados para cada restaurante, con clave, etiqueta y permisos efectivos. Se crean/administran según los flujos de roles definidos para el POS. |
-| `restaurants.needs` | Lista cerrada de necesidades opcionales: `crm`, `kitchen`, `salon`, `delivery`, `receipts`. Las secciones base no se guardan aquí porque siempre existen. |
+| `restaurants.needs` | Lista cerrada de necesidades opcionales: `crm`, `kitchen`, `salon`, `delivery`, `printing_systems`. Las secciones base no se guardan aquí porque siempre existen. |
 | `attendance_*` | Interruptores tipados de asistencia: autoentrada, entrada por compañero, autosalida y salida por compañero. Se administran desde Configuración del POS. |
 | `architecture_configurations` | Configuraciones que ofrece cada versión y posibles valores iniciales propios. |
 | `restaurants.configuration` y `restaurants.configuration_keys` | Valores JSON actuales y copia de las claves disponibles para ese restaurante. |
@@ -32,7 +32,7 @@ El movimiento conserva una instantánea de los tipos de pago junto con los impor
 
 ## Flujo objetivo acordado (pendiente de rediseño SQL)
 
-Setter administra restaurantes y no edita un catálogo de necesidades. El alta ofrece exactamente CRM (`crm`), Cocina (`kitchen`), Salón (`salon`), Delivery (`delivery`) y Comprobantes (`receipts`); no hay otras necesidades marcables ni se pueden añadir desde la interfaz. Setter no administra configuraciones operativas ni expone un catálogo genérico de configuraciones. El alta no pide una arquitectura o versión: guarda la selección de necesidades en el restaurante. La app POS decide qué ajustes presentar al administrador a partir de esa selección y de las cinco secciones fijas.
+Setter administra restaurantes y no edita un catálogo de necesidades. El alta ofrece exactamente CRM (`crm`), Cocina (`kitchen`), Salón (`salon`), Delivery (`delivery`) y Sistemas de Impresión (`printing_systems`); no hay otras necesidades marcables ni se pueden añadir desde la interfaz. Setter no administra configuraciones operativas ni expone un catálogo genérico de configuraciones. El alta no pide una arquitectura o versión: guarda la selección de necesidades en el restaurante. La app POS decide qué ajustes presentar al administrador a partir de esa selección y de las cinco secciones fijas.
 
 Lógicamente, el esquema futuro necesita:
 

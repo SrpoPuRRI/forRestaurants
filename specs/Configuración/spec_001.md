@@ -9,7 +9,7 @@ Centralizar la identidad y los ajustes operativos de un restaurante en un área 
 
 ## Decisión de disponibilidad
 
-Configuración siempre está disponible. Además de ajustes generales, administra las opciones de comportamiento de las secciones fijas (Cuentas, Estadísticas, Flujo de pedidos y Catálogo). La app presenta opciones extra según las necesidades CRM, Cocina, Salón, Delivery y Comprobantes seleccionadas para el restaurante.
+Configuración siempre está disponible. Además de ajustes generales, administra las opciones de comportamiento de las secciones fijas (Cuentas, Estadísticas, Flujo de pedidos y Catálogo). La app presenta opciones extra según las necesidades CRM, Cocina, Salón, Delivery y Sistemas de Impresión seleccionadas para el restaurante.
 
 ## Alcance por especificar
 
@@ -46,7 +46,7 @@ Las modalidades automática de Yape, Plin y tarjeta requieren definir proveedor,
 - **Flujo de pedidos — entrada a colas:** para cada flujo activo (Cocina y Salón), configurar con un checkbox independiente si los pedidos se integran desde Pedido abierto (sin pagar) o desde Pedido pagado. Las colas solo se usan si la necesidad correspondiente está activa.
 - **Delivery — entrada a Cocina:** tiene configuración separada del flujo normal para decidir si el pedido Delivery se envía a cocinar al recibir pago virtual. El estado exacto de pago que activa el envío queda pendiente de definir.
 - **Catálogo:** habilitar o deshabilitar Agregados, Grupos de categorías y Promociones. Al habilitar Promociones, el administrador las define en Catálogo y los empleados pueden aplicarlas al cobrar un pedido cuando la promoción cumpla sus condiciones.
-- **Comprobantes:** solo aparece si la necesidad Comprobantes está activa. El formato JSON de encabezado, pie y parámetros de impresión se administra y guarda desde Configuración, nunca desde Catálogo.
+- **Sistemas de Impresión:** solo aparece si la necesidad está activa. Se divide en Puntos de Impresión, Flujos de impresión y Formatos de ticket; un flujo puede enviar un evento a varios puntos con formatos/rutas distintos.
 - **Salón — edición del mapa:** cuando Salón está activo, el administrador puede permitir por separado que los roles Mesero y Portero editen el mapa. El administrador siempre puede editarlo.
 - **Salón — sillas por piso:** un checkbox activa mostrar el total de sillas en cada piso. Al activarlo se deben introducir los totales por piso y elegir Guardar o Cancelar; Cancelar no activa la opción. Una vez guardado, el modo de visión muestra esos totales y las mesas dejan de aparecer vacías mediante una representación visual de sillas. Esa representación no se edita ni se acomodan sillas en la interfaz; no se guardan posiciones de sillas.
 
@@ -60,12 +60,12 @@ Reglas acordadas:
 - **Salón:** habilita Mesero y Portero; ambos acceden al espacio de trabajo Salón.
 - **CRM:** habilita Social Manager y la pestaña CRM.
 - **Delivery:** habilita Repartidor cuando se activen las configuraciones requeridas; esas opciones quedan pendientes.
-- **Comprobantes:** no habilita roles ni espacios de trabajo adicionales por sí sola.
-- **Cajero:** si el restaurante tiene al menos una necesidad opcional distinta de Comprobantes, se incluye Cajero entre los roles disponibles junto con los roles implicados por las necesidades. Al quitar la última necesidad distinta de Comprobantes, se quita Cajero; con solo Administrador y Empleado, Empleado cubre conceptualmente la función de caja.
+- **Sistemas de Impresión:** no habilita roles ni espacios de trabajo adicionales por sí sola.
+- **Cajero:** si el restaurante tiene al menos una necesidad opcional distinta de Sistemas de Impresión, se incluye Cajero entre los roles disponibles junto con los roles implicados por las necesidades. Al quitar la última necesidad distinta de Sistemas de Impresión, se quita Cajero; con solo Administrador y Empleado, Empleado cubre conceptualmente la función de caja.
 - **Quitar una necesidad:** se quita del conjunto de necesidades activas, se retiran del array de roles disponibles los roles que esa necesidad implicaba y se ocultan/revocan sus espacios y permisos. Se conservan los datos operativos y las configuraciones existentes; no se borra ni recrea el restaurante. Al desmarcar una necesidad activa se pide confirmación porque cambia la arquitectura y los permisos. Cancelar conserva la selección; Aceptar deja el cambio pendiente en el formulario. El cambio solo se aplica al pulsar Guardar cambios. Al guardar, se eliminan de cada cuenta los roles que dejaron de estar disponibles; si no queda ningún rol asignado, la cuenta pasa a Empleado. Los datos operativos y configuraciones se conservan.
 - **Cocina y Salón:** cada módulo tiene su cola independiente. Con ambos activos, pedidos de Cocina marcados listos pasan a Salón. Con solo Salón, debe definirse cómo evitar que el mesero vea un pedido que todavía no está listo.
 
-**Empleado** es el rol especial exclusivo que concede el conjunto de permisos disponibles en el restaurante; no se combina con otros roles. Cuando no hay necesidades opcionales distintas de Comprobantes, conserva los permisos base de Cajero (`orders` y `payments`) aunque el rol Cajero no figure en los roles disponibles.
+**Empleado** es el rol especial exclusivo que concede el conjunto de permisos disponibles en el restaurante; no se combina con otros roles. Cuando no hay necesidades opcionales distintas de Sistemas de Impresión, conserva los permisos base de Cajero (`orders` y `payments`) aunque el rol Cajero no figure en los roles disponibles.
 
 El catálogo global `roles` no tendrá `restaurant_id` ni relación con cuentas. El array de IDs habilitados se guarda en `restaurants`, y el array de IDs asignados se guarda en `accounts`. El backend debe aplicar la misma autorización efectiva que calcula la app web.
 

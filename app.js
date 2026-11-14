@@ -333,7 +333,7 @@ const statistics = createStatistics({
   supabase,
   state: s,
   render: () => render(),
-  printTicket: (orderId) => orderFlow.printTicket(orderId),
+  printTicket: (event, options) => orderFlow.printTicket(event, options),
   money,
   esc,
   limaToday,

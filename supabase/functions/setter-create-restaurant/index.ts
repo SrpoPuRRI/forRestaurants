@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS", "Content-Type": "application/json" };
 const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: cors });
 const normalize = (s: string) => s.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-const OPTIONAL_NEEDS = new Set(["crm", "kitchen", "salon", "delivery", "receipts"]);
+const OPTIONAL_NEEDS = new Set(["crm", "kitchen", "salon", "delivery", "printing_systems"]);
 const LOGO_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 

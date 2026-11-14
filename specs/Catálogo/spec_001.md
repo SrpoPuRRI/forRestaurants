@@ -39,7 +39,7 @@ La migración `202611100001_restaurant_catalog.sql` crea un catálogo aislado po
 
 En B&W, `is_active` expresa disponibilidad para vender, no visibilidad del catálogo. Un producto, variante o agregado marcado fuera de stock sigue apareciendo; al intentar elegirlo, la interfaz muestra un diálogo propio con **Aceptar** y no lo agrega al pedido. Volver a marcarlo disponible restaura su venta. Administrador puede administrar estos estados en Catálogo; Empleado puede marcar productos fuera de stock o disponibles desde el menú de pedidos mediante una operación de servidor limitada a disponibilidad. **Eliminar** sigue siendo una acción distinta que borra el registro cuando sus referencias lo permiten. No hay inventario ni conteo de existencias.
 
-El formato de comprobante se guarda por restaurante en `restaurant_receipt_templates`. Su sección está en Configuración y solo se muestra si `restaurants.needs` incluye `receipts`; no es una pestaña ni una acción del Catálogo. La configuración no se duplica en catálogo.
+El formato de comprobante se guarda por restaurante en `printing_ticket_templates`. Su sección está en Configuración y solo se muestra si `restaurants.needs` incluye `printing_systems`; no es una pestaña ni una acción del Catálogo. La configuración no se duplica en catálogo.
 
 ## Pendientes
 

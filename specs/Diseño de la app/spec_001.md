@@ -43,7 +43,7 @@ La navegación conserva las cinco secciones fijas y coloca las opcionales activa
 
 Si una necesidad opcional no está activa, se omite su espacio y se conserva el orden relativo de los demás. Cuando Cocina y Salón están activos, Cocina aparece antes que Salón. Barra se agrupa con Cocina y no altera el orden relativo de estos módulos. Este orden aplica a la navegación del espacio de trabajo en las vistas que la presenten.
 
-Las únicas necesidades opcionales son CRM, Cocina, Salón, Delivery y Comprobantes. Setter no administra esta lista: muestra las cinco opciones fijas al crear el restaurante. La app POS usa la selección para mostrar al administrador las configuraciones correspondientes a necesidades y secciones. Las secciones fijas nunca se eliminan. Black&White POS respeta los permisos de la cuenta autenticada y las funciones habilitadas.
+Las únicas necesidades opcionales son CRM, Cocina, Salón, Delivery y Sistemas de Impresión. Setter no administra esta lista: muestra las cinco opciones fijas al crear el restaurante. La app POS usa la selección para mostrar al administrador las configuraciones correspondientes a necesidades y secciones. Las secciones fijas nunca se eliminan. Black&White POS respeta los permisos de la cuenta autenticada y las funciones habilitadas.
 
 ## Decisiones de navegación
 

@@ -23,17 +23,17 @@ Todos los restaurantes empiezan con **Administrador** y **Empleado**. Las necesi
 - **Salón:** añade **Mesero** y **Portero**; ambos pueden acceder al espacio de trabajo **Salón**.
 - **CRM:** añade **Social Manager**, con acceso a la pestaña **CRM**.
 - **Delivery:** puede añadir **Repartidor** cuando estén activadas las configuraciones requeridas. Cuáles son esas configuraciones queda pendiente.
-- **Comprobantes:** no añade roles ni espacios de trabajo por sí sola.
+- **Sistemas de Impresión:** no añade roles ni espacios de trabajo por sí sola.
 
-Si el restaurante tiene al menos una necesidad opcional distinta de **Comprobantes**, **Cajero** se incluye en los roles disponibles, además de los roles implicados por las necesidades. Si se quitan todas las necesidades opcionales distintas de Comprobantes, Cajero se quita de los roles disponibles; **Empleado** representa conceptualmente la capacidad de caja en ese caso.
+Si el restaurante tiene al menos una necesidad opcional distinta de **Sistemas de Impresión**, **Cajero** se incluye en los roles disponibles, además de los roles implicados por las necesidades. Si se quitan todas las necesidades opcionales distintas de Sistemas de Impresión, Cajero se quita de los roles disponibles; **Empleado** representa conceptualmente la capacidad de caja en ese caso.
 
-**Empleado** es un rol especial y exclusivo: no se combina con otros roles. Concede los permisos de todos los roles disponibles para ese restaurante. Si el restaurante solo selecciona Comprobantes, sus roles disponibles siguen siendo Administrador y Empleado.
+**Empleado** es un rol especial y exclusivo: no se combina con otros roles. Concede los permisos de todos los roles disponibles para ese restaurante. Si el restaurante solo selecciona Sistemas de Impresión, sus roles disponibles siguen siendo Administrador y Empleado.
 
 En el formulario de cuenta se elige una de tres opciones: **Administrador**, **Empleado** o **Ninguna de las anteriores**. La tercera muestra los roles asignables mediante casillas; se pueden combinar varios. Los nombres completos pueden repetirse. El nombre de usuario es único entre las cuentas activas: una cuenta desactivada no reserva el nombre y no puede reactivarse.
 
 El catálogo global `roles` no pertenece a restaurantes ni a cuentas y no debe tener claves foráneas hacia ellas. `restaurants` guardará un array con los IDs de rol habilitados según sus necesidades y configuración; `accounts` guardará un array con los IDs asignados a cada cuenta. La app web calcula los permisos efectivos a partir de esos arrays y de la configuración del restaurante. El backend debe validar las mismas reglas al autorizar operaciones.
 
-Ejemplo: Setter crea el restaurante con la necesidad **Cocina**; quedan disponibles **Cocinero** y **Cajero**, porque existe una necesidad distinta de Comprobantes. En Cuentas, el administrador puede asignar ambos roles a la misma persona. Si además activa «Tengo una barra separada de la cocina», quedan disponibles Barista y Bartender y aparece el espacio de trabajo Barra.
+Ejemplo: Setter crea el restaurante con la necesidad **Cocina**; quedan disponibles **Cocinero** y **Cajero**, porque existe una necesidad distinta de Sistemas de Impresión. En Cuentas, el administrador puede asignar ambos roles a la misma persona. Si además activa «Tengo una barra separada de la cocina», quedan disponibles Barista y Bartender y aparece el espacio de trabajo Barra.
 
 ## Alcance implementado en primera versión
 
