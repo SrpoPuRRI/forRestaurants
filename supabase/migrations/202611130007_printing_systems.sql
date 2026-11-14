@@ -10,9 +10,6 @@ set needs = array(
 )
 where 'receipts' = any(coalesce(needs, '{}'::text[]));
 
-alter table public.restaurants add constraint restaurants_needs_optional_only
-  check (needs <@ array['crm','kitchen','salon','delivery','printing_systems']::text[]);
-
 create table if not exists public.printing_ticket_templates (
   id uuid primary key default gen_random_uuid(),
   restaurant_id uuid not null default public.current_restaurant_id()
@@ -43,6 +40,7 @@ create table if not exists public.printing_points (
   name text not null,
   is_active boolean not null default true,
   sunat_enabled boolean not null default false,
+  supported_output_modes text[] not null default array['manual']::text[],
   output_mode text not null default 'manual'
     check (output_mode in ('manual','automatic')),
   transport text not null default 'browser'
@@ -54,6 +52,7 @@ create table if not exists public.printing_points (
   updated_at timestamptz not null default now(),
   unique (id, restaurant_id),
   check (length(trim(name)) between 1 and 80),
+  check (cardinality(supported_output_modes) > 0 and supported_output_modes <@ array['manual','automatic']::text[]),
   check (jsonb_typeof(connection_config) = 'object'),
   check (jsonb_typeof(sunat_config) = 'object')
 );
@@ -139,29 +138,17 @@ alter table public.printing_jobs enable row level security;
 drop policy if exists printing_templates_read on public.printing_ticket_templates;
 drop policy if exists printing_templates_admin_write on public.printing_ticket_templates;
 create policy printing_templates_read on public.printing_ticket_templates for select to authenticated
-  using (restaurant_id = (select public.current_restaurant_id())
-    and exists (select 1 from public.restaurants r where r.id = printing_ticket_templates.restaurant_id
-      and 'printing_systems' = any(r.needs)));
+  using (restaurant_id = (select public.current_restaurant_id()));
 create policy printing_templates_admin_write on public.printing_ticket_templates for all to authenticated
-  using (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin'
-    and exists (select 1 from public.restaurants r where r.id = printing_ticket_templates.restaurant_id
-      and 'printing_systems' = any(r.needs)))
-  with check (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin'
-    and exists (select 1 from public.restaurants r where r.id = printing_ticket_templates.restaurant_id
-      and 'printing_systems' = any(r.needs)));
+  using (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin')
+  with check (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin');
 drop policy if exists printing_points_read on public.printing_points;
 drop policy if exists printing_points_admin_write on public.printing_points;
 create policy printing_points_read on public.printing_points for select to authenticated
-  using (restaurant_id = (select public.current_restaurant_id())
-    and exists (select 1 from public.restaurants r where r.id = printing_points.restaurant_id
-      and 'printing_systems' = any(r.needs)));
+  using (restaurant_id = (select public.current_restaurant_id()));
 create policy printing_points_admin_write on public.printing_points for all to authenticated
-  using (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin'
-    and exists (select 1 from public.restaurants r where r.id = printing_points.restaurant_id
-      and 'printing_systems' = any(r.needs)))
-  with check (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin'
-    and exists (select 1 from public.restaurants r where r.id = printing_points.restaurant_id
-      and 'printing_systems' = any(r.needs)));
+  using (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin')
+  with check (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin');
 drop policy if exists printing_flows_read on public.printing_flows;
 drop policy if exists printing_flows_admin_write on public.printing_flows;
 create policy printing_flows_read on public.printing_flows for select to authenticated
@@ -376,13 +363,7 @@ grant execute on function public.create_restaurant_bundle(jsonb) to service_role
 drop policy if exists restaurant_receipt_templates_tenant_read on public.restaurant_receipt_templates;
 drop policy if exists restaurant_receipt_templates_admin_manage on public.restaurant_receipt_templates;
 create policy restaurant_receipt_templates_tenant_read on public.restaurant_receipt_templates for select to authenticated
-  using (restaurant_id = (select public.current_restaurant_id())
-    and exists (select 1 from public.restaurants r where r.id = restaurant_receipt_templates.restaurant_id
-      and 'printing_systems' = any(r.needs)));
+  using (restaurant_id = (select public.current_restaurant_id()));
 create policy restaurant_receipt_templates_admin_manage on public.restaurant_receipt_templates for all to authenticated
-  using (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin'
-    and exists (select 1 from public.restaurants r where r.id = restaurant_receipt_templates.restaurant_id
-      and 'printing_systems' = any(r.needs)))
-  with check (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin'
-    and exists (select 1 from public.restaurants r where r.id = restaurant_receipt_templates.restaurant_id
-      and 'printing_systems' = any(r.needs)));
+  using (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin')
+  with check (restaurant_id = (select public.current_restaurant_id()) and (select public.current_role_key()) = 'admin');

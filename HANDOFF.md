@@ -65,8 +65,11 @@ Migraciones presentes en este repositorio, en orden:
 - `202611130002_reconcile_account_roles_on_need_changes.sql`: sincroniza roles habilitados y reasigna a Empleado cuentas que quedan sin roles al retirar necesidades.
 - `202611130003_restaurant_color_schemes.sql`: agrega `restaurants.appearance` JSONB para esquemas de color claro/oscuro opcionales.
 - `202611130004_employee_cashier_base_permissions.sql`: alinea los permisos base del rol Empleado con su función conceptual de cajero cuando solo está activa la necesidad Sistemas de Impresión o no hay necesidades opcionales.
-- `202611130007_printing_systems.sql`: renombra la necesidad guardada a `printing_systems`, migra el formato único heredado y agrega puntos, flujos, rutas, formatos y cola genérica. El encolado está disponible; los editores de Configuración, el agente local y la impresión física/SUNAT siguen pendientes.
-- `202611130007_printing_systems.sql`: renombra la necesidad guardada a `printing_systems`, migra el formato único heredado y agrega puntos, flujos, rutas, formatos y cola genérica. El encolado está disponible; los editores de Configuración, el agente local y la impresión física/SUNAT siguen pendientes.
+- `202611130007_printing_systems.sql`: renombra la necesidad guardada a `printing_systems`, migra el formato único heredado y agrega puntos, flujos, rutas, formatos y cola genérica. Las políticas no dependen de que la necesidad esté activa.
+- `202611130008_repair_printing_needs.sql`: repara el CHECK de necesidades en instalaciones donde 007 quedó registrado o ejecutado parcialmente, sincroniza roles con la clave nueva y deja las políticas RLS de impresión independientes de la necesidad activa.
+- `202611130009_remove_needs_check_constraints.sql`: elimina las restricciones CHECK que mencionan `restaurants.needs`; la lista admitida queda a cargo de la interfaz y la validación del alta. Conserva la sincronización de roles y la conversión de `receipts`.
+- `202611130010_printing_output_modes.sql`: añade los modos manual/automático compatibles por punto de impresión.
+- `202611130011_save_printing_flow_rpc.sql`: guarda atómicamente un flujo y sus rutas; valida eventos, permisos, puntos, modos de salida y formatos, y conserva rutas históricas al retirarlas.
 
 El usuario indicó que desplegó los últimos cambios y que funcionan. Aun así, el Handoff no reemplaza la evidencia del historial remoto: si una nueva tarea depende de una columna/función específica, verifica `supabase_migrations.schema_migrations` o consulta el esquema remoto antes de proponer otra migración. Nunca edites migraciones ya aplicadas; agrega una con timestamp posterior.
 
@@ -95,7 +98,7 @@ El propietario añadió manualmente una columna `accounts.passwords` en Supabase
 
 El catálogo multi-restaurante tiene productos estándar, categorías, etiquetas, variantes, agregados y disponibilidad por sede. `is_active` significa disponible para vender; lo inactivo sigue visible en la búsqueda, pero no se añade al pedido y la app presenta un diálogo propio. Desactivar no equivale a eliminar. No hay inventario por cantidad.
 
-El catálogo de administración solo crea productos estándar. Ingreso/Egreso se gestionan como productos especiales protegidos, descritos abajo. La necesidad Sistemas de Impresión muestra las áreas Puntos de Impresión, Flujos de impresión y Formatos de ticket. `printTicket(event)` crea trabajos en cola cuando hay rutas configuradas; todavía no hay configuración CRUD de esas áreas ni dispositivo que los consuma.
+El catálogo de administración solo crea productos estándar. Ingreso/Egreso se gestionan como productos especiales protegidos, descritos abajo. La necesidad **Sistemas de Impresión** muestra las áreas Puntos de Impresión, Flujos de impresión y Formatos de ticket. El frontend local ya contiene CRUD de configuración y `printTicket(event)` crea trabajos cuando hay rutas configuradas. Falta un agente o servicio que consuma la cola y controle impresoras; SUNAT tampoco emite comprobantes todavía.
 
 ## Flujo de pedidos, pagos y productos especiales
 

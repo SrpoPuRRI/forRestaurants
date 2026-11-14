@@ -267,6 +267,7 @@ const workspaces = createRestaurantWorkspaces({
   esc,
   refreshCatalog: () => orderFlow?.reloadCatalog(),
   hasActiveOrder: () => orderFlow?.hasActiveOrder() || false,
+  printTicket: (event, options) => orderFlow?.printTicket(event, options),
   navigate: (page) => {
     s.page = page;
     render();

@@ -1228,6 +1228,8 @@ export default function createOrderFlow({
         draw();
         return;
       }
+      if ((state.restaurantNeeds || []).includes("printing_systems"))
+        await printTicket({ type: "payment_corrected", data: { order_id: candidate.order_id } });
       d.close();
       toast(`Pago de ${money(candidate.total)} marcado como erróneo.`);
       render();
@@ -1280,7 +1282,6 @@ export default function createOrderFlow({
         ? x.payment_method
         : defaultMethod.key,
     );
-    let printRequested = false;
     const d = document.createElement("dialog");
     d.className = "password-dialog payment-dialog";
     const draw = () => {
@@ -1314,16 +1315,11 @@ export default function createOrderFlow({
         <div class="payment-global"><div class="payment-row"><div><div class="panel-title small-title">${universalize ? "Saldo sin productos especiales" : "Asignar Yape a productos"}</div><div class="payment-amount">${money(currentNormal)}</div></div>${universalize ? `<div class="method-choice large">${paymentMethods.map((option) => `<button type="button" data-global-method="${esc(option.key)}" class="${method === option.key ? "active" : ""}">${esc(option.label)}</button>`).join("")}</div>` : `<label class="yape-input">Yape<input type="number" min="0" max="${currentNormal}" step="0.1" value="${yapeAmount.toFixed(2)}" data-yape-input></label>`}</div>
         ${universalize ? "" : `<div class="split-control"><input type="range" min="0" max="${currentNormal}" step="0.01" value="${yapeAmount}" data-yape-range><div class="split-values"><span>Yape: <strong data-yape-value>${money(yapeAmount)}</strong></span><span>Efectivo: <strong data-cash-value>${money(currentNormal - yapeAmount)}</strong></span></div></div>`}
         <label class="toggle-row"><input type="checkbox" data-universalize ${universalize ? "checked" : ""} ${canSplitYapeCash ? "" : "disabled"}> Universalizar</label>
-        ${(state.restaurantNeeds || []).includes("printing_systems") ? `<label class="toggle-row printer-option"><input type="checkbox" data-print-ticket ${printRequested ? "checked" : ""}><span>Enviar a impresión al registrar el pago</span></label>` : ""}
         ${universalize && specials.length ? `<label class="toggle-row"><input type="checkbox" data-sync ${syncSpecials ? "checked" : ""}> Sincronizar movimientos con el medio general</label>` : ""}</div>
         ${specials.length ? `<section class="payment-specials"><div class="panel-title small-title">Productos especiales</div>${specials.map(({ item, index }) => `<div class="special-payment-row"><div><strong>${esc(lineName(item))}</strong><span class="meta">${money(Math.abs(lineAmount(item)))}</span></div><div class="method-choice">${paymentMethods.map((option) => `<button type="button" data-special-method="${esc(option.key)}" data-special-index="${index}" class="${specialMethods[index] === option.key ? "active" : ""}">${esc(option.label)}</button>`).join("")}</div></div>`).join("")}</section>` : ""}
         <div class="payment-total"><span>Total del pedido</span><strong>${money(orderTotal(current.items))}</strong></div><p class="password-error payment-error" data-payment-error role="alert"></p>
         <div class="dialog-actions"><button type="button" class="btn secondary" data-cancel-payment>Cancelar</button><button type="submit" class="btn primary" data-confirm-payment>Registrar</button></div></form>`;
       d.querySelector("[data-cancel-payment]").onclick = () => d.close();
-      const printCheckbox = d.querySelector("[data-print-ticket]");
-      printCheckbox.onchange = () => {
-        printRequested = printCheckbox.checked;
-      };
       d.querySelector("[data-universalize]").onchange = (e) => {
         universalize = canSplitYapeCash ? e.target.checked : true;
         draw();
@@ -1386,7 +1382,6 @@ export default function createOrderFlow({
           errorBox = d.querySelector("[data-payment-error]");
         button.disabled = true;
         errorBox.textContent = "";
-        const requestPrint = d.querySelector("[data-print-ticket]")?.checked === true;
         try {
           const orderNow = activeOrder();
           if (!orderNow?.items?.length)
@@ -1479,15 +1474,9 @@ export default function createOrderFlow({
           state.orderTableId = null; state.orderTableLabel = "";
           await refreshOpenOrders(false);
           render();
-          if (requestPrint) {
-            if (paidOrderId) {
-              await printTicket(paidOrderId, { paymentJustRegistered: true });
-            } else {
-              toast("Pago registrado correctamente, pero no se recibió el identificador para imprimir.");
-            }
-          } else {
-            toast("Pago registrado correctamente.");
-          }
+          if (paidOrderId && (state.restaurantNeeds || []).includes("printing_systems"))
+            await printTicket({ type: "paid_order_created", data: { order_id: paidOrderId } });
+          else toast("Pago registrado correctamente.");
 
         } catch (error) {
           button.disabled = false;
@@ -1603,7 +1592,7 @@ export default function createOrderFlow({
       if (error) throw error;
       const result = Array.isArray(data) ? data[0] : data;
       if (result?.status === "no_matching_flow") {
-        toast("No hay un flujo de impresión activo para este evento.");
+        if (eventKey === "manual_reprint") toast("No hay un flujo de impresión activo para reimpresiones.");
         return false;
       }
       toast(`${result?.queued || 0} trabajo${result?.queued === 1 ? "" : "s"} enviado${result?.queued === 1 ? "" : "s"} a la cola de impresión.`);
@@ -1696,6 +1685,8 @@ export default function createOrderFlow({
         return;
       }
     }
+    if ((state.restaurantNeeds || []).includes("printing_systems"))
+      await printTicket({ type: "open_order_created", data: { order_id: id, location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: toWorkspaceItems(data.activeDraft.items) } });
     if (workspaces?.has("kitchen") && state.restaurantSettings?.kitchen_entry_mode === "open") await workspaces.enqueueOrder("kitchen", { id, kind: "open", location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: toWorkspaceItems(data.activeDraft?.items || []) });
     else if (workspaces?.has("salon") && !workspaces?.has("kitchen") && state.restaurantSettings?.salon_entry_mode === "open") await workspaces.enqueueOrder("salon", { id, kind: "open", location_id: data.activeOpen.location_id, table_label: state.orderTableLabel, note: data.activeOpen.note, items: toWorkspaceItems(data.activeOpen.items || []) });
     data.activeDraft = null;
@@ -1736,6 +1727,8 @@ export default function createOrderFlow({
           break;
         }
         current.revision = Number(revision);
+        if ((state.restaurantNeeds || []).includes("printing_systems"))
+          await printTicket({ type: "open_order_updated", data: { order_id: current.id, revision: current.revision, location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: toWorkspaceItems(current.items) } });
         if (workspaces?.has("kitchen") && state.restaurantSettings?.kitchen_entry_mode === "open") await workspaces.enqueueOrder("kitchen", { id: current.id, kind: "open", location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: toWorkspaceItems(current.items) });
         else if (workspaces?.has("salon") && !workspaces?.has("kitchen") && state.restaurantSettings?.salon_entry_mode === "open") await workspaces.enqueueOrder("salon", { id: current.id, kind: "open", location_id: current.location_id, table_label: state.orderTableLabel, note: current.note, items: toWorkspaceItems(current.items) });
       } while (data.saveQueued);

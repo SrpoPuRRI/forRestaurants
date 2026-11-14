@@ -1045,11 +1045,11 @@ export default function createStatistics({
     const correction = data.corrections.find(
       (row) => row.order_id === order.id,
     );
-    dialog.innerHTML = `<div class="stats-dialog-head"><div><div class="panel-title">Detalle del movimiento</div><div class="meta">${esc(location)} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "full", timeStyle: "short" }).format(new Date(order.paid_at))}</div></div><button type="button" class="dialog-close" data-close-detail aria-label="Cerrar">×</button></div><div class="stats-detail-summary"><div><span>Registró</span><strong>${esc(order.operator_name_snapshot || "Equipo")}</strong></div><div><span>Estado</span><strong class="${order.status === "erroneous" ? "status-error" : "status-ok"}">${order.status === "erroneous" ? "Erróneo" : "Correcto"}</strong></div></div>${correction ? `<section class="stats-detail-note correction-note"><span>Corrección</span><p>${esc(correction.reason || "Pedido marcado como erróneo")}</p><small>Confirmó ${esc(correction.operator_name_snapshot || "Equipo")} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "medium", timeStyle: "short" }).format(new Date(correction.corrected_at))}</small></section>` : ""}<section class="stats-detail-note"><span>Nota del pedido</span><p>${order.note ? esc(order.note) : "Este movimiento no tiene nota."}</p></section><div class="stats-detail-lines">${rows || '<div class="empty">Este movimiento no tiene líneas de detalle.</div>'}</div><div class="stats-detail-totals">${paymentSnapshotHtml(order.payment_amounts, order.payment_method_keys)}<div class="grand-total"><span>Total neto</span><strong>${money(order.total)}</strong></div></div><div class="stats-detail-footer"><button type="button" class="btn secondary" data-print-movement>Reimprimir ticket</button><button type="button" class="btn primary" data-close-detail>Cerrar</button></div>`;
+    dialog.innerHTML = `<div class="stats-dialog-head"><div><div class="panel-title">Detalle del movimiento</div><div class="meta">${esc(location)} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "full", timeStyle: "short" }).format(new Date(order.paid_at))}</div></div><button type="button" class="dialog-close" data-close-detail aria-label="Cerrar">×</button></div><div class="stats-detail-summary"><div><span>Registró</span><strong>${esc(order.operator_name_snapshot || "Equipo")}</strong></div><div><span>Estado</span><strong class="${order.status === "erroneous" ? "status-error" : "status-ok"}">${order.status === "erroneous" ? "Erróneo" : "Correcto"}</strong></div></div>${correction ? `<section class="stats-detail-note correction-note"><span>Corrección</span><p>${esc(correction.reason || "Pedido marcado como erróneo")}</p><small>Confirmó ${esc(correction.operator_name_snapshot || "Equipo")} · ${new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", dateStyle: "medium", timeStyle: "short" }).format(new Date(correction.corrected_at))}</small></section>` : ""}<section class="stats-detail-note"><span>Nota del pedido</span><p>${order.note ? esc(order.note) : "Este movimiento no tiene nota."}</p></section><div class="stats-detail-lines">${rows || '<div class="empty">Este movimiento no tiene líneas de detalle.</div>'}</div><div class="stats-detail-totals">${paymentSnapshotHtml(order.payment_amounts, order.payment_method_keys)}<div class="grand-total"><span>Total neto</span><strong>${money(order.total)}</strong></div></div><div class="stats-detail-footer">${(state.restaurantNeeds || []).includes("printing_systems") ? '<button type="button" class="btn secondary" data-print-movement>Reimprimir ticket</button>' : ""}<button type="button" class="btn primary" data-close-detail>Cerrar</button></div>`;
     dialog
       .querySelectorAll("[data-close-detail]")
       .forEach((button) => (button.onclick = () => dialog.close()));
-    dialog.querySelector("[data-print-movement]").onclick = async (event) => {
+    dialog.querySelector("[data-print-movement]")?.addEventListener("click", async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
       button.textContent = "Procesando impresión…";
@@ -1058,7 +1058,7 @@ export default function createStatistics({
         button.disabled = false;
         button.textContent = "Reimprimir ticket";
       }
-    };
+    });
     document.body.appendChild(dialog);
     dialog.showModal();
     dialog.addEventListener("close", () => dialog.remove());

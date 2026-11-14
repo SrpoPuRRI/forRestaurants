@@ -1,5 +1,5 @@
 // Workspaces opcionales: CRM demostrativo, Delivery próximamente, KDS y mapa Salón.
-export default function createRestaurantWorkspaces({ supabase, state, render, toast, esc, money, navigate, refreshCatalog, hasActiveOrder }) {
+export default function createRestaurantWorkspaces({ supabase, state, render, toast, esc, money, navigate, refreshCatalog, hasActiveOrder, printTicket }) {
   const data = { page: "", loading: false, error: "", floors: [], tables: [], kitchen: [], service: [], settings: {}, floorId: "", editingMap: false, poll: null, press: null, dragging: null, moveHighlightId: "", crmQuery: "", crmTab: "clientes" };
   const needs = () => state.restaurantNeeds || [];
   const has = (need) => needs().includes(need);
@@ -140,8 +140,11 @@ export default function createRestaurantWorkspaces({ supabase, state, render, to
     d.addEventListener("close",()=>d.remove());
   }
   async function setKitchenProgress(entryId, action, itemIndex=null, unitIndex=null) {
-    const { error } = await supabase.rpc("kitchen_set_progress", { p_entry_id: entryId, p_action: action, p_item_index: itemIndex, p_unit_index: unitIndex });
+    const entry = data.kitchen.find((item) => item.id === entryId);
+    const { data: result, error } = await supabase.rpc("kitchen_set_progress", { p_entry_id: entryId, p_action: action, p_item_index: itemIndex, p_unit_index: unitIndex });
     if (error) return toast(error.message || "No se pudo actualizar la preparación.");
+    if (result?.status === "completed" && entry && has("printing_systems"))
+      await printTicket?.({ type: "kitchen_order_ready", data: { queue_entry_id: entry.id, source_order_id: entry.source_order_id, source_order_kind: entry.source_order_kind, location_id: entry.location_id, table_label: entry.table_label, note: entry.order_note, items: entry.items } });
     await loadKitchen();
     if (has("salon")) await loadSalon();
   }
@@ -295,7 +298,7 @@ export default function createRestaurantWorkspaces({ supabase, state, render, to
     document.querySelectorAll("[data-kitchen-unit]").forEach((b)=>b.onclick=()=>setKitchenProgress(b.dataset.kitchenUnit,"unit_ready",Number(b.dataset.item),Number(b.dataset.unit)));
     document.querySelectorAll("[data-kitchen-stock]").forEach((b)=>b.onclick=()=>setKitchenProgress(b.dataset.kitchenStock,"unit_out_of_stock",Number(b.dataset.item),Number(b.dataset.unit)));
     document.querySelectorAll("[data-product-stock]").forEach((b)=>b.onclick=async()=>{const {error}=await supabase.rpc("set_catalog_stock_availability",{p_entity:"product",p_entity_id:b.dataset.productStock,p_is_available:false});if(error)toast(error.message||"No se pudo marcar fuera de stock.");else{toast("Producto marcado fuera de stock.");await refreshCatalog?.();}});
-    document.querySelectorAll("[data-salon-delivered]").forEach((b)=>b.onclick=async()=>{const {error}=await supabase.rpc("salon_mark_delivered",{p_entry_id:b.dataset.salonDelivered});if(error)toast(error.message);else{toast("Pedido marcado como entregado.");await loadSalon();}});
+    document.querySelectorAll("[data-salon-delivered]").forEach((b)=>b.onclick=async()=>{const entry=data.service.find((item)=>item.id===b.dataset.salonDelivered);const {error}=await supabase.rpc("salon_mark_delivered",{p_entry_id:b.dataset.salonDelivered});if(error)toast(error.message);else{if(entry&&has("printing_systems"))await printTicket?.({type:"salon_order_delivered",data:{queue_entry_id:entry.id,source_order_id:entry.source_order_id,source_order_kind:entry.source_order_kind,location_id:entry.location_id,table_label:entry.table_label,note:entry.order_note,items:entry.items}});toast("Pedido marcado como entregado.");await loadSalon();}});
     if (data.editingMap) document.querySelectorAll("[data-table]").forEach((el) => {
       const table = data.tables.find((item) => item.id === el.dataset.table);
       if (!table) return;

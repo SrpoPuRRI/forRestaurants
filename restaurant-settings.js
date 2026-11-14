@@ -32,11 +32,15 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   async function load() {
     if (!supabase || !state.restaurantId) return;
     state.settingsLoading = true;
-    const [restaurant, roles, payments, roleSettings] = await Promise.all([
+    const [restaurant, roles, payments, roleSettings, points, flows, routes, templates] = await Promise.all([
       supabase.from("restaurants").select(`${Object.keys(defaults).join(",")},needs,available_role_ids,logo_path`).eq("id", state.restaurantId).single(),
       supabase.from("roles").select("id,key,name,permissions,sort_order").order("sort_order"),
       supabase.from("restaurant_payment_methods").select("method_key,enabled,manual_enabled,automatic_enabled").eq("restaurant_id", state.restaurantId),
       supabase.from("restaurant_role_settings").select("*").eq("restaurant_id", state.restaurantId),
+      supabase.from("printing_points").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
+      supabase.from("printing_flows").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
+      supabase.from("printing_flow_routes").select("*").eq("restaurant_id", state.restaurantId).order("sort_order"),
+      supabase.from("printing_ticket_templates").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
     ]);
     const error = restaurant.error || roles.error || payments.error || roleSettings.error;
     state.settingsError = error?.message || "";
@@ -60,6 +64,13 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       method_key: "cash", enabled: true, manual_enabled: true, automatic_enabled: false,
     };
     state.roleSettings = Object.fromEntries((roleSettings.data || []).map((row) => [row.role_id, row]));
+    state.printingPoints = points.error ? [] : (points.data || []);
+    state.printingFlows = flows.error ? [] : (flows.data || []);
+    state.printingFlowRoutes = routes.error ? [] : (routes.data || []);
+    state.printingTicketTemplates = templates.error ? [] : (templates.data || []);
+    state.printingSettingsError = points.error || flows.error || routes.error || templates.error
+      ? "No se pudieron cargar los ajustes de impresión. Aplica la migración de impresión y vuelve a cargar."
+      : "";
     state.settingsLoading = false;
   }
 
@@ -233,9 +244,9 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const appearanceSection = `<div class="settings-general-personalization"><div class="panel-head"><div><div class="panel-title">Personalización</div><div class="meta">Crea esquemas propios o selecciona uno para todo tu restaurante.</div></div><button type="button" class="rowaction" id="clear-active-color-scheme" ${v.appearance?.active_color_scheme_id ? "" : "hidden disabled"}>Usar colores predeterminados</button></div><div class="color-scheme-grid" id="color-scheme-list">${colorSchemeCards(v.appearance?.active_color_scheme_id)}</div><p class="meta">Sin un esquema seleccionado, se usan los colores predeterminados de Black&amp;White.</p></div>`;
     const generalSection = `<section class="panel settings-panel settings-general-panel"><div class="panel-head"><div><div class="panel-title">General</div><div class="meta">Personaliza la identidad y las necesidades de tu restaurante.</div></div></div>${logoSection}${appearanceSection}${needsSection}</section>`;
     const attendanceSettings = `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Asistencia</div><div class="meta">Define quién puede marcar entradas y salidas.</div></div></div><div class="settings-checks">${check("attendance_check_in_self", "Cada persona puede marcar su propia entrada", v.attendance_check_in_self)}${check("attendance_check_in_peer_at_location", "Un compañero puede marcar la entrada desde la misma sede", v.attendance_check_in_peer_at_location)}${check("attendance_check_out_self", "Cada persona puede marcar su propia salida", v.attendance_check_out_self)}${check("attendance_check_out_peer_at_location", "Un compañero puede marcar la salida desde la misma sede", v.attendance_check_out_peer_at_location)}</div><p class="meta">El administrador puede registrar una marca actual o corregir una marca de hoy o ayer.</p></section>`;
-    const receiptSection = (state.restaurantNeeds || []).includes("printing_systems") ? `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Sistemas de Impresión</div><div class="meta">Puntos, flujos y formatos que convierten eventos del restaurante en trabajos de impresión.</div></div></div><div class="settings-checks"><span class="meta">Puntos de Impresión · Flujos de impresión · Formatos de ticket</span></div><button class="btn secondary" type="button" id="configure-printing">Abrir configuración de impresión</button></section>` : "";
+    const printingSection = (state.restaurantNeeds || []).includes("printing_systems") ? renderPrintingSettings() : "";
     const moduleSettings = ((state.restaurantNeeds || []).includes("kitchen") || (state.restaurantNeeds || []).includes("salon") || ((state.restaurantNeeds || []).includes("delivery") && (state.restaurantNeeds || []).includes("kitchen"))) ? `<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cierre de pedidos por Cocina y Salón</div><div class="meta">Estos ajustes aparecen solo para las necesidades activas.</div></div></div>${(state.restaurantNeeds || []).includes("kitchen") ? `${check("kitchen_has_separate_bar", "Tengo una barra separada de la cocina", v.kitchen_has_separate_bar)}<label class="settings-field">Cocina integra pedidos desde<select data-setting="kitchen_entry_mode"><option value="open" ${v.kitchen_entry_mode === "open" ? "selected" : ""}>Pedido abierto</option><option value="paid" ${v.kitchen_entry_mode === "paid" ? "selected" : ""}>Pedido pagado</option></select></label>` : ""}${(state.restaurantNeeds || []).includes("salon") ? `<label class="settings-field">Salón integra pedidos desde<select data-setting="salon_entry_mode"><option value="open" ${v.salon_entry_mode === "open" ? "selected" : ""}>Pedido abierto</option><option value="paid" ${v.salon_entry_mode === "paid" ? "selected" : ""}>Pedido pagado</option></select></label><div class="settings-checks">${check("salon_waiter_map_edit", "Mesero puede editar el mapa", v.salon_waiter_map_edit)}${check("salon_host_map_edit", "Portero puede editar el mapa", v.salon_host_map_edit)}${check("salon_show_seats", "Mostrar cantidad de sillas por piso", v.salon_show_seats)}</div><p class="meta">Define las sillas dentro de cada piso en el mapa. Es una referencia visual; no se editan posiciones de sillas.</p>` : ""}${(state.restaurantNeeds || []).includes("delivery") && (state.restaurantNeeds || []).includes("kitchen") ? check("delivery_kitchen_after_virtual_payment", "Delivery entra a Cocina cuando se confirma su pago virtual", v.delivery_kitchen_after_virtual_payment) : ""}</section>` : "";
-    return `<div class="settings-save-bar" id="settings-save-bar" hidden><div class="settings-save-bar-inner"><button class="btn primary" id="save-restaurant-settings" type="button">Guardar cambios</button></div></div><section class="page-head"><div><div class="eyebrow">Administración</div><h1>Configuración</h1><p class="desc">Ajustes de las secciones fijas de tu restaurante.</p></div></section>${state.settingsError ? `<div class="inline-error" role="alert">${esc(state.settingsError)}</div>` : ""}${generalSection}${attendanceSettings}<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Métodos de pago</div><div class="meta">Activa los métodos que tu negocio recibe.</div></div></div><div class="settings-options">${paymentCards}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cuentas</div><div class="meta">Nota personal de cada empleado.</div></div></div><div class="settings-form-grid"><label class="settings-field">Reinicio de la nota<select data-setting="employee_note_reset_mode"><option value="manual" ${v.employee_note_reset_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${v.employee_note_reset_mode === "automatic" ? "selected" : ""}>Automático</option></select></label><label class="settings-field">Intervalo<select data-setting="employee_note_reset_days" ${v.employee_note_reset_mode !== "automatic" ? "disabled" : ""}>${[7,15,30].map((day) => `<option value="${day}" ${Number(v.employee_note_reset_days) === day ? "selected" : ""}>Cada ${day} días</option>`).join("")}</select></label></div><p class="meta">La nota no se borrará automáticamente hasta definir archivo, retención y fecha de reinicio.</p></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Estadísticas</div><div class="meta">Configura rankings y los importes de los pedidos visibles por rol.</div></div></div><div class="settings-checks">${check("rankings_enabled", "Habilitar rankings", v.rankings_enabled)}${check("rankings_products", "Productos más vendidos", v.rankings_products)}${check("rankings_variants", "Variantes más vendidas", v.rankings_variants)}${check("rankings_addons", "Agregados más vendidos", v.rankings_addons)}${check("rankings_categories", "Categorías más vendidas", v.rankings_categories, "disabled title='Disponible cuando el catálogo multi-restaurante esté migrado'")}${check("rankings_employees_enabled", "Empleados ven rankings", v.rankings_employees_enabled)}${check("rankings_same_for_all_roles", "Mismo conjunto para todos los roles", v.rankings_same_for_all_roles, v.rankings_employees_enabled ? "" : "disabled")}</div><div class="settings-form-grid settings-stat-order-options"><div class="settings-stat-order-option"><strong>Pedido de menor importe</strong><div class="settings-checks">${check("order_minimum_enabled", "Mostrar en Estadísticas", v.order_minimum_enabled)}${check("order_minimum_admin", "Administrador puede verlo", v.order_minimum_admin)}${check("order_minimum_employees", "Empleados pueden verlo", v.order_minimum_employees)}</div></div><div class="settings-stat-order-option"><strong>Pedido de mayor importe</strong><div class="settings-checks">${check("order_maximum_enabled", "Mostrar en Estadísticas", v.order_maximum_enabled)}${check("order_maximum_admin", "Administrador puede verlo", v.order_maximum_admin)}${check("order_maximum_employees", "Empleados pueden verlo", v.order_maximum_employees)}</div></div></div><div class="settings-role-list" id="settings-role-options" ${showStatisticsRoles ? "" : "hidden"}><strong>Permisos de estadísticas por rol</strong>${roleStatisticsRows}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Flujo de pedidos</div><div class="meta">Controla quién puede corregir pagos registrados por error.</div></div></div><div class="settings-checks">${check("corrections_admin", "Administrador puede corregir pagos", v.corrections_admin)}${check("corrections_employees", "Habilitar corrección de pagos a empleados", v.corrections_employees)}</div><div class="settings-role-list" id="settings-correction-role-options" ${showCorrectionRoles ? "" : "hidden"}><strong>Roles que pueden corregir pagos</strong>${correctionRoleRows}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Catálogo</div><div class="meta">Activa las herramientas que el restaurante necesita.</div></div></div><div class="settings-checks">${check("catalog_addons_enabled", "Agregados", v.catalog_addons_enabled)}${check("catalog_category_groups_enabled", "Grupos de categorías", v.catalog_category_groups_enabled)}${check("catalog_promotions_enabled", "Promociones", v.catalog_promotions_enabled)}</div><p class="meta">La administración y aplicación de promociones se habilitará junto con la migración del catálogo y el cobro.</p></section>${moduleSettings}${receiptSection}`;
+    return `<div class="settings-save-bar" id="settings-save-bar" hidden><div class="settings-save-bar-inner"><button class="btn primary" id="save-restaurant-settings" type="button">Guardar cambios</button></div></div><section class="page-head"><div><div class="eyebrow">Administración</div><h1>Configuración</h1><p class="desc">Ajustes de las secciones fijas de tu restaurante.</p></div></section>${state.settingsError ? `<div class="inline-error" role="alert">${esc(state.settingsError)}</div>` : ""}${generalSection}${attendanceSettings}<section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Métodos de pago</div><div class="meta">Activa los métodos que tu negocio recibe.</div></div></div><div class="settings-options">${paymentCards}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Cuentas</div><div class="meta">Nota personal de cada empleado.</div></div></div><div class="settings-form-grid"><label class="settings-field">Reinicio de la nota<select data-setting="employee_note_reset_mode"><option value="manual" ${v.employee_note_reset_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${v.employee_note_reset_mode === "automatic" ? "selected" : ""}>Automático</option></select></label><label class="settings-field">Intervalo<select data-setting="employee_note_reset_days" ${v.employee_note_reset_mode !== "automatic" ? "disabled" : ""}>${[7,15,30].map((day) => `<option value="${day}" ${Number(v.employee_note_reset_days) === day ? "selected" : ""}>Cada ${day} días</option>`).join("")}</select></label></div><p class="meta">La nota no se borrará automáticamente hasta definir archivo, retención y fecha de reinicio.</p></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Estadísticas</div><div class="meta">Configura rankings y los importes de los pedidos visibles por rol.</div></div></div><div class="settings-checks">${check("rankings_enabled", "Habilitar rankings", v.rankings_enabled)}${check("rankings_products", "Productos más vendidos", v.rankings_products)}${check("rankings_variants", "Variantes más vendidas", v.rankings_variants)}${check("rankings_addons", "Agregados más vendidos", v.rankings_addons)}${check("rankings_categories", "Categorías más vendidas", v.rankings_categories, "disabled title='Disponible cuando el catálogo multi-restaurante esté migrado'")}${check("rankings_employees_enabled", "Empleados ven rankings", v.rankings_employees_enabled)}${check("rankings_same_for_all_roles", "Mismo conjunto para todos los roles", v.rankings_same_for_all_roles, v.rankings_employees_enabled ? "" : "disabled")}</div><div class="settings-form-grid settings-stat-order-options"><div class="settings-stat-order-option"><strong>Pedido de menor importe</strong><div class="settings-checks">${check("order_minimum_enabled", "Mostrar en Estadísticas", v.order_minimum_enabled)}${check("order_minimum_admin", "Administrador puede verlo", v.order_minimum_admin)}${check("order_minimum_employees", "Empleados pueden verlo", v.order_minimum_employees)}</div></div><div class="settings-stat-order-option"><strong>Pedido de mayor importe</strong><div class="settings-checks">${check("order_maximum_enabled", "Mostrar en Estadísticas", v.order_maximum_enabled)}${check("order_maximum_admin", "Administrador puede verlo", v.order_maximum_admin)}${check("order_maximum_employees", "Empleados pueden verlo", v.order_maximum_employees)}</div></div></div><div class="settings-role-list" id="settings-role-options" ${showStatisticsRoles ? "" : "hidden"}><strong>Permisos de estadísticas por rol</strong>${roleStatisticsRows}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Flujo de pedidos</div><div class="meta">Controla quién puede corregir pagos registrados por error.</div></div></div><div class="settings-checks">${check("corrections_admin", "Administrador puede corregir pagos", v.corrections_admin)}${check("corrections_employees", "Habilitar corrección de pagos a empleados", v.corrections_employees)}</div><div class="settings-role-list" id="settings-correction-role-options" ${showCorrectionRoles ? "" : "hidden"}><strong>Roles que pueden corregir pagos</strong>${correctionRoleRows}</div></section><section class="panel settings-panel"><div class="panel-head"><div><div class="panel-title">Catálogo</div><div class="meta">Activa las herramientas que el restaurante necesita.</div></div></div><div class="settings-checks">${check("catalog_addons_enabled", "Agregados", v.catalog_addons_enabled)}${check("catalog_category_groups_enabled", "Grupos de categorías", v.catalog_category_groups_enabled)}${check("catalog_promotions_enabled", "Promociones", v.catalog_promotions_enabled)}</div><p class="meta">La administración y aplicación de promociones se habilitará junto con la migración del catálogo y el cobro.</p></section>${moduleSettings}${printingSection}`;
   }
   function settingsSnapshot() {
     const controls = [
@@ -278,6 +289,242 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       dialog.remove();
       syncSaveButton();
     }, { once: true });
+  }
+  const PRINT_EVENTS = [
+    ["open_order_created", "Pedido abierto creado"],
+    ["open_order_updated", "Pedido abierto actualizado"],
+    ["paid_order_created", "Pedido pagado"],
+    ["payment_corrected", "Pago corregido"],
+    ["kitchen_order_ready", "Pedido listo en cocina"],
+    ["salon_order_delivered", "Pedido entregado en salón"],
+    ["manual_reprint", "Reimpresión manual"],
+  ];
+  const printEventLabel = (key) => PRINT_EVENTS.find(([eventKey]) => eventKey === key)?.[1] || key;
+  function printingArea(title, description, cards, actionId, actionLabel) {
+    return `<section class="printing-config-area"><div class="printing-config-area-head"><div><h3>${title}</h3><p class="meta">${description}</p></div></div><div class="printing-config-grid">${cards}<button type="button" class="printing-create-card" id="${actionId}"><span aria-hidden="true">＋</span><strong>${actionLabel}</strong></button></div></section>`;
+  }
+  function renderPrintingSettings() {
+    const points = state.printingPoints || [];
+    const flows = state.printingFlows || [];
+    const routes = state.printingFlowRoutes || [];
+    const templates = state.printingTicketTemplates || [];
+    const pointCards = points.map((point) => `<article class="printing-config-card"><div class="printing-config-card-head"><strong>${esc(point.name)}</strong><span class="printing-status ${point.is_active ? "is-on" : ""}">${point.is_active ? "Activo" : "Pausado"}</span></div><p>${point.sunat_enabled ? "Emisión electrónica SUNAT" : `${(point.supported_output_modes || [point.output_mode]).map((mode) => mode === "automatic" ? "Automática" : "Manual").join(" + ")} · ${esc(point.transport)}`}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-point="${esc(point.id)}">Editar</button><button type="button" class="rowaction" data-print-toggle-point="${esc(point.id)}">${point.is_active ? "Pausar" : "Activar"}</button></div></article>`).join("");
+    const flowCards = flows.map((flow) => {
+      const flowRoutes = routes.filter((route) => route.flow_id === flow.id && route.event_keys?.length);
+      const events = (flow.captured_events || []).map(printEventLabel).join(" · ") || "Sin eventos";
+      return `<article class="printing-config-card"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${flow.is_active ? "is-on" : ""}">${flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} destino${flowRoutes.length === 1 ? "" : "s"} configurado${flowRoutes.length === 1 ? "" : "s"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar flujo</button><button type="button" class="rowaction" data-print-toggle-flow="${esc(flow.id)}">${flow.is_active ? "Pausar" : "Activar"}</button></div></article>`;
+    }).join("");
+    const templateCards = templates.map((template) => `<article class="printing-config-card"><div class="printing-config-card-head"><strong>${esc(template.name)}</strong><span class="printing-status ${template.is_active ? "is-on" : ""}">${template.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(`${template.format?.paper_width_mm || 80} mm · ${template.format?.header?.lines?.length || 0} líneas de encabezado`)}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-template="${esc(template.id)}">Editar</button><button type="button" class="rowaction" data-print-toggle-template="${esc(template.id)}">${template.is_active ? "Pausar" : "Activar"}</button></div></article>`).join("");
+    return `<section class="panel settings-panel printing-settings-panel"><div class="panel-head"><div><div class="panel-title">Sistemas de Impresión</div><div class="meta">Define destinos, eventos y formatos. Un evento puede enviarse a varios puntos.</div></div></div>${state.printingSettingsError ? `<p class="inline-error" role="alert">${esc(state.printingSettingsError)}</p>` : ""}${printingArea("Puntos de Impresión", "Configura dónde y cómo se imprimen los trabajos.", pointCards, "create-print-point", "Crear punto de Impresión")}${printingArea("Flujos de impresión", "Elige qué eventos se capturan y a qué destinos se envían.", flowCards, "create-print-flow", "Crear flujo de impresión")}${printingArea("Formatos de ticket", "Guarda varios formatos y selecciona uno distinto en cada ruta.", templateCards, "create-print-template", "Crear formato de ticket")}</section>`;
+  }
+  function openPrintDialog(title, body, onSave) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "password-dialog printing-editor-dialog";
+    dialog.innerHTML = `<div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="button" class="btn primary" data-save>Guardar</button></div>`;
+    document.body.appendChild(dialog);
+    dialog.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
+    dialog.querySelector(".dialog-close").addEventListener("click", () => dialog.close());
+    dialog.addEventListener("close", () => dialog.remove(), { once: true });
+    dialog.querySelector("[data-save]").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const error = dialog.querySelector(".appearance-editor-error");
+      error.textContent = "";
+      button.disabled = true;
+      try {
+        await onSave(dialog);
+        dialog.close();
+        await load();
+        render();
+        toast("Configuración de impresión guardada.");
+      } catch (saveError) {
+        error.textContent = saveError.message || "No se pudo guardar la configuración.";
+        button.disabled = false;
+      }
+    });
+    dialog.showModal();
+    return dialog;
+  }
+  function openPrintPointEditor(point = null) {
+    const current = point || { name: "", is_active: true, sunat_enabled: false, supported_output_modes: ["manual"], output_mode: "manual", transport: "browser", connection_config: {}, sunat_config: {} };
+    const modes = current.supported_output_modes || [current.output_mode || "manual"];
+    const body = `<label class="settings-field">Nombre del punto<input name="name" maxlength="80" required value="${esc(current.name)}" placeholder="Ej. Caja, Cocina, Barra"></label><fieldset class="printing-events-field"><legend>Este punto admite</legend><div class="settings-checks"><label class="settings-check"><input type="checkbox" name="mode_manual" ${modes.includes("manual") ? "checked" : ""}><span>Impresión manual desde el dispositivo</span></label><label class="settings-check"><input type="checkbox" name="mode_automatic" ${modes.includes("automatic") ? "checked" : ""}><span>Impresión automática</span></label></div></fieldset><label class="settings-check"><input type="checkbox" name="sunat_enabled" ${current.sunat_enabled ? "checked" : ""}><span>Sistema de impresión SUNAT</span></label><div class="printing-sunat-fields" ${current.sunat_enabled ? "" : "hidden"}><label class="settings-field">RUC emisor<input name="sunat_ruc" inputmode="numeric" maxlength="11" value="${esc(current.sunat_config?.ruc || "")}" placeholder="RUC de 11 dígitos"></label><label class="settings-field">Proveedor de emisión<input name="sunat_provider" value="${esc(current.sunat_config?.provider || "")}" placeholder="PSE/OSE por definir"></label><p class="meta">Este punto quedará reservado para comprobantes SUNAT. La emisión y sus credenciales requieren el conector de servidor; aquí no se guardan contraseñas ni claves privadas.</p></div><div class="settings-form-grid"><label class="settings-field">Transporte automático<select name="transport"><option value="local_agent" ${current.transport === "local_agent" ? "selected" : ""}>Agente local</option><option value="network_escpos" ${current.transport === "network_escpos" ? "selected" : ""}>Impresora de red ESC/POS</option><option value="cloud_webhook" ${current.transport === "cloud_webhook" ? "selected" : ""}>Servicio externo / webhook</option></select></label></div><label class="settings-field">Dirección del dispositivo o servicio <span class="meta">(si aplica)</span><input name="endpoint" value="${esc(current.connection_config?.endpoint || "")}" placeholder="IP local o URL del agente"></label>`;
+    const dialog = openPrintDialog(point ? "Editar punto de Impresión" : "Crear punto de Impresión", body, async (d) => {
+      const form = new FormData(d);
+      const name = String(form.get("name") || "").trim();
+      if (!name) throw new Error("Escribe el nombre del punto.");
+      const sunatEnabled = d.querySelector('[name="sunat_enabled"]').checked;
+      const supportedModes = [
+        ...(d.querySelector('[name="mode_manual"]').checked ? ["manual"] : []),
+        ...(d.querySelector('[name="mode_automatic"]').checked ? ["automatic"] : []),
+      ];
+      if (!supportedModes.length) throw new Error("Selecciona al menos un tipo de impresión para este punto.");
+      const ruc = String(form.get("sunat_ruc") || "").trim();
+      if (sunatEnabled && ruc && !/^\d{11}$/.test(ruc)) throw new Error("El RUC debe tener 11 dígitos.");
+      const payload = {
+        restaurant_id: state.restaurantId, name, is_active: true, sunat_enabled: sunatEnabled,
+        supported_output_modes: supportedModes,
+        output_mode: supportedModes.includes("manual") ? "manual" : "automatic",
+        transport: supportedModes.includes("automatic") ? String(form.get("transport")) : "browser",
+        connection_config: { endpoint: String(form.get("endpoint") || "").trim() },
+        sunat_config: sunatEnabled ? { ruc, provider: String(form.get("sunat_provider") || "").trim() } : {},
+      };
+      if (point) payload.id = point.id;
+      const { error } = await supabase.from("printing_points").upsert(payload);
+      if (error) throw error;
+    });
+    dialog.querySelector('[name="sunat_enabled"]').addEventListener("change", (event) => {
+      dialog.querySelector(".printing-sunat-fields").hidden = !event.target.checked;
+    });
+  }
+  function openPrintTemplateEditor(template = null) {
+    const format = template?.format || {};
+    const header = (format.header?.lines || []).join("\n");
+    const footer = (format.footer?.lines || []).join("\n");
+    const body = `<label class="settings-field">Nombre del formato<input name="name" maxlength="80" required value="${esc(template?.name || "")}" placeholder="Ej. Ticket cliente"></label><label class="settings-field">Ancho del papel<select name="paper_width_mm"><option value="58" ${Number(format.paper_width_mm) === 58 ? "selected" : ""}>58 mm</option><option value="80" ${Number(format.paper_width_mm || 80) === 80 ? "selected" : ""}>80 mm</option></select></label><label class="settings-field">Encabezado<textarea name="header" rows="3" placeholder="Una línea por renglón">${esc(header)}</textarea></label><label class="settings-field">Pie del ticket<textarea name="footer" rows="3" placeholder="Una línea por renglón">${esc(footer)}</textarea></label><div class="settings-checks"><label class="settings-check"><input type="checkbox" data-template-body="show_location" ${format.body?.show_location === false ? "" : "checked"}><span>Mostrar sede</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_operator" ${format.body?.show_operator === false ? "" : "checked"}><span>Mostrar empleado</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_note" ${format.body?.show_note === false ? "" : "checked"}><span>Mostrar nota</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_payment_breakdown" ${format.body?.show_payment_breakdown === false ? "" : "checked"}><span>Mostrar desglose de pago</span></label></div>`;
+    openPrintDialog(template ? "Editar formato de ticket" : "Crear formato de ticket", body, async (dialog) => {
+      const form = new FormData(dialog);
+      const name = String(form.get("name") || "").trim();
+      if (!name) throw new Error("Escribe el nombre del formato.");
+      const formatPayload = {
+        schema_version: 1, paper_width_mm: Number(form.get("paper_width_mm")),
+        header: { lines: String(form.get("header") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
+        body: {
+          show_location: dialog.querySelector('[data-template-body="show_location"]').checked,
+          show_operator: dialog.querySelector('[data-template-body="show_operator"]').checked,
+          show_note: dialog.querySelector('[data-template-body="show_note"]').checked,
+          show_payment_breakdown: dialog.querySelector('[data-template-body="show_payment_breakdown"]').checked,
+        },
+        footer: { lines: String(form.get("footer") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
+      };
+      const payload = { restaurant_id: state.restaurantId, name, format: formatPayload, is_active: true };
+      if (template) payload.id = template.id;
+      const { error } = await supabase.from("printing_ticket_templates").upsert(payload);
+      if (error) throw error;
+    });
+  }
+  function openPrintFlowEditor(flow = null) {
+    const currentRoutes = flow ? (state.printingFlowRoutes || []).filter((route) => route.flow_id === flow.id && route.event_keys?.length) : [];
+    const eventChecks = PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" name="flow_event" value="${key}" ${(flow?.captured_events || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("");
+    const pointOptions = (state.printingPoints || []).map((point) => `<option value="${esc(point.id)}">${esc(point.name)}${point.sunat_enabled ? " · SUNAT" : ""}${point.is_active ? "" : " · pausado"}</option>`).join("");
+    const templateOptions = (state.printingTicketTemplates || []).map((template) => `<option value="${esc(template.id)}">${esc(template.name)}${template.is_active ? "" : " · pausado"}</option>`).join("");
+    const routeMarkup = (route = {}) => `<div class="printing-route-row" data-print-route ${route.id ? `data-route-id="${esc(route.id)}"` : ""}><div class="printing-route-grid"><label class="settings-field">Punto<select data-route-point>${pointOptions}</select></label><label class="settings-field">Formato<select data-route-template><option value="">Selecciona un formato</option>${templateOptions}</select></label><label class="settings-field">Salida<select data-route-mode><option value="manual" ${route.output_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${route.output_mode === "automatic" ? "selected" : ""}>Automática</option></select></label><label class="settings-field">Copias<input data-route-copies type="number" min="1" max="20" value="${Number(route.copies) || 1}"></label><label class="settings-field">Cadencia ms<input data-route-cadence type="number" min="0" max="60000" step="100" value="${Number(route.cadence_ms) || 0}"></label><label class="settings-field">Detalle<select data-route-depth><option value="compact" ${route.text_depth === "compact" ? "selected" : ""}>Compacto</option><option value="standard" ${!route.text_depth || route.text_depth === "standard" ? "selected" : ""}>Estándar</option><option value="detailed" ${route.text_depth === "detailed" ? "selected" : ""}>Detallado</option></select></label></div><div class="settings-checks printing-route-events">${PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" data-route-event value="${key}" ${(route.event_keys || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("")}</div><button type="button" class="rowaction" data-remove-route>Quitar este destino</button></div>`;
+    const routesHtml = currentRoutes.map(routeMarkup).join("");
+    const body = `<label class="settings-field">Nombre del flujo<input name="name" maxlength="80" required value="${esc(flow?.name || "")}" placeholder="Ej. Comandas de cocina"></label><label class="settings-check"><input name="is_active" type="checkbox" ${flow?.is_active !== false ? "checked" : ""}><span>Flujo activo</span></label><fieldset class="printing-events-field"><legend>Eventos que captura este flujo</legend><div class="settings-checks">${eventChecks}</div></fieldset><div class="printing-routes-head"><strong>Destinos y formatos por evento</strong><button type="button" class="btn secondary" data-add-route>Agregar destino</button></div><div data-route-list>${routesHtml}</div>${!pointOptions ? '<p class="meta">Primero crea un Punto de Impresión para añadir destinos.</p>' : ""}`;
+    const dialog = openPrintDialog(flow ? "Editar flujo de impresión" : "Crear flujo de impresión", body, async (d) => {
+      const form = new FormData(d);
+      const name = String(form.get("name") || "").trim();
+      const events = [...d.querySelectorAll('[name="flow_event"]:checked')].map((input) => input.value);
+      if (!name) throw new Error("Escribe un nombre para el flujo.");
+      if (!events.length) throw new Error("Selecciona al menos un evento.");
+      const routeRows = [...d.querySelectorAll("[data-print-route]")];
+      const routesPayload = [];
+      for (const row of routeRows) {
+        const pointId = row.querySelector("[data-route-point]").value;
+        const selectedEvents = [...row.querySelectorAll("[data-route-event]:checked")].map((input) => input.value).filter((key) => events.includes(key));
+        if (!pointId || !selectedEvents.length) throw new Error("Cada destino debe tener un punto y al menos un evento capturado por el flujo.");
+        const point = (state.printingPoints || []).find((item) => item.id === pointId);
+        const mode = row.querySelector("[data-route-mode]").value;
+        const templateId = row.querySelector("[data-route-template]").value || null;
+        const supportedModes = point?.supported_output_modes || [point?.output_mode || "manual"];
+        if (!point || !point.is_active) throw new Error("Activa el punto elegido antes de usarlo en un flujo.");
+        if (!supportedModes.includes(mode)) throw new Error("El punto elegido no admite ese tipo de impresión.");
+        if (!point.sunat_enabled && !templateId) throw new Error("Selecciona un formato de ticket para los puntos que no usan SUNAT.");
+        if (!point.sunat_enabled && !(state.printingTicketTemplates || []).find((item) => item.id === templateId)?.is_active)
+          throw new Error("Activa el formato seleccionado antes de usarlo en un flujo.");
+        const routePayload = {
+          point_id: pointId,
+          template_id: point.sunat_enabled ? null : templateId,
+          event_keys: selectedEvents, output_mode: mode,
+          copies: Math.min(20, Math.max(1, Number(row.querySelector("[data-route-copies]").value) || 1)),
+          cadence_ms: Math.min(60000, Math.max(0, Number(row.querySelector("[data-route-cadence]").value) || 0)),
+          text_depth: row.querySelector("[data-route-depth]").value,
+          sort_order: routeRows.indexOf(row),
+        };
+        const routeId = row.dataset.routeId;
+        if (routeId) routePayload.route_id = routeId;
+        routesPayload.push(routePayload);
+      }
+      const { error: saveError } = await supabase.rpc("save_printing_flow", {
+        p_flow_id: flow?.id || null,
+        p_name: name,
+        p_captured_events: events,
+        p_is_active: d.querySelector('[name="is_active"]').checked,
+        p_routes: routesPayload,
+      });
+      if (saveError) throw saveError;
+    });
+    dialog.querySelectorAll('[name="flow_event"]').forEach((input) => input.addEventListener("change", syncFlowEventOptions));
+    const list = dialog.querySelector("[data-route-list]");
+    const addRoute = () => {
+      if (!pointOptions) return;
+      list.insertAdjacentHTML("beforeend", routeMarkup());
+      bindRouteRows(list);
+    };
+    dialog.querySelector("[data-add-route]").addEventListener("click", addRoute);
+    bindRouteRows(list);
+    currentRoutes.forEach((route, index) => {
+      const row = list.querySelectorAll("[data-print-route]")[index];
+      if (row) {
+        row.querySelector("[data-route-point]").value = route.point_id;
+        row.querySelector("[data-route-template]").value = route.template_id || "";
+        row.querySelector("[data-route-mode]").value = route.output_mode;
+      }
+    });
+    list.querySelectorAll("[data-print-route]").forEach(syncRoutePointOptions);
+  }
+  function bindRouteRows(container) {
+    container.querySelectorAll("[data-remove-route]").forEach((button) => {
+      if (button.dataset.bound) return;
+      button.dataset.bound = "true";
+      button.addEventListener("click", () => button.closest("[data-print-route]").remove());
+    });
+    container.querySelectorAll("[data-route-point]").forEach((select) => {
+      if (select.dataset.bound) return;
+      select.dataset.bound = "true";
+      select.addEventListener("change", () => syncRoutePointOptions(select.closest("[data-print-route]")));
+    });
+    container.querySelectorAll("[data-route-event]").forEach((input) => {
+      if (input.dataset.bound) return;
+      input.dataset.bound = "true";
+      input.addEventListener("change", syncFlowEventOptions);
+    });
+    syncFlowEventOptions();
+  }
+  function syncRoutePointOptions(row) {
+    if (!row) return;
+    const point = (state.printingPoints || []).find((item) => item.id === row.querySelector("[data-route-point]")?.value);
+    const modeSelect = row.querySelector("[data-route-mode]");
+    const templateSelect = row.querySelector("[data-route-template]");
+    const modes = point?.supported_output_modes || [point?.output_mode || "manual"];
+    const previousMode = modeSelect.value;
+    modeSelect.innerHTML = modes.map((mode) => `<option value="${mode}">${mode === "automatic" ? "Automática" : "Manual"}</option>`).join("");
+    modeSelect.value = modes.includes(previousMode) ? previousMode : modes[0];
+    templateSelect.disabled = Boolean(point?.sunat_enabled);
+    if (point?.sunat_enabled) templateSelect.value = "";
+  }
+  function syncFlowEventOptions() {
+    const selected = new Set([...document.querySelectorAll('.printing-editor-dialog [name="flow_event"]:checked')].map((input) => input.value));
+    document.querySelectorAll(".printing-editor-dialog [data-route-event]").forEach((input) => {
+      const enabled = selected.has(input.value);
+      input.disabled = !enabled;
+      if (!enabled) input.checked = false;
+    });
+  }
+  async function togglePrintingRow(table, row) {
+    const { error } = await supabase.from(table).update({ is_active: !row.is_active }).eq("id", row.id).eq("restaurant_id", state.restaurantId);
+    if (error) { toast(error.message || "No se pudo actualizar el estado."); return; }
+    await load(); render();
+  }
+  function bindPrintingSettings() {
+    document.getElementById("create-print-point")?.addEventListener("click", () => openPrintPointEditor());
+    document.getElementById("create-print-flow")?.addEventListener("click", () => openPrintFlowEditor());
+    document.getElementById("create-print-template")?.addEventListener("click", () => openPrintTemplateEditor());
+    document.querySelectorAll("[data-print-edit-point]").forEach((button) => button.addEventListener("click", () => openPrintPointEditor((state.printingPoints || []).find((row) => row.id === button.dataset.printEditPoint))));
+    document.querySelectorAll("[data-print-edit-flow]").forEach((button) => button.addEventListener("click", () => openPrintFlowEditor((state.printingFlows || []).find((row) => row.id === button.dataset.printEditFlow))));
+    document.querySelectorAll("[data-print-edit-template]").forEach((button) => button.addEventListener("click", () => openPrintTemplateEditor((state.printingTicketTemplates || []).find((row) => row.id === button.dataset.printEditTemplate))));
+    document.querySelectorAll("[data-print-toggle-point]").forEach((button) => button.addEventListener("click", () => { const row = (state.printingPoints || []).find((item) => item.id === button.dataset.printTogglePoint); if (row) void togglePrintingRow("printing_points", row); }));
+    document.querySelectorAll("[data-print-toggle-flow]").forEach((button) => button.addEventListener("click", () => { const row = (state.printingFlows || []).find((item) => item.id === button.dataset.printToggleFlow); if (row) void togglePrintingRow("printing_flows", row); }));
+    document.querySelectorAll("[data-print-toggle-template]").forEach((button) => button.addEventListener("click", () => { const row = (state.printingTicketTemplates || []).find((item) => item.id === button.dataset.printToggleTemplate); if (row) void togglePrintingRow("printing_ticket_templates", row); }));
   }
   async function save() {
     const button = document.getElementById("save-restaurant-settings");
@@ -373,6 +620,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     syncSaveButton();
     saveButton?.addEventListener("click", save);
     bindColorSchemeCards();
+    bindPrintingSettings();
     document.querySelectorAll("[data-setting], [data-restaurant-need], #restaurant-logo-file, #restaurant-logo-remove").forEach((input) => {
       input.addEventListener("input", syncSaveButton);
       input.addEventListener("change", syncSaveButton);
@@ -461,14 +709,6 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         : state.restaurantLogoUrl
           ? `<img src="${esc(state.restaurantLogoUrl)}" alt="Logo del restaurante">`
           : "<span>Logo</span>";
-    });
-    document.getElementById("configure-printing")?.addEventListener("click", () => {
-      const dialog = document.createElement("dialog");
-      dialog.className = "password-dialog";
-      dialog.innerHTML = `<div class="panel-title">Configuración de impresión</div><p class="meta">La base ya permite guardar puntos, flujos, formatos y colas. Falta completar aquí los editores y conectar una impresora o agente local.</p><div class="dialog-actions"><button class="btn primary" type="button">Cerrar</button></div>`;
-      document.body.appendChild(dialog); dialog.showModal();
-      dialog.querySelector("button").onclick = () => dialog.close();
-      dialog.addEventListener("close", () => dialog.remove());
     });
     methods.forEach((method) => document.querySelector(`[data-setting="payment:${method.key}:enabled"]`)?.addEventListener("change", (event) => {
       if (method.key === "cash") { event.target.checked = true; return; }
