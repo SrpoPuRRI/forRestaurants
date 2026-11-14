@@ -19,8 +19,11 @@ La vista principal sigue las cuatro métricas de Kffe’to:
 2. **Pedidos pagados:** cantidad de movimientos correctos.
 3. **Promedio por pedido:** saldo neto dividido entre pedidos pagados correctos.
 4. **Desglose por método de pago:** total agrupado según los métodos guardados en cada movimiento.
+5. **Pedido de menor importe y pedido de mayor importe:** se calculan sobre pedidos de clientes Correctos que tengan al menos una línea de producto, dentro del día o periodo seleccionado. Ingreso/Egreso independientes y pedidos Erróneos quedan fuera. Si no hay pedidos de clientes, el valor se muestra como «—».
 
 En B&W el desglose usa los métodos de pago habilitados para cobro manual y la instantánea histórica de importes/métodos de cada movimiento; un cambio posterior no reclasifica ventas pasadas. Solo se muestra la métrica de desglose cuando hay más de un método habilitado para cobro manual. Si solo está habilitado efectivo, la tarjeta no se renderiza ni aparecen métodos desactivados en ella.
+
+Los indicadores de menor y mayor importe no son topes de cobro: no modifican ni rechazan un pedido. Configuración permite activar cada indicador y decidir si lo ve el administrador y/o los empleados; para empleados se pueden autorizar roles concretos. Cuando están activos, los valores son el menor y mayor total de un pedido de cliente en el periodo seleccionado (si se consulta un solo día, corresponden a ese día). Solo se consideran pedidos Correctos con productos.
 
 ## Gráfica y periodos
 

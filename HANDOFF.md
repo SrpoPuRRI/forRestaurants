@@ -119,12 +119,12 @@ El catálogo de administración solo crea productos estándar. Ingreso/Egreso se
 - La UI permite elegir cualquier método manual habilitado para un pago global y para los movimientos especiales. El pago dividido de productos estándar sigue siendo específicamente entre Yape y Efectivo; un split genérico entre cualquier pareja de métodos no está implementado.
 - Métodos automáticos no tienen proveedor integrado y siguen deshabilitados.
 - No hay ciclo completo de anulaciones, devolución financiera, caja ni control de turnos.
-- Límite mínimo/máximo y permisos relacionados tienen configuración guardada, pero verificar en `record_paid_order` si se aplican antes de prometerlo: no inferir cumplimiento por la UI de Configuración.
+- Los switches de importe menor/mayor son visibilidad de Estadísticas, no límites de cobro. La migración `202611130006_statistics_order_extremes.sql` limpia valores numéricos heredados y elimina su validación de `record_paid_order`.
 
 ## Estadísticas y Caja
 
 - Estadísticas usa la fecha/rango del timestamp del movimiento y zona `America/Lima`; para un solo día grafica pedidos por hora, para rango por día.
-- Métricas limpias incluyen solo movimientos Correctos: saldo neto, cantidad, promedio y desglose cuando existen varios métodos de pago manual habilitados.
+- Métricas limpias incluyen solo movimientos Correctos: saldo neto, cantidad, promedio y desglose cuando existen varios métodos de pago manual habilitados. Pedido de menor/mayor importe se calcula con movimientos Correctos que tengan al menos una línea de producto y se controla por los switches de configuración y roles.
 - Rankings respetan el switch global, los switches por tipo y los permisos de rol. Si no hay ninguno habilitado/visible, no debe salir la sección ni un «no hay rankings». El último cambio recarga la configuración al entrar a Estadísticas para evitar valores antiguos en memoria.
 - El desglose lista métodos activos para cobro manual; con solo efectivo se oculta, y no deben aparecer métodos desactivados.
 - El historial sí conserva movimientos Erróneos con aviso. Ingreso/Egreso participa en saldo neto con signo; productos especiales no cuentan como unidades de productos vendidos.

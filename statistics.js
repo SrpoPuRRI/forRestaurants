@@ -268,7 +268,7 @@ export default function createStatistics({
       data.error = "";
       refreshApp();
       try {
-        await refreshRankingConfiguration();
+        await refreshStatisticsConfiguration();
         await loadPaymentMethods();
         let query = supabase
           .from("orders")
@@ -300,7 +300,7 @@ export default function createStatistics({
     data.error = "";
     refreshApp();
     try {
-      await refreshRankingConfiguration();
+      await refreshStatisticsConfiguration();
       const [locations, orders] = await Promise.all([
         supabase
           .from("locations")
@@ -358,16 +358,16 @@ export default function createStatistics({
     if (error) throw error;
     data.paymentMethods = rows || [];
   }
-  async function refreshRankingConfiguration() {
+  async function refreshStatisticsConfiguration() {
     const [restaurant, roleSettings] = await Promise.all([
       supabase
         .from("restaurants")
-        .select("rankings_enabled,rankings_products,rankings_variants,rankings_addons,rankings_categories,rankings_employees_enabled,rankings_same_for_all_roles")
+        .select("rankings_enabled,rankings_products,rankings_variants,rankings_addons,rankings_categories,rankings_employees_enabled,rankings_same_for_all_roles,order_minimum_enabled,order_minimum_admin,order_minimum_employees,order_maximum_enabled,order_maximum_admin,order_maximum_employees")
         .eq("id", state.restaurantId)
         .single(),
       supabase
         .from("restaurant_role_settings")
-        .select("role_id,rankings_products,rankings_variants,rankings_addons,rankings_categories")
+        .select("role_id,rankings_products,rankings_variants,rankings_addons,rankings_categories,order_minimum_allowed,order_maximum_allowed")
         .eq("restaurant_id", state.restaurantId),
     ]);
     if (restaurant.error || roleSettings.error)
@@ -570,6 +570,11 @@ export default function createStatistics({
   // Calcula los totales y el promedio de pedidos.
   function totals() {
     const valid = validOrders();
+    const customerOrderIds = new Set(data.items
+      .filter((item) => item.line_kind === "product")
+      .map((item) => item.order_id));
+    const customerOrders = valid.filter((order) => customerOrderIds.has(order.id));
+    const customerOrderAmounts = customerOrders.map((order) => Number(order.total || 0));
     const yape = valid.reduce(
       (sum, order) => sum + Number(order.amount_yape || 0),
       0,
@@ -592,6 +597,8 @@ export default function createStatistics({
       total,
       paymentTotals,
       average: valid.length ? total / valid.length : 0,
+      minimumCustomerOrder: customerOrderAmounts.length ? customerOrderAmounts.reduce((min, amount) => Math.min(min, amount), Infinity) : null,
+      maximumCustomerOrder: customerOrderAmounts.length ? customerOrderAmounts.reduce((max, amount) => Math.max(max, amount), -Infinity) : null,
     };
   }
   // Prepara los datos del grafico.
@@ -692,6 +699,16 @@ export default function createStatistics({
       points = chartData();
     const stored = state.restaurantSettings || {};
     const roleStored = (state.roleSettings || {})[state.roleId] || {};
+    const assignedRoleIds = state.roleIds?.length ? state.roleIds : state.roleId ? [state.roleId] : [];
+    const canSeeOrderMetric = (key) => {
+      if (stored[`${key}_enabled`] !== true) return false;
+      if (!isEmployee) return stored[`${key}_admin`] === true;
+      return stored[`${key}_employees`] === true && assignedRoleIds.some((roleId) =>
+        Boolean(state.roleSettings?.[roleId]?.[`${key}_allowed`]),
+      );
+    };
+    const showMinimumOrder = canSeeOrderMetric("order_minimum");
+    const showMaximumOrder = canSeeOrderMetric("order_maximum");
     const canSeeRankings = !isEmployee || Boolean(stored.rankings_employees_enabled);
     const rankVisible = (key) => {
       if (!canSeeRankings || stored.rankings_enabled !== true) return false;
@@ -712,7 +729,7 @@ export default function createStatistics({
     const paymentBreakdown = paymentKeys
       .map((method) => `<span>${esc(methodLabels[method] || method)} <strong>${money(summary.paymentTotals.get(method) || 0)}</strong></span>`)
       .join("");
-    const cards = `<div class="metrics ${showPaymentBreakdown ? "" : "metrics-compact"}"><article class="metric"><div class="metric-label">Saldo neto</div><div class="metric-value">${money(summary.total)}</div><div class="metric-foot">Solo pedidos correctos</div></article><article class="metric"><div class="metric-label">Pedidos pagados</div><div class="metric-value">${summary.valid.length}</div><div class="metric-foot neutral">${esc(dateText)}</div></article><article class="metric"><div class="metric-label">Promedio por pedido</div><div class="metric-value">${money(summary.average)}</div><div class="metric-foot neutral">Saldo neto / pedidos correctos</div></article>${showPaymentBreakdown ? `<article class="metric"><div class="metric-label">Desglose por medio de pago</div><div class="stats-payments">${paymentBreakdown || '<span>Sin movimientos en el periodo.</span>'}</div></article>` : ""}</div>`;
+    const cards = `<div class="metrics"><article class="metric"><div class="metric-label">Saldo neto</div><div class="metric-value">${money(summary.total)}</div><div class="metric-foot">Solo pedidos correctos</div></article><article class="metric"><div class="metric-label">Pedidos pagados</div><div class="metric-value">${summary.valid.length}</div><div class="metric-foot neutral">${esc(dateText)}</div></article><article class="metric"><div class="metric-label">Promedio por pedido</div><div class="metric-value">${money(summary.average)}</div><div class="metric-foot neutral">Saldo neto / pedidos correctos</div></article>${showMinimumOrder ? `<article class="metric"><div class="metric-label">Pedido de menor importe</div><div class="metric-value">${summary.minimumCustomerOrder == null ? "—" : money(summary.minimumCustomerOrder)}</div><div class="metric-foot neutral">${summary.minimumCustomerOrder == null ? "Sin pedidos de clientes" : "Pedido correcto de menor importe"}</div></article>` : ""}${showMaximumOrder ? `<article class="metric"><div class="metric-label">Pedido de mayor importe</div><div class="metric-value">${summary.maximumCustomerOrder == null ? "—" : money(summary.maximumCustomerOrder)}</div><div class="metric-foot neutral">${summary.maximumCustomerOrder == null ? "Sin pedidos de clientes" : "Pedido correcto de mayor importe"}</div></article>` : ""}${showPaymentBreakdown ? `<article class="metric"><div class="metric-label">Desglose por medio de pago</div><div class="stats-payments">${paymentBreakdown || '<span>Sin movimientos en el periodo.</span>'}</div></article>` : ""}</div>`;
     const sections = [];
     if (rankVisible("products"))
       sections.push(

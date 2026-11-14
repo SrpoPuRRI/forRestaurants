@@ -24,6 +24,7 @@ Flujo de pedidos siempre está disponible. Las necesidades opcionales pueden cam
 - El flujo debe respetar funciones activas, rol, restaurante y sede.
 - Las capacidades de cocina y mesas pueden activarse independientemente.
 - El flujo de impresión de Kffe’to POS no se adopta como diseño predeterminado.
+- Las opciones llamadas antes «importe mínimo/máximo» no limitan el pago. Son indicadores de pedido de menor/mayor importe en Estadísticas y no pueden bloquear ni rechazar un cobro.
 
 ## Referencia investigada: Ingreso y Egreso en Kffe’to POS
 
@@ -95,11 +96,10 @@ Configuración ofrece cinco métodos base que el administrador activa o desactiv
 
 La capacidad de persistencia admite hasta diez espacios de importe. El método y modalidad de cada método usado se guardan como instantánea histórica, y la migración valida en el servidor que las asignaciones sumen el total. La interfaz actual solo permite el pago global o la división porcentual entre Yape y efectivo para productos normales; aún falta definir en la interfaz el uso de Plin, transferencia y tarjeta, además de pagos parciales/reintentos del mismo método.
 
-## Ajustes de permisos y límites desde Configuración
+## Ajustes de permisos desde Configuración
 
-- El administrador puede habilitar límites de importe mínimo y máximo del pedido, definir los valores y elegir si aplican al administrador, a empleados o a ambos. Si aplican a empleados, selecciona los roles autorizados.
+- Los controles llamados antes importe mínimo/máximo pertenecen a Estadísticas: activan la vista del pedido de cliente Correcto de menor/mayor importe del periodo y los permisos para verlo. No definen topes de compra ni valores que bloqueen un pago.
 - El administrador puede habilitar correcciones de pagos para sí mismo y, de forma independiente, para empleados. Si se habilitan para empleados, selecciona explícitamente los roles autorizados. Las devoluciones registradas como movimientos se representan por separado, mediante el producto/concepto que acuerde cada restaurante.
-- Qué sucede cuando un pedido supera o no alcanza los límites (bloqueo, advertencia o excepción autorizada), así como el alcance exacto de «pedido correctivo», todavía queda por definir.
 - Los permisos deben validarse en el servidor; ocultar o mostrar botones según el rol no es suficiente.
 
 ## Pendientes
