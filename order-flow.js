@@ -1595,7 +1595,7 @@ export default function createOrderFlow({
         if (eventKey === "manual_reprint") toast("No hay un flujo de impresión activo para reimpresiones.");
         return false;
       }
-      toast(`${result?.queued || 0} trabajo${result?.queued === 1 ? "" : "s"} enviado${result?.queued === 1 ? "" : "s"} a la cola de impresión.`);
+      toast(`${result?.queued || 0} trabajo${result?.queued === 1 ? "" : "s"} de impresión registrado${result?.queued === 1 ? "" : "s"}.`);
       return result;
     } catch (error) {
       showPrinterResultDialog({

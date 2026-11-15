@@ -37,7 +37,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       supabase.from("roles").select("id,key,name,permissions,sort_order").order("sort_order"),
       supabase.from("restaurant_payment_methods").select("method_key,enabled,manual_enabled,automatic_enabled").eq("restaurant_id", state.restaurantId),
       supabase.from("restaurant_role_settings").select("*").eq("restaurant_id", state.restaurantId),
-      supabase.from("printing_points").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
+      supabase.from("printing_points").select("*,device:printing_devices(id,hardware_key,model,last_seen_at,operation_mode)").eq("restaurant_id", state.restaurantId).order("created_at"),
       supabase.from("printing_flows").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
       supabase.from("printing_flow_routes").select("*").eq("restaurant_id", state.restaurantId).order("sort_order"),
       supabase.from("printing_ticket_templates").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
@@ -308,7 +308,15 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const flows = state.printingFlows || [];
     const routes = state.printingFlowRoutes || [];
     const templates = state.printingTicketTemplates || [];
-    const pointCards = points.map((point) => `<article class="printing-config-card"><div class="printing-config-card-head"><strong>${esc(point.name)}</strong><span class="printing-status ${point.is_active ? "is-on" : ""}">${point.is_active ? "Activo" : "Pausado"}</span></div><p>${point.sunat_enabled ? "Emisión electrónica SUNAT" : `${(point.supported_output_modes || [point.output_mode]).map((mode) => mode === "automatic" ? "Automática" : "Manual").join(" + ")} · ${esc(point.transport)}`}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-point="${esc(point.id)}">Editar</button><button type="button" class="rowaction" data-print-toggle-point="${esc(point.id)}">${point.is_active ? "Pausar" : "Activar"}</button></div></article>`).join("");
+    const pointCards = points.map((point) => {
+      const runtime = (state.printingDeviceStatuses || []).find((device) => device.id === point.device_id);
+      const device = point.device;
+      const manualOnly = (point.supported_output_modes || [point.output_mode]).includes("manual") && !(point.supported_output_modes || [point.output_mode]).includes("automatic");
+      const online = runtime ? runtime.available : device?.operation_mode !== "offline" && Boolean(device?.last_seen_at) && Date.now() - Date.parse(device.last_seen_at) < 15000;
+      const statusLabel = point.sunat_enabled && !device ? "SUNAT · proveedor pendiente" : device ? (online ? "Impresora disponible" : "Impresora inactiva") : manualOnly ? "Vista de impresión manual pendiente" : "Sin impresora enlazada";
+      const statusClass = device ? (online ? "is-online" : "is-offline") : manualOnly ? "is-pending" : "is-offline";
+      return `<article class="printing-config-card"><div class="printing-config-card-head"><strong>${esc(point.name)}</strong><span class="printing-status ${point.is_active ? "is-on" : ""}">${point.is_active ? "Activo" : "Pausado"}</span></div><p>${point.sunat_enabled ? "Emisión electrónica SUNAT" : `${(point.supported_output_modes || [point.output_mode]).map((mode) => mode === "automatic" ? "Automática" : "Manual").join(" + ")} · ${esc(point.transport)}`}</p>${device ? `<p class="printing-device-state ${statusClass}" data-print-device-status="${esc(device.id)}"><span class="printing-device-dot"></span><span data-print-device-label>${esc(statusLabel)}</span></p><code class="printing-device-id">ID ${esc(device.id)}</code>` : `<p class="printing-device-state ${statusClass}"><span class="printing-device-dot"></span>${esc(statusLabel)}</p>`}<div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-point="${esc(point.id)}">Editar</button><button type="button" class="rowaction" data-print-toggle-point="${esc(point.id)}">${point.is_active ? "Pausar" : "Activar"}</button></div></article>`;
+    }).join("");
     const flowCards = flows.map((flow) => {
       const flowRoutes = routes.filter((route) => route.flow_id === flow.id && route.event_keys?.length);
       const events = (flow.captured_events || []).map(printEventLabel).join(" · ") || "Sin eventos";
@@ -347,7 +355,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   function openPrintPointEditor(point = null) {
     const current = point || { name: "", is_active: true, sunat_enabled: false, supported_output_modes: ["manual"], output_mode: "manual", transport: "browser", connection_config: {}, sunat_config: {} };
     const modes = current.supported_output_modes || [current.output_mode || "manual"];
-    const body = `<label class="settings-field">Nombre del punto<input name="name" maxlength="80" required value="${esc(current.name)}" placeholder="Ej. Caja, Cocina, Barra"></label><fieldset class="printing-events-field"><legend>Este punto admite</legend><div class="settings-checks"><label class="settings-check"><input type="checkbox" name="mode_manual" ${modes.includes("manual") ? "checked" : ""}><span>Impresión manual desde el dispositivo</span></label><label class="settings-check"><input type="checkbox" name="mode_automatic" ${modes.includes("automatic") ? "checked" : ""}><span>Impresión automática</span></label></div></fieldset><label class="settings-check"><input type="checkbox" name="sunat_enabled" ${current.sunat_enabled ? "checked" : ""}><span>Sistema de impresión SUNAT</span></label><div class="printing-sunat-fields" ${current.sunat_enabled ? "" : "hidden"}><label class="settings-field">RUC emisor<input name="sunat_ruc" inputmode="numeric" maxlength="11" value="${esc(current.sunat_config?.ruc || "")}" placeholder="RUC de 11 dígitos"></label><label class="settings-field">Proveedor de emisión<input name="sunat_provider" value="${esc(current.sunat_config?.provider || "")}" placeholder="PSE/OSE por definir"></label><p class="meta">Este punto quedará reservado para comprobantes SUNAT. La emisión y sus credenciales requieren el conector de servidor; aquí no se guardan contraseñas ni claves privadas.</p></div><div class="settings-form-grid"><label class="settings-field">Transporte automático<select name="transport"><option value="local_agent" ${current.transport === "local_agent" ? "selected" : ""}>Agente local</option><option value="network_escpos" ${current.transport === "network_escpos" ? "selected" : ""}>Impresora de red ESC/POS</option><option value="cloud_webhook" ${current.transport === "cloud_webhook" ? "selected" : ""}>Servicio externo / webhook</option></select></label></div><label class="settings-field">Dirección del dispositivo o servicio <span class="meta">(si aplica)</span><input name="endpoint" value="${esc(current.connection_config?.endpoint || "")}" placeholder="IP local o URL del agente"></label>`;
+    const body = `<label class="settings-field">Nombre del punto<input name="name" maxlength="80" required value="${esc(current.name)}" placeholder="Ej. Caja, Cocina, Barra"></label><label class="settings-field">ID de impresora<input name="device_id" inputmode="text" autocomplete="off" spellcheck="false" value="${esc(current.device_id || "")}" placeholder="Pega el ID exacto del dispositivo"><span class="meta">Necesario para impresión automática. El dispositivo debe estar registrado y solo puede enlazarse a un punto.</span></label><fieldset class="printing-events-field"><legend>Este punto admite</legend><div class="settings-checks"><label class="settings-check"><input type="checkbox" name="mode_manual" ${modes.includes("manual") ? "checked" : ""}><span>Impresión manual desde la app</span></label><label class="settings-check"><input type="checkbox" name="mode_automatic" ${modes.includes("automatic") ? "checked" : ""}><span>Impresión automática</span></label></div></fieldset><label class="settings-check"><input type="checkbox" name="sunat_enabled" ${current.sunat_enabled ? "checked" : ""}><span>Sistema de impresión SUNAT</span></label><div class="printing-sunat-fields" ${current.sunat_enabled ? "" : "hidden"}><label class="settings-field">RUC emisor<input name="sunat_ruc" inputmode="numeric" maxlength="11" value="${esc(current.sunat_config?.ruc || "")}" placeholder="RUC de 11 dígitos"></label><label class="settings-field">Proveedor de emisión<input name="sunat_provider" value="${esc(current.sunat_config?.provider || "")}" placeholder="PSE/OSE por definir"></label><p class="meta">Este punto queda reservado para emisión electrónica SUNAT. La integración con el proveedor todavía está pendiente.</p></div><div class="settings-form-grid"><label class="settings-field">Transporte automático<select name="transport"><option value="local_agent" ${current.transport === "local_agent" ? "selected" : ""}>Agente local</option><option value="network_escpos" ${current.transport === "network_escpos" ? "selected" : ""}>Impresora de red ESC/POS</option><option value="cloud_webhook" ${current.transport === "cloud_webhook" ? "selected" : ""}>Servicio externo / webhook</option></select></label></div><label class="settings-field">Dirección del dispositivo o servicio <span class="meta">(si aplica)</span><input name="endpoint" value="${esc(current.connection_config?.endpoint || "")}" placeholder="IP local o URL del agente"></label>`;
     const dialog = openPrintDialog(point ? "Editar punto de Impresión" : "Crear punto de Impresión", body, async (d) => {
       const form = new FormData(d);
       const name = String(form.get("name") || "").trim();
@@ -360,16 +368,20 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       if (!supportedModes.length) throw new Error("Selecciona al menos un tipo de impresión para este punto.");
       const ruc = String(form.get("sunat_ruc") || "").trim();
       if (sunatEnabled && ruc && !/^\d{11}$/.test(ruc)) throw new Error("El RUC debe tener 11 dígitos.");
-      const payload = {
-        restaurant_id: state.restaurantId, name, is_active: true, sunat_enabled: sunatEnabled,
-        supported_output_modes: supportedModes,
-        output_mode: supportedModes.includes("manual") ? "manual" : "automatic",
-        transport: supportedModes.includes("automatic") ? String(form.get("transport")) : "browser",
-        connection_config: { endpoint: String(form.get("endpoint") || "").trim() },
-        sunat_config: sunatEnabled ? { ruc, provider: String(form.get("sunat_provider") || "").trim() } : {},
-      };
-      if (point) payload.id = point.id;
-      const { error } = await supabase.from("printing_points").upsert(payload);
+      const deviceId = String(form.get("device_id") || "").trim() || null;
+      if (!sunatEnabled && supportedModes.includes("automatic") && !deviceId) throw new Error("Pega el ID de una impresora registrada para habilitar impresión automática.");
+      const { error } = await supabase.rpc("save_printing_point", {
+        p_point_id: point?.id || null,
+        p_name: name,
+        p_is_active: point?.is_active ?? true,
+        p_sunat_enabled: sunatEnabled,
+        p_supported_modes: supportedModes,
+        p_output_mode: supportedModes.includes("manual") ? "manual" : "automatic",
+        p_transport: supportedModes.includes("automatic") ? String(form.get("transport")) : "browser",
+        p_connection_config: { endpoint: String(form.get("endpoint") || "").trim() },
+        p_sunat_config: sunatEnabled ? { ruc, provider: String(form.get("sunat_provider") || "").trim() } : {},
+        p_device_id: deviceId,
+      });
       if (error) throw error;
     });
     dialog.querySelector('[name="sunat_enabled"]').addEventListener("change", (event) => {
@@ -405,7 +417,13 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   function openPrintFlowEditor(flow = null) {
     const currentRoutes = flow ? (state.printingFlowRoutes || []).filter((route) => route.flow_id === flow.id && route.event_keys?.length) : [];
     const eventChecks = PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" name="flow_event" value="${key}" ${(flow?.captured_events || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("");
-    const pointOptions = (state.printingPoints || []).map((point) => `<option value="${esc(point.id)}">${esc(point.name)}${point.sunat_enabled ? " · SUNAT" : ""}${point.is_active ? "" : " · pausado"}</option>`).join("");
+    const pointOptions = (state.printingPoints || []).map((point) => {
+      const device = (state.printingDeviceStatuses || []).find((item) => item.id === point.device_id) || point.device;
+      const automaticCapable = (point.supported_output_modes || [point.output_mode]).includes("automatic");
+      const unavailable = !point.sunat_enabled && automaticCapable && (!point.device_id || device?.available === false || device?.operation_mode === "offline");
+      const modeLabel = point.sunat_enabled ? " · SUNAT" : !automaticCapable ? " · impresión desde app" : device ? (unavailable ? " · impresora inactiva" : " · impresora enlazada") : " · sin impresora";
+      return `<option value="${esc(point.id)}">${esc(point.name)}${modeLabel}${point.is_active ? "" : " · pausado"}</option>`;
+    }).join("");
     const templateOptions = (state.printingTicketTemplates || []).map((template) => `<option value="${esc(template.id)}">${esc(template.name)}${template.is_active ? "" : " · pausado"}</option>`).join("");
     const routeMarkup = (route = {}) => `<div class="printing-route-row" data-print-route ${route.id ? `data-route-id="${esc(route.id)}"` : ""}><div class="printing-route-grid"><label class="settings-field">Punto<select data-route-point>${pointOptions}</select></label><label class="settings-field">Formato<select data-route-template><option value="">Selecciona un formato</option>${templateOptions}</select></label><label class="settings-field">Salida<select data-route-mode><option value="manual" ${route.output_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${route.output_mode === "automatic" ? "selected" : ""}>Automática</option></select></label><label class="settings-field">Copias<input data-route-copies type="number" min="1" max="20" value="${Number(route.copies) || 1}"></label><label class="settings-field">Cadencia ms<input data-route-cadence type="number" min="0" max="60000" step="100" value="${Number(route.cadence_ms) || 0}"></label><label class="settings-field">Detalle<select data-route-depth><option value="compact" ${route.text_depth === "compact" ? "selected" : ""}>Compacto</option><option value="standard" ${!route.text_depth || route.text_depth === "standard" ? "selected" : ""}>Estándar</option><option value="detailed" ${route.text_depth === "detailed" ? "selected" : ""}>Detallado</option></select></label></div><div class="settings-checks printing-route-events">${PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" data-route-event value="${key}" ${(route.event_keys || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("")}</div><button type="button" class="rowaction" data-remove-route>Quitar este destino</button></div>`;
     const routesHtml = currentRoutes.map(routeMarkup).join("");
@@ -511,7 +529,10 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     });
   }
   async function togglePrintingRow(table, row) {
-    const { error } = await supabase.from(table).update({ is_active: !row.is_active }).eq("id", row.id).eq("restaurant_id", state.restaurantId);
+    const result = table === "printing_points"
+      ? await supabase.rpc("set_printing_point_active", { p_point_id: row.id, p_is_active: !row.is_active })
+      : await supabase.from(table).update({ is_active: !row.is_active }).eq("id", row.id).eq("restaurant_id", state.restaurantId);
+    const { error } = result;
     if (error) { toast(error.message || "No se pudo actualizar el estado."); return; }
     await load(); render();
   }

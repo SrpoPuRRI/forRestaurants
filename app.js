@@ -11,6 +11,7 @@ import createStatistics from "./statistics.js?v=20261113-statistics-order-extrem
 import createRestaurantSettings from "./restaurant-settings.js?v=20261113-statistics-order-extremes";
 import createRestaurantWorkspaces from "./restaurant-workspaces.js";
 import createAppearance from "./appearance.js?v=20261113-appearance-builder";
+import createPrintingRuntime from "./printing-runtime.js";
 
 //Sección de inicialización de las cuentas, función propuesta por la documentación que leí en Supabase
 const supabase =
@@ -187,6 +188,7 @@ const s = {
   roleSettings: {},
   settingsLoading: false,
   settingsError: "",
+  printingDeviceStatuses: [],
 };
 
 //Función de formateo de textos: Fuente W3WSchools
@@ -349,6 +351,7 @@ const restaurantSettings = createRestaurantSettings({
   toast,
   render: () => render(),
 });
+const printingRuntime = createPrintingRuntime({ supabase, state: s, esc });
 
 // Devuelve el pedido activo o el borrador actual.
 function active() {
@@ -492,6 +495,7 @@ async function loadAuthenticatedProfile(user) {
   s.locationId = profile.location_id;
   await restaurantSettings.load();
   appearance.apply();
+  printingRuntime.start();
 }
 // Valida las credenciales e inicia la sesión del usuario.
 async function submitLogin() {
@@ -569,6 +573,7 @@ async function initializeApp() {
   if (s.user) orderFlow.enter(s.page);
   supabase.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT" && s.user) {
+      printingRuntime.stop();
       orderFlow.cleanup();
       workspaces.cleanup();
       s.user = null;
@@ -2321,6 +2326,7 @@ function bind() {
     submitLogin();
   });
   $("#logout")?.addEventListener("click", async () => {
+    printingRuntime.stop();
     orderFlow.cleanup();
     workspaces.cleanup();
     if (supabase) await supabase.auth.signOut();

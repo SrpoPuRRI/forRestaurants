@@ -1,8 +1,8 @@
 # Handoff de Black&White POS
 
-**Actualizado:** 13 de noviembre de 2026
+**Actualizado:** 15 de noviembre de 2026
 **Repositorio:** `F:\PROYECTOS\forRestaurants`
-**Rama y corte local:** `main`, commit `61a6ae4` (`ankfasnkfamkafamfak`). El árbol estaba limpio antes de actualizar este documento.
+**Rama y último commit base:** `main`, commit `61a6ae4` (`ankfasnkfamkafamfak`). Hay cambios locales sin commit después de este corte; revisa `git status` antes de continuar.
 **Estado de publicación:** el propietario confirmó que subió a producción los últimos cambios y que funcionan. No se consultaron directamente GitHub Actions, Cloudflare Pages ni el historial remoto de Supabase en esta sesión; verifica esos estados antes de asumir que una migración se aplicó.
 
 ## Instrucciones importantes para el siguiente agente
@@ -191,3 +191,11 @@ Antes de implementar un módulo, lee su spec y sus dependencias:
 - No implementar una devolución como motivo obligatorio de corrección. Una corrección financiera no pide explicación; las notas de empleados guardan contexto. Las devoluciones como movimientos se registran aparte conforme al acuerdo del restaurante.
 - Efectivo siempre está disponible. Los demás métodos se configuran por restaurante.
 - No borrar datos por desactivar necesidades, productos o mesas fuera de las reglas expresas de cada spec.
+
+## Printer operation update (local, 2026-11-15)
+
+Migration `202611150001_printing_devices_and_operations.sql` plus the current web code add the printer device and task lifecycle. `printing_devices` stores immutable hardware identity, restaurant link, token hash, last heartbeat and operation mode. A server-only `register_printing_device` RPC provisions devices; a future device bootstrap service must call it with server credentials. The restaurant admin pastes the printer UUID into a printing point. Each physical device can belong to only one point.
+
+`printing_flow_runs` groups one event in one configured flow; `printing_jobs` target a point/device and use `published`, `taken`, `failed`, `success`. `operate_printing_device` combines token validation, heartbeat and task claim/result in one operation. Idle interval is 10 seconds; work or waiting for the web report uses 2 seconds. Web `operate_printing_web` operates every 5 seconds, considers a printer with a `taken` job inactive after 7 seconds without a heartbeat, and one without `taken` jobs inactive after 15 seconds. It fails remaining jobs for offline devices and completes runs after all jobs become terminal. Reports appear in the web app; accepting deletes that run's job rows while preserving the run summary.
+
+Manual reprints are rejected when a required target is unavailable. Automatic order/payment flows continue and record failed print tasks without blocking the business action. Existing queue rows are grouped into runs; old unlinked jobs become explicit failures. Printer firmware/agent, physical ticket rendering, ESC/POS protocol, retry/deduplication after power loss, and actual SUNAT integration are still unimplemented. These changes are local until the migration and frontend are deployed; no production migration was run in this task.

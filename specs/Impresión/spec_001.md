@@ -15,7 +15,7 @@ Las tablas `printing_points`, `printing_flows`, `printing_flow_routes`, `printin
 ### Opciones de salida
 
 - **Manual:** el punto puede declararse compatible con impresión manual desde el dispositivo. Falta implementar el renderizador final de formatos y la vista imprimible.
-- **Automática:** crear trabajos y entregarlos a un agente local o integración compatible. La cola de base de datos existe; faltan el agente, registro/identidad de dispositivos, reclamación/confirmación de trabajos y reintentos operativos.
+- **Automática:** crear trabajos y entregarlos a un agente local o integración compatible. La cola, el registro de dispositivos, el ciclo de presencia/reclamo/resultado y los reportes están preparados en la base/app web; falta el programa/agente de impresión y su reintento operativo.
 - **SUNAT:** es una integración de emisión electrónica, separada del transporte de papel. Cuando un punto active SUNAT, sus rutas se reservan para comprobantes electrónicos. La interfaz actual solo guarda el RUC y el proveedor declarado; no guarda credenciales ni emite. Falta elegir proveedor/OSE/PSE, guardar secretos en servidor, implementar emisión, cancelación/notas cuando correspondan y estados de aceptación/rechazo.
 
 Google Apps Script puede orquestar servicios alojados en Google, pero por sí solo no es un puente universal a impresoras USB/locales. No se adopta como mecanismo directo de impresión automática hasta definir un agente local o integración concreta.
@@ -59,7 +59,23 @@ Referencias técnicas: [guía Epson TM-T20III](https://files.support.epson.com/p
 
 ## Estado de implementación
 
-- Implementado en el código local: nombre **Sistemas de Impresión** en necesidades y Configuración; editores CRUD de puntos, flujos y formatos; puntos manuales/automáticos/mixtos; destinos y formatos múltiples por evento; guardado atómico de flujo/rutas con `save_printing_flow`; cola idempotente; `printTicket()` y emisión desde los eventos listados.
-- Requiere migraciones 007–011 y publicar el frontend para que se refleje en producción. Si se ve el bloque antiguo llamado «Comprobantes», ese navegador está usando un frontend anterior.
-- Pendiente: diseñador/renderizador final de tickets y pantalla de impresión manual; agente local y ciclo de vida/seguridad de dispositivos; entrega/reintentos automáticos; proveedor y credenciales SUNAT guardadas en servidor, emisión y respuestas de aceptación/rechazo; retención y cancelación de trabajos; validar con restaurantes la lista inicial de eventos.
+- Implementado en el código local: nombre **Sistemas de Impresión**; editores CRUD; rutas múltiples; `save_printing_flow`; cola idempotente; `printTicket()`; registro seguro de dispositivos por servidor; puntos enlazados a impresoras; estados y ciclo de ejecución; monitor web y reportes.
+- Requiere las migraciones de impresión 007–011 y `202611150001_printing_devices_and_operations.sql`, además de publicar el frontend.
+- Pendiente: agente/programa físico, protocolo de impresión ESC/POS, renderizador y vista manual, reintentos/idempotencia física, integración SUNAT, retención histórica de ejecuciones y validar eventos con restaurantes.
 - `restaurant_receipt_templates` se conserva durante el despliegue como tabla heredada, de solo compatibilidad. Nuevas escrituras deben usar `printing_ticket_templates`.
+
+## Dispositivos, operación y reportes (diseño actualizado 2026-11-15)
+
+La base y la app web preparan el ciclo operativo de impresoras de red; todavía no existe el programa que correrá dentro de la impresora.
+
+- `printing_devices` identifica un dispositivo físico por `hardware_key` inmutable, tiene un UUID que se copia desde la app, modelo, restaurante enlazado, hash de token y último latido. El secreto nunca se devuelve al cliente web. El alta inicial queda reservada a un servicio de servidor con `service_role`; el dispositivo no se autorregistra con credenciales anónimas.
+- Un punto que admite salida automática requiere un ID de dispositivo enlazado, y cada dispositivo puede pertenecer a un solo punto. El admin pega el ID exacto al crear/editar el punto. La UI muestra si está disponible y permite guardar o editar flujos aunque el dispositivo esté inactivo. Un punto solo manual no requiere dispositivo.
+- `printing_flow_runs` agrupa todas las tareas que produce un evento en un flujo. `printing_jobs` contiene por destino el `flow_run_id`, dispositivo, payload y snapshot de formato/ruta. Sus estados son `published`, `taken`, `failed` y `success`.
+- `operate_printing_device` es una operación coordinada: autentica el dispositivo, actualiza su latido y, cuando corresponde, reclama una tarea publicada o informa el resultado de una tarea. Sin tareas usa intervalo sugerido de 10 s; al tener una tarea de trabajo o esperar el cierre de un reporte, 2 s. El reclamo usa bloqueo concurrente para no asignar una tarea a dos dispositivos.
+- La app ejecuta `operate_printing_web` cada 5 s. Si existe una tarea `taken`, considera inactivo un dispositivo cuyo último latido supera 7 s; sin tareas `taken`, usa 15 s. Si se vence el plazo, marca como fallidas las tareas publicadas/tomadas de ese dispositivo. Las ejecuciones automáticas continúan aunque falle la impresión.
+- Al quedar terminales todas las tareas de una ejecución, la app presenta un reporte. Si todas terminan en `success`, presenta el mensaje de éxito; si hay fallas, presenta el detalle por destino. Aceptar el reporte borra únicamente las filas de trabajo de esa ejecución. El registro resumido de la ejecución se conserva y el dispositivo vuelve a estado ocioso en su siguiente operación.
+- Para una reimpresión iniciada manualmente, el servidor rechaza iniciar el flujo si alguno de los destinos aplicables está pausado o no disponible. Para eventos automáticos, los destinos no disponibles quedan registrados como tarea fallida y no bloquean el pedido ni el pago.
+- La salida manual desde la app todavía no tiene pantalla imprimible. Hasta implementarla, esa ruta termina en el reporte con `manual_printing_view_pending`; la cola automática solo publica tareas de impresión automática.
+- Los trabajos anteriores a esta migración se agrupan en ejecuciones; los que no estén enlazados a una impresora quedan como fallidos con `printing_device_not_linked`, para que no queden colas huérfanas.
+
+`register_printing_device` está protegido para `service_role` y espera que un servicio futuro presente `hardware_key`, modelo y un token aleatorio. La app web solo acepta el UUID, no registra hardware. La instalación, el protocolo/firmware, la recuperación tras corte de energía, los reintentos físicos y la garantía contra impresión duplicada todavía requieren diseñar y probar el agente del dispositivo. SUNAT también sigue sin integración real: por ahora sus tareas terminan con `sunat_integration_pending`.
