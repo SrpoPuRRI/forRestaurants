@@ -16,26 +16,15 @@ pertenece exclusivamente a BPrint:
 3. BPrint llama a la provisión segura y registra/actualiza `printing_devices`.
 4. BPrint guarda el UUID y el token localmente.
 
-Este script lee esas credenciales desde un archivo preparado por BPrint:
+Este script lee esas credenciales desde los archivos preparados por BPrint:
 
 ```text
-%LOCALAPPDATA%\PrintingLab\devices.json
+%LOCALAPPDATA%\BPrint\connection.json
+%LOCALAPPDATA%\BPrint\printers.json
 ```
 
-Formato esperado:
-
-```json
-[
-  {
-    "hardware_key": "CLAVE_GENERADA_POR_BPRINT",
-    "model": "TM-T20IV",
-    "device_id": "UUID-REGISTRADO-POR-BPRINT",
-    "device_token": "TOKEN-LOCAL-PROTEGIDO-POR-BPRINT",
-    "host": "127.0.0.1",
-    "port": 9100
-  }
-]
-```
+`connection.json` contiene los UUID y tokens generados por BPrint.
+`printers.json` contiene las colas Epson seleccionadas y sus metadatos.
 
 Ejecuta el laboratorio una vez que BPrint haya registrado y emitido las
 credenciales de los dispositivos:

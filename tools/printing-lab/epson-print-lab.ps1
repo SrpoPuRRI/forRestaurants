@@ -1,20 +1,50 @@
 param(
   [string]$SupabaseUrl = "https://yqrilxnldkzmbhxzagaz.supabase.co",
   [string]$PublishableKey = "sb_publishable_CIUObRoqGCvXU13tLI-22w_01R_9gda",
-  [string]$DevicesJsonPath = (Join-Path $env:LOCALAPPDATA "PrintingLab\devices.json"),
+  [string]$ConnectionJsonPath = (Join-Path $env:LOCALAPPDATA "BPrint\connection.json"),
+  [string]$PrintersJsonPath = (Join-Path $env:LOCALAPPDATA "BPrint\printers.json"),
   [int]$PollSeconds = 2
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-if (-not (Test-Path $DevicesJsonPath)) {
-  throw "No existe $DevicesJsonPath. BPrint debe registrar las impresoras y guardar primero su UUID/token."
+if (-not (Test-Path $ConnectionJsonPath)) {
+  throw "No existe $ConnectionJsonPath. Abre BPrint, inicia sesión y agrega las impresoras."
+}
+if (-not (Test-Path $PrintersJsonPath)) {
+  throw "No existe $PrintersJsonPath. Agrega las impresoras virtuales desde BPrint."
 }
 
-$devices = @(Get-Content -Raw -Path $DevicesJsonPath | ConvertFrom-Json)
+$connection = Get-Content -Raw -Path $ConnectionJsonPath | ConvertFrom-Json
+$devices = @($connection.devices)
 if ($devices.Count -eq 0) {
-  throw "No hay dispositivos provisionados por BPrint en $DevicesJsonPath."
+  throw "BPrint todavía no tiene dispositivos provisionados en $ConnectionJsonPath. Agrega las impresoras Epson desde BPrint."
+}
+
+$printerConfiguration = Get-Content -Raw -Path $PrintersJsonPath | ConvertFrom-Json
+$printerEntries = @($printerConfiguration.queueNames)
+if ($printerEntries.Count -eq 0) {
+  throw "BPrint no tiene colas Epson virtuales configuradas en $PrintersJsonPath."
+}
+
+for ($index = 0; $index -lt $devices.Count; $index++) {
+  $devicePort = 9100 + $index
+  $deviceModel = "TM-T20IV"
+  if ($index -gt 0) { $deviceModel = "TM-T88VII" }
+  $queueName = [string]$printerEntries[$index]
+  if ($null -ne $printerConfiguration.metadata.PSObject.Properties[$queueName]) {
+    $metadata = $printerConfiguration.metadata.PSObject.Properties[$queueName].Value
+    if (-not [string]::IsNullOrWhiteSpace([string]$metadata.model)) {
+      $deviceModel = [string]$metadata.model
+    }
+  }
+  $devices[$index] | Add-Member -NotePropertyName host -NotePropertyValue "127.0.0.1" -Force
+  $devices[$index] | Add-Member -NotePropertyName port -NotePropertyValue $devicePort -Force
+  $devices[$index] | Add-Member -NotePropertyName model -NotePropertyValue $deviceModel -Force
+  $devices[$index] | Add-Member -NotePropertyName queue_name -NotePropertyValue $queueName -Force
+  $devices[$index] | Add-Member -NotePropertyName device_id -NotePropertyValue ([string]$devices[$index].deviceId) -Force
+  $devices[$index] | Add-Member -NotePropertyName device_token -NotePropertyValue ([string]$devices[$index].deviceToken) -Force
 }
 
 foreach ($device in $devices) {
