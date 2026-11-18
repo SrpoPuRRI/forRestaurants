@@ -18,6 +18,7 @@ Configuración siempre está disponible. Además de ajustes generales, administr
 - Preferencias de operación y parámetros de módulos activos.
 - Métodos de pago e integraciones.
 - Dispositivos, estaciones, impresoras y formatos de tickets.
+- Integración fiscal (SUNAT/PSE) y datos requeridos para emitir comprobantes electrónicos.
 - Seguridad, notificaciones, exportación y auditoría.
 - Preferencias operativas del restaurante y sus valores guardados en las columnas o tablas de dominio correspondientes.
 
@@ -47,6 +48,7 @@ Las modalidades automática de Yape, Plin y tarjeta requieren definir proveedor,
 - **Delivery — entrada a Cocina:** tiene configuración separada del flujo normal para decidir si el pedido Delivery se envía a cocinar al recibir pago virtual. El estado exacto de pago que activa el envío queda pendiente de definir.
 - **Catálogo:** habilitar o deshabilitar Agregados, Grupos de categorías y Promociones. Al habilitar Promociones, el administrador las define en Catálogo y los empleados pueden aplicarlas al cobrar un pedido cuando la promoción cumpla sus condiciones.
 - **Sistemas de Impresión:** solo aparece si la necesidad está activa. Se divide en Puntos de Impresión, Flujos de impresión y Formatos de ticket; un flujo puede enviar un evento a varios puntos con formatos/rutas distintos.
+- **Integración SUNAT/PSE:** configuración administrativa separada de Sistemas de Impresión. El administrador activa las arquitecturas requeridas y configura/autoriza un PSE u otra modalidad de emisión admitida. Credenciales y certificados se mantienen en servidor. La integración registra en cada movimiento el estado del comprobante (enviado, aceptado o rechazado) y comunica el resultado al usuario. La aceptación puede emitir un evento de negocio capturable por un flujo de impresión; los puntos de impresión no contienen configuración SUNAT ni validan comprobantes.
 - **Salón — edición del mapa:** cuando Salón está activo, el administrador puede permitir por separado que los roles Mesero y Portero editen el mapa. El administrador siempre puede editarlo.
 - **Salón — sillas por piso:** un checkbox activa mostrar el total de sillas en cada piso. Al activarlo se deben introducir los totales por piso y elegir Guardar o Cancelar; Cancelar no activa la opción. Una vez guardado, el modo de visión muestra esos totales y las mesas dejan de aparecer vacías mediante una representación visual de sillas. Esa representación no se edita ni se acomodan sillas en la interfaz; no se guardan posiciones de sillas.
 

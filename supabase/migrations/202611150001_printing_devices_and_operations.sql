@@ -74,7 +74,8 @@ set status = case status
   when 'printed' then 'success'
   when 'cancelled' then 'failed'
   else status
-end;
+end
+where status in ('queued','claimed','printed','cancelled');
 update public.printing_jobs
 set status = 'failed', last_error = 'printing_device_not_linked', completed_at = now()
 where status in ('published','taken') and device_id is null;

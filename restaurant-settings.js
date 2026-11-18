@@ -328,25 +328,27 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   function openPrintDialog(title, body, onSave) {
     const dialog = document.createElement("dialog");
     dialog.className = "password-dialog printing-editor-dialog";
-    dialog.innerHTML = `<div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="button" class="btn primary" data-save>Guardar</button></div>`;
+    dialog.innerHTML = `<form data-print-editor><div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="submit" class="btn primary" data-save>Guardar</button></div></form>`;
     document.body.appendChild(dialog);
+    const form = dialog.querySelector("[data-print-editor]");
     dialog.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
     dialog.querySelector(".dialog-close").addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => dialog.remove(), { once: true });
-    dialog.querySelector("[data-save]").addEventListener("click", async (event) => {
-      const button = event.currentTarget;
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const saveButton = form.querySelector("[data-save]");
       const error = dialog.querySelector(".appearance-editor-error");
       error.textContent = "";
-      button.disabled = true;
+      saveButton.disabled = true;
       try {
-        await onSave(dialog);
+        await onSave(form);
         dialog.close();
         await load();
         render();
         toast("Configuración de impresión guardada.");
       } catch (saveError) {
         error.textContent = saveError.message || "No se pudo guardar la configuración.";
-        button.disabled = false;
+        saveButton.disabled = false;
       }
     });
     dialog.showModal();
