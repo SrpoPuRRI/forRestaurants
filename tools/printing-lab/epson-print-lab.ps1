@@ -1,120 +1,37 @@
 param(
   [string]$SupabaseUrl = "https://yqrilxnldkzmbhxzagaz.supabase.co",
   [string]$PublishableKey = "sb_publishable_CIUObRoqGCvXU13tLI-22w_01R_9gda",
-  [string]$Username,
-  [string]$AuthEmailBase = "srpopurr0000@gmail.com",
+  [string]$DevicesJsonPath = (Join-Path $env:LOCALAPPDATA "PrintingLab\devices.json"),
   [int]$PollSeconds = 2
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-if ([string]::IsNullOrWhiteSpace($Username)) {
-  $Username = Read-Host "Usuario administrador"
-}
-$password = Read-Host "Contrasena del administrador" -AsSecureString
-$bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password)
-try {
-  $plainPassword = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
-} finally {
-  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+if (-not (Test-Path $DevicesJsonPath)) {
+  throw "No existe $DevicesJsonPath. BPrint debe registrar las impresoras y guardar primero su UUID/token."
 }
 
-$normalized = $Username.Trim().Normalize(
-  [Text.NormalizationForm]::FormD
-) -replace '\p{Mn}', ''
-$normalized = $normalized.ToLowerInvariant()
-if ($normalized -notmatch '^[a-z0-9._-]{1,49}$') {
-  throw "Usuario invalido."
+$devices = @(Get-Content -Raw -Path $DevicesJsonPath | ConvertFrom-Json)
+if ($devices.Count -eq 0) {
+  throw "No hay dispositivos provisionados por BPrint en $DevicesJsonPath."
 }
 
-if ($AuthEmailBase -notmatch '^[^@]+@[^@]+$') {
-  throw "AUTH_EMAIL_BASE invalido."
-}
-$emailParts = $AuthEmailBase.ToLowerInvariant().Split("@")
-$email = "$($emailParts[0])+k-$normalized@$($emailParts[1])"
-
-$loginBody = @{
-  email = $email
-  password = $plainPassword
-} | ConvertTo-Json
-$loginHeaders = @{
-  apikey = $PublishableKey
-  Authorization = "Bearer $PublishableKey"
-}
-$session = Invoke-RestMethod `
-  -Method Post `
-  -Uri "$($SupabaseUrl.TrimEnd('/'))/auth/v1/token?grant_type=password" `
-  -Headers $loginHeaders `
-  -ContentType "application/json" `
-  -Body $loginBody
-
-$accessToken = [string]$session.access_token
-if ([string]::IsNullOrWhiteSpace($accessToken)) {
-  throw "Supabase no devolvio una sesion autenticada."
-}
-
-$configDirectory = Join-Path $env:LOCALAPPDATA "PrintingLab"
-$configPath = Join-Path $configDirectory "devices.json"
-New-Item -ItemType Directory -Path $configDirectory -Force | Out-Null
-$devices = if (Test-Path $configPath) {
-  @(Get-Content -Raw -Path $configPath | ConvertFrom-Json)
-} else {
-  @()
-}
-
-$printerDefinitions = @(
-  @{ Model = "TM-T20IV"; Port = 9100 },
-  @{ Model = "TM-T88VII"; Port = 9101 }
-)
-
-foreach ($printer in $printerDefinitions) {
-  $hardwareKey = "SIM-$($env:COMPUTERNAME)-$($printer.Model)-$($printer.Port)"
-  $provisionBody = @{
-    hardware_key = $hardwareKey
-    model = "Epson Virtual $($printer.Model)"
-  } | ConvertTo-Json
-  $provisionHeaders = @{
-    apikey = $PublishableKey
-    Authorization = "Bearer $accessToken"
-  }
-  $provisioned = Invoke-RestMethod `
-    -Method Post `
-    -Uri "$($SupabaseUrl.TrimEnd('/'))/functions/v1/printing-device-provision" `
-    -Headers $provisionHeaders `
-    -ContentType "application/json" `
-    -Body $provisionBody
-
-  $existingIndex = [Array]::FindIndex(
-    $devices,
-    [Predicate[object]] { param($item) $item.hardware_key -eq $hardwareKey })
-  $entry = [ordered]@{
-    hardware_key = $hardwareKey
-    model = "Epson Virtual $($printer.Model)"
-    device_id = [string]$provisioned.device_id
-    device_token = [string]$provisioned.device_token
-    host = "127.0.0.1"
-    port = $printer.Port
-  }
-  if ($existingIndex -ge 0) {
-    $devices[$existingIndex] = $entry
+foreach ($device in $devices) {
+  $deviceModel = if ([string]::IsNullOrWhiteSpace([string]$device.model)) {
+    "Virtual Epson"
   } else {
-    $devices += $entry
+    [string]$device.model
   }
-
-  Write-Host "Provisioned $($entry.model): $($entry.device_id)"
-}
-
-$devices | ConvertTo-Json -Depth 5 | Set-Content -Path $configPath -Encoding UTF8
-
-foreach ($printer in $printerDefinitions) {
+  $devicePort = if ($null -ne $device.port) { [int]$device.port } else { 9100 }
+  $listenerModel = if ($deviceModel -match "T88") { "TM-T88VII" } else { "TM-T20IV" }
   $arguments = @(
     "-NoLogo",
     "-NoProfile",
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$PSScriptRoot\virtual-epson-printer.ps1`"",
-    "-Model", $printer.Model,
-    "-Port", $printer.Port
+    "-Model", $listenerModel,
+    "-Port", $devicePort
   )
   Start-Process -FilePath "powershell.exe" -ArgumentList $arguments
 }
@@ -163,7 +80,7 @@ function Send-EscPos([string]$HostName, [int]$PrinterPort, [string]$Text) {
   }
 }
 
-Write-Host "Laboratorio activo. Poll cada $PollSeconds segundos."
+Write-Host "Laboratorio activo. No inicia sesiones ni registra dispositivos. Poll cada $PollSeconds segundos."
 Write-Host "Ctrl+C para detener."
 
 try {
