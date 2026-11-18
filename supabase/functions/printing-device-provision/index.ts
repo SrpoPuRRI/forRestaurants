@@ -39,14 +39,26 @@ Deno.serve(async (req) => {
     global: { headers: { Authorization: `Bearer ${serviceKey}` } },
   });
   const { data: account, error: accountError } = await db.from("accounts")
-    .select("restaurant_id,is_active,role_ids,restaurants!inner(status)")
+    .select("restaurant_id,is_active,role_ids")
     .eq("auth_user_id", user.id).maybeSingle();
-  if (accountError) return reply(500, { error: "account_lookup_failed" });
-  const restaurant = account?.restaurants as any;
+  if (accountError) return reply(500, {
+    error: "account_lookup_failed",
+    detail: accountError.message,
+  });
+  let restaurantStatus: string | null = null;
+  if (account?.restaurant_id) {
+    const { data: restaurant, error: restaurantError } = await db.from("restaurants")
+      .select("status").eq("id", account.restaurant_id).maybeSingle();
+    if (restaurantError) return reply(500, {
+      error: "restaurant_lookup_failed",
+      detail: restaurantError.message,
+    });
+    restaurantStatus = restaurant?.status ?? null;
+  }
   const { data: adminRole, error: roleError } = await db.from("roles")
     .select("id").eq("key", "admin").maybeSingle();
   if (roleError) return reply(500, { error: "role_catalog_unavailable" });
-  if (!account?.is_active || restaurant?.status !== "active"
+  if (!account?.is_active || restaurantStatus !== "active"
     || !adminRole?.id || !(account.role_ids || []).includes(adminRole.id))
     return reply(403, { error: "active_restaurant_admin_required" });
 
