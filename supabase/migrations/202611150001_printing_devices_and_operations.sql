@@ -19,6 +19,7 @@ create table if not exists public.printing_devices (
 alter table public.printing_points
   add column if not exists device_id uuid;
 alter table public.printing_points drop constraint if exists printing_points_device_id_fkey;
+alter table public.printing_points drop constraint if exists printing_points_device_restaurant_fkey;
 alter table public.printing_points
   add constraint printing_points_device_restaurant_fkey
   foreign key (device_id, restaurant_id) references public.printing_devices(id, restaurant_id);
@@ -49,6 +50,7 @@ alter table public.printing_jobs
   add column if not exists taken_at timestamptz,
   add column if not exists completed_at timestamptz;
 alter table public.printing_jobs drop constraint if exists printing_jobs_device_id_fkey;
+alter table public.printing_jobs drop constraint if exists printing_jobs_device_restaurant_fkey;
 alter table public.printing_jobs
   add constraint printing_jobs_device_restaurant_fkey
   foreign key (device_id, restaurant_id) references public.printing_devices(id, restaurant_id);
@@ -90,6 +92,8 @@ alter table public.printing_jobs
   add constraint printing_jobs_status_check
   check (status in ('published','taken','failed','success'));
 alter table public.printing_jobs alter column flow_run_id set not null;
+alter table public.printing_jobs
+  drop constraint if exists printing_jobs_flow_run_restaurant_fkey;
 alter table public.printing_jobs
   add constraint printing_jobs_flow_run_restaurant_fkey
   foreign key (flow_run_id, restaurant_id)
