@@ -67,6 +67,17 @@ Deno.serve(async (req) => {
   const hardwareKey = String(body.hardware_key ?? "").trim();
   const model = String(body.model ?? "").trim();
   const existingDeviceToken = String(body.existing_device_token ?? "").trim();
+  const displayName = String(body.display_name ?? "").trim().slice(0, 120);
+  const serialNumber = String(body.serial_number ?? "").trim().slice(0, 200);
+  const networkName = String(body.network_name ?? "").trim().slice(0, 120);
+  const ipAddress = String(body.ip_address ?? "").trim().slice(0, 45);
+  const tcpPortValue = Number(body.tcp_port);
+  const tcpPort = Number.isInteger(tcpPortValue) && tcpPortValue >= 1 && tcpPortValue <= 65535
+    ? tcpPortValue
+    : null;
+  const connectionType = ["USB", "Red", "Local", "Virtual / local"].includes(String(body.connection_type))
+    ? String(body.connection_type)
+    : null;
   if (hardwareKey.length < 8 || hardwareKey.length > 200)
     return reply(400, { error: "invalid_hardware_key" });
   if (model.length < 1 || model.length > 120)
@@ -87,6 +98,12 @@ Deno.serve(async (req) => {
       const { error: updateError } = await db.from("printing_devices").update({
         model,
         restaurant_id: account.restaurant_id,
+        display_name: displayName || null,
+        serial_number: serialNumber || null,
+        network_name: networkName || null,
+        ip_address: ipAddress || null,
+        tcp_port: tcpPort,
+        connection_type: connectionType,
         last_seen_at: new Date().toISOString(),
         operation_mode: "idle",
         updated_at: new Date().toISOString(),
@@ -101,6 +118,12 @@ Deno.serve(async (req) => {
     const { error: updateError } = await db.from("printing_devices").update({
       model,
       restaurant_id: account.restaurant_id,
+      display_name: displayName || null,
+      serial_number: serialNumber || null,
+      network_name: networkName || null,
+      ip_address: ipAddress || null,
+      tcp_port: tcpPort,
+      connection_type: connectionType,
       device_token_hash: tokenHash,
       last_seen_at: new Date().toISOString(),
       operation_mode: "idle",
@@ -119,6 +142,12 @@ Deno.serve(async (req) => {
     return reply(400, { error: "printer_registration_failed", detail: registerError?.message });
   const { error: linkError } = await db.from("printing_devices").update({
     restaurant_id: account.restaurant_id,
+    display_name: displayName || null,
+    serial_number: serialNumber || null,
+    network_name: networkName || null,
+    ip_address: ipAddress || null,
+    tcp_port: tcpPort,
+    connection_type: connectionType,
   }).eq("id", deviceId);
   if (linkError) return reply(400, { error: "printer_link_failed", detail: linkError.message });
 
