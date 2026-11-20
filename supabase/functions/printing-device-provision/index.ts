@@ -66,13 +66,14 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return reply(400, { error: "invalid_json" }); }
   const hardwareKey = String(body.hardware_key ?? "").trim();
   const model = String(body.model ?? "").trim();
+  const existingDeviceToken = String(body.existing_device_token ?? "").trim();
   if (hardwareKey.length < 8 || hardwareKey.length > 200)
     return reply(400, { error: "invalid_hardware_key" });
   if (model.length < 1 || model.length > 120)
     return reply(400, { error: "invalid_printer_model" });
 
   const { data: existing, error: existingError } = await db.from("printing_devices")
-    .select("id,restaurant_id").eq("hardware_key", hardwareKey).maybeSingle();
+    .select("id,restaurant_id,device_token_hash").eq("hardware_key", hardwareKey).maybeSingle();
   if (existingError) return reply(500, { error: "printer_lookup_failed" });
   if (existing?.restaurant_id && existing.restaurant_id !== account.restaurant_id)
     return reply(409, { error: "printing_device_already_linked" });
@@ -80,6 +81,23 @@ Deno.serve(async (req) => {
   const deviceToken = randomToken();
   const tokenHash = await sha256(deviceToken);
   if (existing) {
+    if (existingDeviceToken.length >= 32
+      && existingDeviceToken.length <= 200
+      && await sha256(existingDeviceToken) === existing.device_token_hash) {
+      const { error: updateError } = await db.from("printing_devices").update({
+        model,
+        restaurant_id: account.restaurant_id,
+        last_seen_at: new Date().toISOString(),
+        operation_mode: "idle",
+        updated_at: new Date().toISOString(),
+      }).eq("id", existing.id);
+      if (updateError) return reply(400, { error: "printer_update_failed", detail: updateError.message });
+      return reply(200, {
+        device_id: existing.id,
+        device_token: existingDeviceToken,
+        hardware_key: hardwareKey,
+      });
+    }
     const { error: updateError } = await db.from("printing_devices").update({
       model,
       restaurant_id: account.restaurant_id,
