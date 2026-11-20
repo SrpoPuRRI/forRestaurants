@@ -361,7 +361,6 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   }
   function openPrintPointEditor(point = null) {
     const current = point || { name: "", is_active: true, sunat_enabled: false, supported_output_modes: ["manual"], output_mode: "manual", transport: "browser", connection_config: {}, sunat_config: {} };
-    const modes = current.supported_output_modes || [current.output_mode || "manual"];
     const deviceOptions = (state.printingDevices || []).map((device) => {
       const network = device.ip_address
         ? `${device.network_name || "LAN"} · ${device.ip_address}${device.tcp_port ? `:${device.tcp_port}` : ""}`
@@ -369,31 +368,23 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       const serial = device.serial_number ? ` · serie ${device.serial_number}` : "";
       return `<option value="${esc(device.id)}">${esc(device.display_name || device.model)} · ${network}${serial} · ${esc(device.id)} · ${device.operation_mode === "offline" ? "inactiva" : "activa"}</option>`;
     }).join("");
-    const body = `<label class="settings-field">Nombre del punto<input name="name" maxlength="80" required value="${esc(current.name)}" placeholder="Ej. Caja, Cocina, Barra"></label><label class="settings-field">ID de impresora registrada<input name="device_id" list="printing-device-ids" inputmode="text" autocomplete="off" spellcheck="false" value="${esc(current.device_id || "")}" placeholder="Selecciona o pega el UUID"><datalist id="printing-device-ids">${deviceOptions}</datalist><span class="meta">Las impresoras registradas por BPrint aparecen aquí aunque todavía no tengan un punto. El dispositivo solo puede enlazarse a un punto.</span></label><fieldset class="printing-events-field"><legend>Este punto admite</legend><div class="settings-checks"><label class="settings-check"><input type="checkbox" name="mode_manual" ${modes.includes("manual") ? "checked" : ""}><span>Impresión manual desde la app</span></label><label class="settings-check"><input type="checkbox" name="mode_automatic" ${modes.includes("automatic") ? "checked" : ""}><span>Impresión automática</span></label></div></fieldset><label class="settings-check"><input type="checkbox" name="sunat_enabled" ${current.sunat_enabled ? "checked" : ""}><span>Sistema de impresión SUNAT</span></label><div class="printing-sunat-fields" ${current.sunat_enabled ? "" : "hidden"}><label class="settings-field">RUC emisor<input name="sunat_ruc" inputmode="numeric" maxlength="11" value="${esc(current.sunat_config?.ruc || "")}" placeholder="RUC de 11 dígitos"></label><label class="settings-field">Proveedor de emisión<input name="sunat_provider" value="${esc(current.sunat_config?.provider || "")}" placeholder="PSE/OSE por definir"></label><p class="meta">Este punto queda reservado para emisión electrónica SUNAT. La integración con el proveedor todavía está pendiente.</p></div><div class="settings-form-grid"><label class="settings-field">Transporte automático<select name="transport"><option value="local_agent" ${current.transport === "local_agent" ? "selected" : ""}>Agente local</option><option value="network_escpos" ${current.transport === "network_escpos" ? "selected" : ""}>Impresora de red ESC/POS</option><option value="cloud_webhook" ${current.transport === "cloud_webhook" ? "selected" : ""}>Servicio externo / webhook</option></select></label></div><label class="settings-field">Dirección del dispositivo o servicio <span class="meta">(si aplica)</span><input name="endpoint" value="${esc(current.connection_config?.endpoint || "")}" placeholder="IP local o URL del agente"></label>`;
+    const body = `<label class="settings-field">Nombre del punto<input name="name" maxlength="80" required value="${esc(current.name)}" placeholder="Ej. Caja, Cocina, Barra"></label><label class="settings-field">UUID de impresora registrada en BPrint<select name="device_id" required><option value="">Selecciona una impresora</option>${deviceOptions}</select><span class="meta">Encuentra el UUID al abrir el detalle de la impresora en BPrint. El UUID permanece visible aunque la impresora esté apagada.</span></label>`;
     const dialog = openPrintDialog(point ? "Editar punto de Impresión" : "Crear punto de Impresión", body, async (d) => {
       const form = new FormData(d);
       const name = String(form.get("name") || "").trim();
       if (!name) throw new Error("Escribe el nombre del punto.");
-      const sunatEnabled = d.querySelector('[name="sunat_enabled"]').checked;
-      const supportedModes = [
-        ...(d.querySelector('[name="mode_manual"]').checked ? ["manual"] : []),
-        ...(d.querySelector('[name="mode_automatic"]').checked ? ["automatic"] : []),
-      ];
-      if (!supportedModes.length) throw new Error("Selecciona al menos un tipo de impresión para este punto.");
-      const ruc = String(form.get("sunat_ruc") || "").trim();
-      if (sunatEnabled && ruc && !/^\d{11}$/.test(ruc)) throw new Error("El RUC debe tener 11 dígitos.");
       const deviceId = String(form.get("device_id") || "").trim() || null;
-      if (!sunatEnabled && supportedModes.includes("automatic") && !deviceId) throw new Error("Pega el ID de una impresora registrada para habilitar impresión automática.");
+      if (!deviceId) throw new Error("Selecciona el UUID de una impresora registrada.");
       const { error } = await supabase.rpc("save_printing_point", {
         p_point_id: point?.id || null,
         p_name: name,
         p_is_active: point?.is_active ?? true,
-        p_sunat_enabled: sunatEnabled,
-        p_supported_modes: supportedModes,
-        p_output_mode: supportedModes.includes("manual") ? "manual" : "automatic",
-        p_transport: supportedModes.includes("automatic") ? String(form.get("transport")) : "browser",
-        p_connection_config: { endpoint: String(form.get("endpoint") || "").trim() },
-        p_sunat_config: sunatEnabled ? { ruc, provider: String(form.get("sunat_provider") || "").trim() } : {},
+        p_sunat_enabled: false,
+        p_supported_modes: ["automatic"],
+        p_output_mode: "automatic",
+        p_transport: "local_agent",
+        p_connection_config: {},
+        p_sunat_config: {},
         p_device_id: deviceId,
       });
       if (error) throw error;
