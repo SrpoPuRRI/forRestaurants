@@ -1,6 +1,6 @@
 # Handoff de Black&White POS
 
-**Actualizado:** 15 de noviembre de 2026
+**Actualizado:** 25 de noviembre de 2026
 **Repositorio:** `F:\PROYECTOS\forRestaurants`
 **Rama y último commit base:** `main`, commit `61a6ae4` (`ankfasnkfamkafamfak`). Hay cambios locales sin commit después de este corte; revisa `git status` antes de continuar.
 **Estado de publicación:** el propietario confirmó que subió a producción los últimos cambios y que funcionan. No se consultaron directamente GitHub Actions, Cloudflare Pages ni el historial remoto de Supabase en esta sesión; verifica esos estados antes de asumir que una migración se aplicó.
@@ -32,6 +32,16 @@ Las secciones fijas son **Cuentas, Estadísticas, Flujo de pedidos, Catálogo y 
 10. Configuración, al final.
 
 El POS autenticado muestra el nombre y logo del restaurante como marca principal. El login conserva la marca Black&White.
+
+## Objetivos de arquitectura pendientes
+
+1. **Terminar el flujo de impresión** — foco de trabajo actual. BPrint aporta el agente y la impresión de prueba; completar la app web según `specs/Impresión/spec_001.md`.
+2. **Terminar la arquitectura de SUNAT** — conexión fiscal del administrador y ciclo de emisión/aceptación/rechazo asociado a los movimientos; debe seguir separado del módulo de impresión.
+3. **Terminar la arquitectura de pagos automáticos** — definir proveedores, configuración, confirmación y registro conciliable de pagos antes de habilitar cobros automáticos.
+4. **Terminar la arquitectura de CRM** — definir datos, permisos y flujos necesarios para que deje de ser solo un prototipo visual.
+5. **Investigar la arquitectura de Delivery** — determinar las necesidades del restaurante, roles, estados y coordinación con pedidos, Cocina y Salón antes de implementarlo.
+
+El objetivo activo es cerrar primero el flujo de impresión. Los otros cuatro quedan en cola de diseño y no deben mezclarse en esta etapa.
 
 ## Estado de producción más reciente
 
@@ -70,6 +80,7 @@ Migraciones presentes en este repositorio, en orden:
 - `202611130009_remove_needs_check_constraints.sql`: elimina las restricciones CHECK que mencionan `restaurants.needs`; la lista admitida queda a cargo de la interfaz y la validación del alta. Conserva la sincronización de roles y la conversión de `receipts`.
 - `202611130010_printing_output_modes.sql`: añade los modos manual/automático compatibles por punto de impresión.
 - `202611130011_save_printing_flow_rpc.sql`: guarda atómicamente un flujo y sus rutas; valida eventos, permisos, puntos, modos de salida y formatos, y conserva rutas históricas al retirarlas.
+- `202611250001_create_printing_point_from_restaurant_device.sql`: permite crear puntos solo con un dispositivo ya registrado para el restaurante actual y revoca el RPC anterior que permitía reclamar dispositivos sin restaurante.
 
 El usuario indicó que desplegó los últimos cambios y que funcionan. Aun así, el Handoff no reemplaza la evidencia del historial remoto: si una nueva tarea depende de una columna/función específica, verifica `supabase_migrations.schema_migrations` o consulta el esquema remoto antes de proponer otra migración. Nunca edites migraciones ya aplicadas; agrega una con timestamp posterior.
 
@@ -98,7 +109,7 @@ El propietario añadió manualmente una columna `accounts.passwords` en Supabase
 
 El catálogo multi-restaurante tiene productos estándar, categorías, etiquetas, variantes, agregados y disponibilidad por sede. `is_active` significa disponible para vender; lo inactivo sigue visible en la búsqueda, pero no se añade al pedido y la app presenta un diálogo propio. Desactivar no equivale a eliminar. No hay inventario por cantidad.
 
-El catálogo de administración solo crea productos estándar. Ingreso/Egreso se gestionan como productos especiales protegidos, descritos abajo. La necesidad **Sistemas de Impresión** muestra las áreas Puntos de Impresión, Flujos de impresión y Formatos de ticket. El frontend local ya contiene CRUD de configuración y `printTicket(event)` crea trabajos cuando hay rutas configuradas. Falta un agente o servicio que consuma la cola y controle impresoras. No hay integración SUNAT/PSE implementada.
+El catálogo de administración solo crea productos estándar. Ingreso/Egreso se gestionan como productos especiales protegidos, descritos abajo. La necesidad **Sistemas de Impresión** muestra Puntos, Flujos y Formatos. El frontend local contiene CRUD de configuración y `printTicket(event)` crea trabajos cuando hay rutas configuradas. BPrint ya implementa el agente WPF multiimpresora y la impresión de prueba está lista según el usuario; la arquitectura BPrint queda cerrada. La parte web pendiente está listada en `specs/Impresión/spec_001.md`. No hay integración SUNAT/PSE implementada.
 
 ## Flujo de pedidos, pagos y productos especiales
 
@@ -146,10 +157,10 @@ La UI/código local de Cocina y Salón ya contiene trabajo sustancial (colas, pr
 
 - CRM: prototipo visual; no necesita conexión a base todavía.
 - Delivery: espacio «Próximamente»; el rol Repartidor aún no ejecuta el flujo.
-- Sistemas de Impresión: la cola y el modelo están creados; falta el agente de impresora y la vista imprimible manual.
-- SUNAT/PSE: debe vivir en una configuración administrativa propia, separada de Sistemas de Impresión. La emisión actual no está implementada. El resultado de emisión se asocia al movimiento; la aceptación puede crear un evento que los flujos de impresión capturen. Los puntos de impresión no tienen propiedades SUNAT.
+- Sistemas de Impresión: el alta web de punto pide nombre e ID; la base valida que el dispositivo pertenezca al restaurante y que no esté enlazado a otro punto. Al seleccionar el punto, se ve información de solo lectura y su estado BPrint. Los flujos, formatos, cola y reportes tienen implementación local; falta la vista imprimible manual y otros pendientes de `specs/Impresión/spec_001.md`.
+- SUNAT/PSE: Configuración solo muestra “Próximamente”. La emisión no está implementada y queda separada de Sistemas de Impresión.
 
-**Divergencia actual:** el frontend aún consulta y guarda `printing_points.sunat_enabled` y cambia el comportamiento del formato según esa propiedad (`restaurant-settings.js`). Esta lógica contradice la decisión documentada y está pendiente de retiro/migración; no presentar la separación SUNAT/impresión como ya implementada. `cpe_accepted` también es por ahora un evento propuesto, no habilitado en la validación de eventos ni conectado a la cola.
+`printing_points.sunat_enabled` y `sunat_config` se conservan como columnas heredadas por compatibilidad; la interfaz nueva no las consulta ni configura. `cpe_accepted` sigue siendo un evento propuesto, todavía no conectado a la cola.
 - Barra: espacio informativo si el restaurante separó barra; no hay reparto operativo de artículos entre Cocina y Barra.
 
 ## Setter, logo, autenticación y publicación
@@ -162,11 +173,11 @@ El sitio público usa Cloudflare Pages. El usuario compró `bnw.cash` y configur
 
 El portafolio/página comercial está especificado en `specs/Portafolio/spec_001.md`. La propuesta comercial vigente es S/ 2,000 por compra única, S/ 50 anuales para continuidad/infraestructura, tablets reacondicionadas opcionales por S/ 300 y enlaces a impresoras compatibles con precios objetivo de S/ 600–800; faltan condiciones de renovación, soporte, garantía y afiliación/reventa. La carpeta existente y destinada al sitio es `F:\PROYECTOS\dosMiniProyectos\portfolio` (`protfolio/` era un error de escritura); su `index.html` está vacío y el sitio aún no está implementado. El objetivo es GitHub Pages y un subdominio de `bnw.cash` que redirija al sitio; no mezclarlo con el runtime del POS. El handoff local está en `F:\PROYECTOS\dosMiniProyectos\portfolio\HANDOFF.md`.
 
-BPrint está documentado en `F:\PROYECTOS\BPrint`. Sus dos candidatos prioritarios para investigar son Epson OmniLink TM-T88VI-DT2 (PC Windows/Linux integrada para un agente persistente) y Epson TM-T88VI (PHP/SQLite/Server Direct Print embebidos, sin evidencia de worker persistente arbitrario). Ninguno se ha probado físicamente ni se debe anunciar como compatible. La ruta principal inmediata sigue siendo desarrollar primero el simulador en una computadora. SUNAT/PSE queda separado: configura emisión y estado tributario del movimiento; un evento posterior de aceptación puede generar un trabajo imprimible, pero BPrint no participa en la emisión ni validación.
+BPrint está documentado en `F:\PROYECTOS\BPrint`. La arquitectura desktop WPF multiimpresora está implementada y el usuario confirmó que la impresión de prueba está lista. No anunciar compatibilidad certificada con modelos físicos sin probarlos. SUNAT/PSE queda separado: configura emisión y estado tributario del movimiento; un evento posterior de aceptación puede generar un trabajo imprimible, pero BPrint no participa en la emisión ni validación.
 
-La arquitectura BPrint aclarada el 2026-11-15 no usa grupo persistente. Cada impresora mantiene un lease individual basado en `last_seen_at`; otra instancia autorizada puede reclamarla tras **más de 20 segundos** sin actividad, con toma atómica y un nuevo token/generación que cerca al propietario anterior. Si otra instancia la toma, BPrint anterior recibe `ownership_lost` en su próxima operación y deja de reportarla, pero sigue administrando las otras. BPrint comprueba todas localmente y envía un lote a Supabase; el lote reduce llamadas, no las escrituras de estado por fila. Cadencia inicial de prototipo: 10 s en reposo y 2 s durante trabajo; la web sondea cada 5 s. Los antiguos umbrales web 7/15 s deben revisarse y coordinarse con el lease antes de reemplazar la RPC actual `operate_printing_device`, que todavía opera una impresora por llamada. Falta diseñar la RPC batch, provisión segura y recuperación/idempotencia de trabajos `taken` para evitar duplicados/resultados tardíos.
+La arquitectura BPrint vigente no usa grupo persistente. Cada impresora mantiene un lease individual basado en `last_seen_at`; otra instancia autorizada puede reclamarla tras más de 20 segundos sin actividad, con toma atómica y fencing del propietario anterior. BPrint opera impresoras habilitadas en un batch; la migración `202611240001_printing_agent_leases.sql` define esa RPC y el usuario confirmó que la aplicó. BPrint usa 10 s en reposo y 2 s con trabajo; la web sondea cada 5 s con umbrales de 7/15 s. El diseño batch, provisión y recuperación/idempotencia ya están implementados en código/migraciones locales.
 
-El primer prototipo ya existe en `F:\PROYECTOS\BPrint\prototype-desktop`, consola .NET 10 con JSON compartido local; no tiene GUI, no usa Supabase y no imprime en hardware. Compila con cero advertencias y errores. Para su guía de arranque y los demás detalles consulta `F:\PROYECTOS\BPrint\HANDOFF.md`.
+El prototipo de consola sigue en `F:\PROYECTOS\BPrint\prototype-desktop`; la app de trabajo actual es WPF en `F:\PROYECTOS\BPrint\prototype-desktop-wpf`. Consulta `F:\PROYECTOS\BPrint\HANDOFF.md` para el estado del instalador y su protocolo final de publicación.
 
 ## Documentación para continuar
 
@@ -201,10 +212,10 @@ Antes de implementar un módulo, lee su spec y sus dependencias:
 - Efectivo siempre está disponible. Los demás métodos se configuran por restaurante.
 - No borrar datos por desactivar necesidades, productos o mesas fuera de las reglas expresas de cada spec.
 
-## Printer operation update (local, 2026-11-15)
+## Printing architecture status (2026-11-25)
 
-Migration `202611150001_printing_devices_and_operations.sql` plus the current web code add the printer device and task lifecycle. `printing_devices` stores immutable hardware identity, restaurant link, token hash, last heartbeat and operation mode. A server-only `register_printing_device` RPC provisions devices; a future device bootstrap service must call it with server credentials. The restaurant admin pastes the printer UUID into a printing point. Each physical device can belong to only one point.
+`printing_devices` stores immutable hardware identity, restaurant link, token hash, heartbeat and operation mode. The server-only `printing-device-provision` Edge Function provisions devices; the restaurant admin pastes the printer UUID into a point. Each physical device can belong to one point.
 
-The deployed/current local model still treats `operate_printing_device` as one call per printer. The next architecture will have one BPrint installation batch-operate its assigned printers, but that RPC/entity/migration has not been implemented. Existing intervals (10 seconds idle, 2 seconds busy, web every 5 seconds, offline thresholds 7/15 seconds) are inherited from the per-device design and must be recalculated/validated for batch operation before implementation.
+The current BPrint agent calls `operate_printing_batch` once for its active printers. Presence, leases, claims and results are handled in the batch; the lease expires after 20 seconds without activity. Cadence is 10 seconds idle, 2 seconds busy, web every 5 seconds, with 7/15-second web inactivation thresholds.
 
-Manual reprints are rejected when a required target is unavailable. Automatic order/payment flows continue and record failed print tasks without blocking the business action. Existing queue rows are grouped into runs; old unlinked jobs become explicit failures. Printer firmware/agent, physical ticket rendering, ESC/POS protocol, retry/deduplication after power loss, and actual SUNAT integration are still unimplemented. These changes are local until the migration and frontend are deployed; no production migration was run in this task.
+The WPF agent and print-test flow are implemented. The user confirmed `202611240001_printing_agent_leases.sql` was applied; the remote state was not independently queried. Current web work: finish the manual browser-print view, verify events/report flow end to end, and confirm the web-to-agent provisioning contract. SUNAT is shown as “Próximamente”; legacy `sunat_enabled` fields are no longer used by the web UI. BPrint's final publication protocol is Authenticode signing through Velopack, building signed packages, verifying signatures/hashes, and confirming the Edge Function deployment.

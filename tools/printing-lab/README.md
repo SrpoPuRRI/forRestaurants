@@ -1,54 +1,38 @@
 # Laboratorio Epson virtual
 
-Este laboratorio prueba la cola real de Supabase sin instalar ni ejecutar
-BPrint.
+Este laboratorio envía trabajos de un entorno Supabase a emuladores ESC/POS
+locales. No es BPrint ni certifica impresoras físicas.
 
-Inicia impresoras Epson virtuales en TCP local, por ejemplo:
+## Requisitos y seguridad
 
-- Epson TM-T20IV, `127.0.0.1:9100`
-- Epson TM-T88VII, `127.0.0.1:9101`
+- BPrint debe estar cerrado para que el laboratorio pueda adquirir los leases.
+- Usa un proyecto Supabase de pruebas con impresoras provisionadas allí. El
+  script rechaza el proyecto de producción por defecto; `-AllowProduction` es una
+  opción explícita y se debe evitar para pruebas normales.
+- El script necesita PowerShell 7 para leer `connection.dat`, que está protegido
+  por DPAPI para el usuario actual. Ejecutarlo desde otra cuenta Windows falla.
+- Los datos de impresoras deben corresponder al mismo proyecto Supabase indicado.
+- `Ctrl+C` detiene también los procesos ocultos de los emuladores que inició el
+  laboratorio.
 
-El laboratorio no inicia sesión y no registra dispositivos. Esa responsabilidad
-pertenece exclusivamente a BPrint:
+## Preparación
 
-1. BPrint inicia sesión como administrador.
-2. BPrint descubre una impresora real o virtual.
-3. BPrint llama a la provisión segura y registra/actualiza `printing_devices`.
-4. BPrint guarda el UUID y el token localmente.
-
-Este script lee esas credenciales desde los archivos preparados por BPrint:
-
-```text
-%LOCALAPPDATA%\BPrint\connection.json
-%LOCALAPPDATA%\BPrint\printers.json
-```
-
-`connection.json` contiene los UUID y tokens generados por BPrint.
-`printers.json` contiene las colas Epson seleccionadas y sus metadatos.
-
-Ejecuta el laboratorio una vez que BPrint haya registrado y emitido las
-credenciales de los dispositivos:
+1. Inicia sesión y provisiona dispositivos en BPrint apuntando a un proyecto de
+   pruebas.
+2. Crea los puntos/formatos/flujos en ese mismo proyecto y encola un evento.
+3. Cierra BPrint antes de iniciar el laboratorio.
+4. Ejecuta el script:
 
 ```powershell
-Set-Location "F:\PROYECTOS\forRestaurants"
-powershell.exe -ExecutionPolicy Bypass -File `
-  .\tools\printing-lab\epson-print-lab.ps1
+pwsh -NoProfile -File .\tools\printing-lab\epson-print-lab.ps1 `
+  -SupabaseUrl "https://TU_PROYECTO_DE_PRUEBAS.supabase.co" `
+  -PublishableKey "TU_CLAVE_PUBLICA_DE_PRUEBAS"
 ```
 
-Cada dispositivo registrado debe enlazarse desde Configuración del POS al punto
-correspondiente.
+El script empareja colas locales con dispositivos mediante `hardware_key`, crea
+un emulador TCP por impresora y ejecuta el contrato batch actual
+`operate_printing_batch(p_devices,p_results,p_instance_id)`. Los bytes recibidos
+quedan en `output/<modelo>-<puerto>/`.
 
-Los tickets recibidos se guardan en:
-
-```text
-tools\printing-lab\output\<modelo>-<puerto>\
-```
-
-El script usa:
-
-- `operate_printing_device` para latido, reclamo y confirmación;
-- TCP crudo ESC/POS con bytes de inicialización y corte;
-- los formatos y rutas configurados en el POS.
-
-El laboratorio no usa `printing-device-provision`, no recibe credenciales de
-usuario y no necesita iniciar sesión.
+La salida solo demuestra que el agente envió bytes ESC/POS a un socket TCP. No
+prueba alimentación de papel, corte, sensores, buffering ni recuperación física.
