@@ -8,7 +8,7 @@ import {
 } from "./supabase-config.js";
 import createOrderFlow from "./order-flow.js";
 import createStatistics from "./statistics.js?v=20261113-statistics-order-extremes";
-import createRestaurantSettings from "./restaurant-settings.js?v=20261118-ticket-form-v2";
+import createRestaurantSettings from "./restaurant-settings.js?v=20261125-ticket-editor-v2";
 import createRestaurantWorkspaces from "./restaurant-workspaces.js";
 import createAppearance from "./appearance.js?v=20261113-appearance-builder";
 import createPrintingRuntime from "./printing-runtime.js";
