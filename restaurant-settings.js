@@ -28,6 +28,12 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   const roleDefaults = (role) => ({ restaurant_id: state.restaurantId, role_id: role.id, rankings_products: false, rankings_variants: false, rankings_addons: false, rankings_categories: false, order_minimum_allowed: false, order_maximum_allowed: false, corrections_allowed: false });
   const check = (key, label, value, extra = "") => `<label class="settings-check"><input type="checkbox" data-setting="${key}" ${value ? "checked" : ""} ${extra}><span>${label}</span></label>`;
   const safeHex = (value, fallback) => /^#[0-9a-f]{6}$/i.test(String(value || "")) ? value : fallback;
+  const TICKET_FORMAT_DEFAULTS = Object.freeze({
+    margin_top_mm: 0, margin_right_mm: 0, margin_bottom_mm: 0, margin_left_mm: 0,
+    min_height_mm: 0, font_family: "device", font_size_pt: 12,
+    line_spacing: "normal", density: "normal", text_depth: "standard",
+    feed_before_mm: 0, feed_after_mm: 3, cut_mode: "partial",
+  });
 
   async function load() {
     if (!supabase || !state.restaurantId) return;
@@ -358,19 +364,42 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       const events = (flow.captured_events || []).map(printEventLabel).join(" · ") || "Sin eventos";
       return `<article class="printing-config-card"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${flow.is_active ? "is-on" : ""}">${flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} destino${flowRoutes.length === 1 ? "" : "s"} configurado${flowRoutes.length === 1 ? "" : "s"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar flujo</button><button type="button" class="rowaction" data-print-toggle-flow="${esc(flow.id)}">${flow.is_active ? "Pausar" : "Activar"}</button></div></article>`;
     }).join("");
-    const templateCards = templates.map((template) => `<article class="printing-config-card"><div class="printing-config-card-head"><strong>${esc(template.name)}</strong><span class="printing-status ${template.is_active ? "is-on" : ""}">${template.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(`${template.format?.paper_width_mm || 80} mm · ${template.format?.header?.lines?.length || 0} líneas de encabezado`)}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-template="${esc(template.id)}">Editar</button><button type="button" class="rowaction" data-print-toggle-template="${esc(template.id)}">${template.is_active ? "Pausar" : "Activar"}</button></div></article>`).join("");
+    const templateCards = templates.map((template) => {
+      const linked = routes.some((route) => route.template_id === template.id && route.event_keys?.length);
+      return `<button type="button" class="printing-config-card printing-template-card" data-print-open-template="${esc(template.id)}"><span class="printing-config-card-head"><strong>${esc(template.name)}</strong>${linked ? '<span class="printing-status is-on">Enlazado</span>' : ""}</span><span class="meta">${esc(`${template.format?.paper_width_mm || 80} mm · ${template.format?.header?.lines?.length || 0} líneas de encabezado`)}</span></button>`;
+    }).join("");
     return `<section class="panel settings-panel printing-settings-panel"><div class="panel-head"><div><div class="panel-title">Sistemas de Impresión</div><div class="meta">Asigna impresoras a puntos, define flujos y guarda formatos de ticket.</div></div></div>${state.printingSettingsError ? `<p class="inline-error" role="alert">${esc(state.printingSettingsError)}</p>` : ""}${printingArea("Puntos de Impresión", "Agrega dispositivos BPrint registrados en tu restaurante.", pointCards, "create-print-point", "Crear punto de Impresión")}${printingArea("Flujos de impresión", "Elige qué eventos se capturan y a qué destinos se envían.", flowCards, "create-print-flow", "Crear flujo de impresión")}${printingArea("Formatos de ticket", "Guarda varios formatos y selecciona uno distinto en cada ruta.", templateCards, "create-print-template", "Crear formato de ticket")}</section>`;
   }
   function openPrintDialog(title, body, onSave, options = {}) {
-    const { submitLabel = "Guardar", errorMode = "inline" } = options;
+    const { submitLabel = "Guardar", errorMode = "inline", onDelete = null, dialogClass = "" } = options;
     const dialog = document.createElement("dialog");
-    dialog.className = "password-dialog printing-editor-dialog";
-    dialog.innerHTML = `<form data-print-editor><div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="submit" class="btn primary" data-save>${esc(submitLabel)}</button></div></form>`;
+    dialog.className = `password-dialog printing-editor-dialog ${dialogClass}`.trim();
+    dialog.innerHTML = `<form data-print-editor><div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button>${onDelete ? '<button type="button" class="btn danger" data-delete>Eliminar</button>' : ""}<button type="submit" class="btn primary" data-save>${esc(submitLabel)}</button></div></form>`;
     document.body.appendChild(dialog);
     const form = dialog.querySelector("[data-print-editor]");
     dialog.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
     dialog.querySelector(".dialog-close").addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => dialog.remove(), { once: true });
+    if (onDelete) dialog.querySelector("[data-delete]").addEventListener("click", async () => {
+      const deleteButton = dialog.querySelector("[data-delete]");
+      const saveButton = dialog.querySelector("[data-save]");
+      const error = dialog.querySelector(".appearance-editor-error");
+      deleteButton.disabled = true;
+      saveButton.disabled = true;
+      error.textContent = "";
+      try {
+        const deleted = await onDelete(form);
+        if (deleted === false) { deleteButton.disabled = false; saveButton.disabled = false; return; }
+        dialog.close();
+        await load();
+        render();
+        toast("Formato eliminado.");
+      } catch (deleteError) {
+        error.textContent = deleteError.message || "No se pudo eliminar el formato.";
+        deleteButton.disabled = false;
+        saveButton.disabled = false;
+      }
+    });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const saveButton = form.querySelector("[data-save]");
@@ -420,31 +449,277 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       }
     }, { submitLabel: "Aceptar", errorMode: "dialog" });
   }
-  function openPrintTemplateEditor(template = null) {
-    const format = template?.format || {};
+  function clampTicketElement(element, canvas) {
+    const x = Math.max(0, Math.min(95, Number(element.x) || 0));
+    const y = Math.max(0, Math.min(95, Number(element.y) || 0));
+    const width = Math.max(4, Math.min(100 - x, Number(element.width) || 24));
+    const height = Math.max(3, Math.min(100 - y, Number(element.height) || 12));
+    return `left:${x}%;top:${y}%;width:${width}%;height:${height}%;`;
+  }
+  function ticketElementMarkup(element, canvas) {
+    const data = esc(JSON.stringify(element));
+    let contents = "";
+    if (element.type === "image") contents = element.preview_url
+      ? `<img src="${esc(element.preview_url)}" alt="Imagen del ticket">`
+      : '<span class="ticket-image-placeholder">Imagen</span>';
+    else if (element.type === "qr") contents = `<span class="ticket-fake-qr" aria-label="QR de ejemplo">${Array.from({ length: 121 }, (_, i) => ((i * 17 + Math.floor(i / 11) * 7) % 5 < 2) ? "<i></i>" : "<i class='off'></i>").join("")}</span>`;
+    else if (element.type === "sunat_summary") contents = '<span class="ticket-summary-placeholder">VALOR RESUMEN<br>0123456789ABCDEF<br>(referencia visual)</span>';
+    else if (element.type === "margin") contents = `<span class="ticket-margin-label">Margen ${esc(element.side || "")}</span>`;
+    return `<div class="ticket-canvas-object ticket-object-${esc(element.type)} ${element.type === "margin" ? "is-margin" : ""}" data-ticket-element="${data}" style="${clampTicketElement(element, canvas)}" tabindex="0">${contents}<span class="ticket-object-resize" data-ticket-resize aria-label="Redimensionar"></span></div>`;
+  }
+  function showTicketImagePicker(onPick) {
+    const picker = document.createElement("dialog");
+    picker.className = "password-dialog ticket-image-dialog";
+    picker.innerHTML = `<form method="dialog"><div class="color-scheme-editor-head"><div><div class="panel-title">Agregar imagen al ticket</div><p class="meta">La imagen se guardará como recurso privado del restaurante.</p></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div><label class="ticket-image-drop" data-ticket-drop><input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden><span class="ticket-image-upload-icon">↑</span><strong>Arrastra y suelta una imagen</strong><span>o <button type="button" class="logo-browse" data-ticket-browse>elige un archivo</button></span><small>Resolución recomendada: 512 × 512 px · máximo 5 MB. Se convierte a PNG para impresión.</small><span class="ticket-image-filename" data-ticket-filename></span></label><div class="appearance-editor-error" role="alert"></div><div class="dialog-actions"><button type="button" class="btn secondary" data-ticket-cancel>Cancelar</button><button type="button" class="btn primary" data-ticket-accept disabled>Aceptar</button></div></form>`;
+    document.body.appendChild(picker);
+    const input = picker.querySelector('input[type="file"]');
+    const drop = picker.querySelector("[data-ticket-drop]");
+    const accept = picker.querySelector("[data-ticket-accept]");
+    let chosen = null;
+    const choose = (file) => {
+      const error = picker.querySelector(".appearance-editor-error");
+      error.textContent = "";
+      if (!file) return;
+      if (!new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]).has(file.type) || file.size > 5 * 1024 * 1024) {
+        error.textContent = "Usa PNG, JPG, WebP o SVG de hasta 5 MB.";
+        accept.disabled = true;
+        return;
+      }
+      chosen = file;
+      picker.querySelector("[data-ticket-filename]").textContent = file.name;
+      accept.disabled = false;
+    };
+    picker.querySelector("[data-ticket-browse]").addEventListener("click", (event) => { event.preventDefault(); event.stopPropagation(); input.click(); });
+    picker.querySelector(".dialog-close").addEventListener("click", () => picker.close());
+    picker.querySelector("[data-ticket-cancel]").addEventListener("click", () => picker.close());
+    input.addEventListener("change", () => choose(input.files?.[0]));
+    ["dragenter", "dragover"].forEach((eventName) => drop.addEventListener(eventName, (event) => { event.preventDefault(); drop.classList.add("drag-over"); }));
+    ["dragleave", "dragend"].forEach((eventName) => drop.addEventListener(eventName, () => drop.classList.remove("drag-over")));
+    drop.addEventListener("drop", (event) => { event.preventDefault(); drop.classList.remove("drag-over"); choose(event.dataTransfer?.files?.[0]); });
+    accept.addEventListener("click", async () => {
+      try {
+        const objectUrl = URL.createObjectURL(chosen);
+        const image = new Image();
+        image.src = objectUrl;
+        await image.decode();
+        const canvas = document.createElement("canvas");
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        const png = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        URL.revokeObjectURL(objectUrl);
+        if (!png) throw new Error("No se pudo procesar la imagen.");
+        onPick(new File([png], `${chosen.name.replace(/\.[^.]+$/, "")}.png`, { type: "image/png" }));
+        picker.close();
+      } catch (error) {
+        picker.querySelector(".appearance-editor-error").textContent = error.message || "No se pudo leer la imagen.";
+      }
+    });
+    picker.addEventListener("close", () => picker.remove(), { once: true });
+    picker.showModal();
+  }
+  function ticketDeleteConfirmation() {
+    return new Promise((resolve) => {
+      const dialog = document.createElement("dialog");
+      dialog.className = "password-dialog ticket-delete-confirm-dialog";
+      dialog.innerHTML = `<div class="panel-title">Eliminar formato</div><p>El formato se eliminará de tu restaurante. Si está enlazado a un flujo, primero tendrás que quitarlo de ese flujo.</p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button><button type="button" class="btn danger" data-confirm>Eliminar formato</button></div>`;
+      document.body.appendChild(dialog);
+      let confirmed = false;
+      dialog.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
+      dialog.querySelector("[data-confirm]").addEventListener("click", () => { confirmed = true; dialog.close(); });
+      dialog.addEventListener("close", () => { dialog.remove(); resolve(confirmed); }, { once: true });
+      dialog.showModal();
+    });
+  }
+  async function openPrintTemplateEditor(template = null) {
+    const initial = template?.format ? JSON.parse(JSON.stringify(template.format)) : {};
+    const format = {
+      schema_version: 2,
+      paper_width_mm: Number(initial.paper_width_mm) === 58 ? 58 : 80,
+      header: initial.header || { lines: [] }, footer: initial.footer || { lines: [] },
+      body: { show_location: true, show_operator: true, show_note: true, show_payment_breakdown: true, ...(initial.body || {}) },
+      layout: { ...TICKET_FORMAT_DEFAULTS, ...(initial.layout || {}) },
+      elements: Array.isArray(initial.elements) ? initial.elements : [],
+    };
+    const pendingImages = new Map();
+    const objectUrls = new Set();
+    for (const element of format.elements.filter((item) => item.type === "image" && item.asset_path)) {
+      const { data } = await supabase.storage.from("ticket-assets").createSignedUrl(element.asset_path, 3600);
+      if (data?.signedUrl) element.preview_url = data.signedUrl;
+    }
     const header = (format.header?.lines || []).join("\n");
     const footer = (format.footer?.lines || []).join("\n");
-    const body = `<label class="settings-field">Nombre del formato<input name="name" maxlength="80" required value="${esc(template?.name || "")}" placeholder="Ej. Ticket cliente"></label><label class="settings-field">Ancho del papel<select name="paper_width_mm"><option value="58" ${Number(format.paper_width_mm) === 58 ? "selected" : ""}>58 mm</option><option value="80" ${Number(format.paper_width_mm || 80) === 80 ? "selected" : ""}>80 mm</option></select></label><label class="settings-field">Encabezado<textarea name="header" rows="3" placeholder="Una línea por renglón">${esc(header)}</textarea></label><label class="settings-field">Pie del ticket<textarea name="footer" rows="3" placeholder="Una línea por renglón">${esc(footer)}</textarea></label><div class="settings-checks"><label class="settings-check"><input type="checkbox" data-template-body="show_location" ${format.body?.show_location === false ? "" : "checked"}><span>Mostrar sede</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_operator" ${format.body?.show_operator === false ? "" : "checked"}><span>Mostrar empleado</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_note" ${format.body?.show_note === false ? "" : "checked"}><span>Mostrar nota</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_payment_breakdown" ${format.body?.show_payment_breakdown === false ? "" : "checked"}><span>Mostrar desglose de pago</span></label></div>`;
-    openPrintDialog(template ? "Editar formato de ticket" : "Crear formato de ticket", body, async (dialog) => {
+    const numberField = (key, label, unit) => `<label class="settings-field">${label}<div class="ticket-number-input"><input type="number" step="0.5" data-layout="${key}" value="${Object.hasOwn(initial.layout || {}, key) ? esc(format.layout[key]) : ""}" placeholder="Dejar en blanco para el valor por defecto"><span>${unit}</span></div></label>`;
+    const optionField = (key, label, defaultLabel, options) => `<label class="settings-field">${label}<select data-layout="${key}"><option value="__default">${defaultLabel} (por defecto)</option>${options.map(([value, text]) => `<option value="${value}" ${Object.hasOwn(initial.layout || {}, key) && format.layout[key] === value ? "selected" : ""}>${text}</option>`).join("")}</select></label>`;
+    const body = `<div class="ticket-editor-layout"><div class="ticket-editor-controls"><label class="settings-field">Nombre del formato<input name="name" maxlength="80" required value="${esc(template?.name || "")}" placeholder="Ej. Ticket de venta"></label><label class="settings-field">Ancho del papel<select name="paper_width_mm"><option value="80" ${format.paper_width_mm === 80 ? "selected" : ""}>80 mm</option><option value="58" ${format.paper_width_mm === 58 ? "selected" : ""}>58 mm</option></select></label><label class="settings-field">Encabezado<textarea name="header" rows="3" placeholder="Una línea por renglón">${esc(header)}</textarea></label><label class="settings-field">Pie del ticket<textarea name="footer" rows="3" placeholder="Una línea por renglón">${esc(footer)}</textarea></label><div class="settings-checks ticket-basic-options"><label class="settings-check"><input type="checkbox" data-template-body="show_location" ${format.body.show_location ? "checked" : ""}><span>Mostrar sede</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_operator" ${format.body.show_operator ? "checked" : ""}><span>Mostrar empleado</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_note" ${format.body.show_note ? "checked" : ""}><span>Mostrar nota</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_payment_breakdown" ${format.body.show_payment_breakdown ? "checked" : ""}><span>Mostrar desglose de pago</span></label></div><details class="ticket-advanced-options"><summary>Mostrar opciones avanzadas</summary><p class="meta">Los valores en blanco usan el valor predeterminado del formato; se guardan explícitamente en el JSON.</p><div class="ticket-advanced-grid">${numberField("margin_top_mm", "Margen superior", "mm")}${numberField("margin_right_mm", "Margen derecho", "mm")}${numberField("margin_bottom_mm", "Margen inferior", "mm")}${numberField("margin_left_mm", "Margen izquierdo", "mm")}${numberField("min_height_mm", "Altura mínima", "mm")}${numberField("feed_before_mm", "Avance antes de imprimir", "mm")}${numberField("feed_after_mm", "Avance antes del corte", "mm")}${optionField("font_family", "Tipografía", "Tipografía de impresora", [["device", "Tipografía de impresora"], ["sans", "Sans serif rasterizada"], ["serif", "Serif rasterizada"]])}${optionField("font_size_pt", "Tamaño de texto", "12 pt", [["10", "10 pt"], ["12", "12 pt"], ["14", "14 pt"], ["16", "16 pt"], ["20", "20 pt"]])}${optionField("line_spacing", "Espaciado de línea", "Normal", [["compact", "Compacto"], ["normal", "Normal"], ["wide", "Amplio"]])}${optionField("density", "Densidad / calidad", "Normal", [["draft", "Borrador"], ["normal", "Normal"], ["high", "Alta"]])}${optionField("text_depth", "Profundidad del texto", "Estándar", [["compact", "Compacta"], ["standard", "Estándar"], ["detailed", "Detallada"]])}${optionField("cut_mode", "Corte al finalizar", "Corte parcial", [["none", "Sin corte"], ["partial", "Parcial"], ["full", "Completo"]])}</div></details></div><section class="ticket-preview-panel"><div class="ticket-preview-head"><div><strong>Vista previa</strong><span class="meta">Los elementos insertados son referencias visuales.</span></div><div class="ticket-add-control"><button type="button" class="ticket-add-button" data-ticket-add aria-label="Agregar elemento">×</button><div class="ticket-add-menu" data-ticket-add-menu hidden><button type="button" data-add-element="image">Agregar imagen</button><button type="button" data-add-element="qr">Agregar QR</button><button type="button" data-add-element="sunat_summary">Agregar valor resumen SUNAT</button></div></div></div><div class="ticket-preview-scroll"><div class="ticket-preview-paper" data-ticket-canvas><div class="ticket-preview-header" data-preview-header>${esc(header || "Nombre del restaurante")}</div><div class="ticket-preview-sample">PEDIDO DE EJEMPLO<br>2 × Producto<br>1 × Bebida<br><br>TOTAL&nbsp;&nbsp;&nbsp; S/ 00.00</div><div class="ticket-preview-footer" data-preview-footer>${esc(footer || "Gracias por su compra")}</div>${format.elements.map((element) => ticketElementMarkup(element, { getBoundingClientRect: () => ({ width: 260, height: 600 }) })).join("")}</div></div></section></div>`;
+    const editor = openPrintDialog(template ? "Editar formato de ticket" : "Crear formato de ticket", body, async (dialog) => {
       const form = new FormData(dialog);
       const name = String(form.get("name") || "").trim();
       if (!name) throw new Error("Escribe el nombre del formato.");
-      const formatPayload = {
-        schema_version: 1, paper_width_mm: Number(form.get("paper_width_mm")),
-        header: { lines: String(form.get("header") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
-        body: {
-          show_location: dialog.querySelector('[data-template-body="show_location"]').checked,
-          show_operator: dialog.querySelector('[data-template-body="show_operator"]').checked,
-          show_note: dialog.querySelector('[data-template-body="show_note"]').checked,
-          show_payment_breakdown: dialog.querySelector('[data-template-body="show_payment_breakdown"]').checked,
-        },
-        footer: { lines: String(form.get("footer") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
-      };
-      const payload = { restaurant_id: state.restaurantId, name, format: formatPayload, is_active: true };
-      if (template) payload.id = template.id;
-      const { error } = await supabase.from("printing_ticket_templates").upsert(payload);
-      if (error) throw error;
+      const templateId = template?.id || crypto.randomUUID();
+      const layout = {};
+      for (const [key, defaultValue] of Object.entries(TICKET_FORMAT_DEFAULTS)) {
+        const input = dialog.querySelector(`[data-layout="${key}"]`);
+        if (!input) { layout[key] = defaultValue; continue; }
+        if (input.value === "__default" || input.value === "") layout[key] = defaultValue;
+        else layout[key] = typeof defaultValue === "number" ? Number(input.value) : input.value;
+      }
+      const uploadedPaths = [];
+      const elements = format.elements.map((element) => ({ ...element }));
+      try {
+        for (const element of elements) {
+          delete element.preview_url;
+          const file = pendingImages.get(element.id);
+          if (file) {
+            const path = `${state.restaurantId}/templates/${templateId}/${crypto.randomUUID()}.png`;
+            const { error: uploadError } = await supabase.storage.from("ticket-assets").upload(path, file, { contentType: "image/png", cacheControl: "3600", upsert: false });
+            if (uploadError) throw uploadError;
+            uploadedPaths.push(path);
+            element.asset_path = path;
+          }
+        }
+        const formatPayload = {
+          schema_version: 2,
+          paper_width_mm: Number(form.get("paper_width_mm")),
+          header: { lines: String(form.get("header") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
+          body: {
+            show_location: dialog.querySelector('[data-template-body="show_location"]').checked,
+            show_operator: dialog.querySelector('[data-template-body="show_operator"]').checked,
+            show_note: dialog.querySelector('[data-template-body="show_note"]').checked,
+            show_payment_breakdown: dialog.querySelector('[data-template-body="show_payment_breakdown"]').checked,
+          },
+          footer: { lines: String(form.get("footer") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
+          layout,
+          elements,
+        };
+        const { error } = await supabase.from("printing_ticket_templates").upsert({ id: templateId, restaurant_id: state.restaurantId, name, format: formatPayload, is_active: true });
+        if (error) throw error;
+      } catch (error) {
+        if (uploadedPaths.length) await supabase.storage.from("ticket-assets").remove(uploadedPaths);
+        throw error;
+      }
+    }, {
+      dialogClass: "ticket-format-editor",
+      onDelete: template ? async () => {
+        if (!(await ticketDeleteConfirmation())) return false;
+        const { error } = await supabase.rpc("delete_printing_ticket_template", { p_template_id: template.id });
+        if (error?.message?.includes("ticket_template_linked")) throw new Error("Este formato está enlazado a un flujo. Desenlázalo antes de eliminarlo.");
+        if (error) throw new Error(error.message || "No se pudo eliminar el formato.");
+      } : null,
     });
+    const canvas = editor.querySelector("[data-ticket-canvas]");
+    canvas.dataset.paperWidth = String(format.paper_width_mm);
+    let elements = format.elements;
+    const renderElements = () => {
+      canvas.querySelectorAll("[data-ticket-element]").forEach((node) => node.remove());
+      elements.forEach((element) => canvas.insertAdjacentHTML("beforeend", ticketElementMarkup(element, canvas)));
+      bindCanvasElements();
+    };
+    const updateBasicPreview = () => {
+      const h = editor.querySelector('[name="header"]').value.trim() || "Nombre del restaurante";
+      const f = editor.querySelector('[name="footer"]').value.trim() || "Gracias por su compra";
+      editor.querySelector("[data-preview-header]").textContent = h;
+      editor.querySelector("[data-preview-footer]").textContent = f;
+    };
+    const addMargin = (element, side) => {
+      if (elements.some((item) => item.type === "margin" && item.parent_id === element.id && item.side === side)) return;
+      const geom = { x: Number(element.x) || 0, y: Number(element.y) || 0, width: Number(element.width) || 22, height: Number(element.height) || 8 };
+      if (side === "top") { geom.height = geom.y; geom.y = 0; }
+      if (side === "bottom") { geom.y += geom.height; geom.height = Math.max(0, 100 - geom.y); }
+      if (side === "left") { geom.width = geom.x; geom.x = 0; }
+      if (side === "right") { geom.x += geom.width; geom.width = Math.max(0, 100 - geom.x); }
+      elements.push({ id: crypto.randomUUID(), type: "margin", parent_id: element.id, side, ...geom });
+      renderElements();
+    };
+    const openObjectMenu = (element, x, y) => {
+      editor.querySelector("[data-ticket-object-menu]")?.remove();
+      const menu = document.createElement("div");
+      menu.className = "ticket-object-menu";
+      menu.dataset.ticketObjectMenu = "true";
+      const items = element.type === "margin"
+        ? [["remove", "Eliminar"]]
+        : [["remove", "Eliminar"], ...[["top", "Agregar margen arriba"], ["left", "Agregar margen a la izquierda"], ["right", "Agregar margen a la derecha"], ["bottom", "Agregar margen abajo"]].filter(([side]) => !elements.some((item) => item.type === "margin" && item.parent_id === element.id && item.side === side)).map(([side, label]) => [`margin:${side}`, label]), ["center", "Centrar"]];
+      menu.innerHTML = items.map(([action, label]) => `<button type="button" data-object-action="${action}">${label}</button>`).join("");
+      editor.appendChild(menu);
+      const rect = editor.getBoundingClientRect();
+      menu.style.left = `${Math.max(8, Math.min(x - rect.left, rect.width - menu.offsetWidth - 8))}px`;
+      menu.style.top = `${Math.max(56, Math.min(y - rect.top, rect.height - menu.offsetHeight - 56))}px`;
+      menu.addEventListener("click", (event) => {
+        const action = event.target.closest("[data-object-action]")?.dataset.objectAction;
+        if (!action) return;
+        menu.remove();
+        if (action === "remove") elements = elements.filter((item) => item.id !== element.id && item.parent_id !== element.id);
+        else if (action.startsWith("margin:")) addMargin(element, action.split(":")[1]);
+        else if (action === "center") {
+          const sideMargins = elements.filter((item) => item.type === "margin" && item.parent_id === element.id && ["left", "right"].includes(item.side));
+          const left = sideMargins.find((item) => item.side === "left") || { id: crypto.randomUUID(), type: "margin", parent_id: element.id, side: "left", x: 0, y: element.y, width: 0, height: element.height };
+          const right = sideMargins.find((item) => item.side === "right") || { id: crypto.randomUUID(), type: "margin", parent_id: element.id, side: "right", x: 0, y: element.y, width: 0, height: element.height };
+          const width = Math.min(Number(element.width) || 22, 70);
+          left.width = Math.max(0, (100 - width) / 2); left.x = 0;
+          right.width = left.width; right.x = 100 - right.width;
+          element.x = left.width; element.width = width;
+          if (!elements.includes(left)) elements.push(left);
+          if (!elements.includes(right)) elements.push(right);
+          renderElements();
+        }
+        renderElements();
+      });
+    };
+    const bindCanvasElements = () => canvas.querySelectorAll("[data-ticket-element]").forEach((node) => {
+      const element = elements.find((item) => item.id === JSON.parse(node.dataset.ticketElement).id);
+      if (!element) return;
+      let start = null;
+      let longPress = null;
+      node.addEventListener("dblclick", (event) => { event.preventDefault(); openObjectMenu(element, event.clientX, event.clientY); });
+      node.addEventListener("contextmenu", (event) => { event.preventDefault(); openObjectMenu(element, event.clientX, event.clientY); });
+      node.addEventListener("pointerdown", (event) => {
+        if (event.target.closest("[data-ticket-resize]")) return;
+        start = { x: event.clientX, y: event.clientY, left: Number(element.x) || 0, top: Number(element.y) || 0, resize: false };
+        longPress = setTimeout(() => openObjectMenu(element, event.clientX, event.clientY), 500);
+        node.setPointerCapture(event.pointerId);
+      });
+      node.addEventListener("pointermove", (event) => {
+        if (!start || event.buttons === 0) return;
+        const rect = canvas.getBoundingClientRect();
+        const dx = (event.clientX - start.x) / rect.width * 100;
+        const dy = (event.clientY - start.y) / rect.height * 100;
+        if (Math.abs(dx) + Math.abs(dy) > 1) clearTimeout(longPress);
+        element.x = Math.max(0, Math.min(100 - (Number(element.width) || 10), start.left + dx));
+        element.y = Math.max(0, Math.min(100 - (Number(element.height) || 5), start.top + dy));
+        node.style.left = `${element.x}%`; node.style.top = `${element.y}%`;
+      });
+      node.addEventListener("pointerup", () => { clearTimeout(longPress); start = null; });
+      node.querySelector("[data-ticket-resize]")?.addEventListener("pointerdown", (event) => {
+        event.stopPropagation(); event.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        start = { x: event.clientX, y: event.clientY, width: Number(element.width) || 20, height: Number(element.height) || 8, resize: true, rect };
+        node.setPointerCapture(event.pointerId);
+      });
+      node.addEventListener("pointermove", (event) => {
+        if (!start?.resize || event.buttons === 0) return;
+        element.width = Math.max(4, Math.min(100 - (Number(element.x) || 0), start.width + (event.clientX - start.x) / start.rect.width * 100));
+        element.height = Math.max(3, Math.min(100 - (Number(element.y) || 0), start.height + (event.clientY - start.y) / start.rect.height * 100));
+        node.style.width = `${element.width}%`; node.style.height = `${element.height}%`;
+      });
+      node.addEventListener("pointerup", () => { if (start?.resize) start = null; });
+    });
+    editor.querySelector('[name="header"]').addEventListener("input", updateBasicPreview);
+    editor.querySelector('[name="footer"]').addEventListener("input", updateBasicPreview);
+    editor.querySelector('[name="paper_width_mm"]').addEventListener("change", (event) => canvas.dataset.paperWidth = event.target.value);
+    editor.querySelector("[data-ticket-add]").addEventListener("click", () => { const menu = editor.querySelector("[data-ticket-add-menu]"); menu.hidden = !menu.hidden; });
+    editor.querySelectorAll("[data-add-element]").forEach((button) => button.addEventListener("click", () => {
+      editor.querySelector("[data-ticket-add-menu]").hidden = true;
+      const type = button.dataset.addElement;
+      const insert = (file = null) => {
+        const element = { id: crypto.randomUUID(), type, x: 35, y: 35 + elements.length * 3, width: type === "image" ? 30 : 24, height: type === "image" ? 18 : 16 };
+        if (file) { pendingImages.set(element.id, file); element.preview_url = URL.createObjectURL(file); objectUrls.add(element.preview_url); }
+        elements.push(element);
+        renderElements();
+      };
+      if (type === "image") showTicketImagePicker(insert); else insert();
+    }));
+    renderElements();
+    editor.addEventListener("close", () => objectUrls.forEach((url) => URL.revokeObjectURL(url)), { once: true });
   }
   function openPrintFlowEditor(flow = null) {
     const currentRoutes = flow ? (state.printingFlowRoutes || []).filter((route) => route.flow_id === flow.id && route.event_keys?.length) : [];
@@ -456,8 +731,8 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       const modeLabel = device ? (unavailable ? " · impresora inactiva" : " · impresora enlazada") : " · sin impresora";
       return `<option value="${esc(point.id)}">${esc(point.name)}${modeLabel}${point.is_active ? "" : " · pausado"}</option>`;
     }).join("");
-    const templateOptions = (state.printingTicketTemplates || []).map((template) => `<option value="${esc(template.id)}">${esc(template.name)}${template.is_active ? "" : " · pausado"}</option>`).join("");
-    const routeMarkup = (route = {}) => `<div class="printing-route-row" data-print-route ${route.id ? `data-route-id="${esc(route.id)}"` : ""}><div class="printing-route-grid"><label class="settings-field">Punto<select data-route-point>${pointOptions}</select></label><label class="settings-field">Formato<select data-route-template><option value="">Selecciona un formato</option>${templateOptions}</select></label><label class="settings-field">Salida<select data-route-mode><option value="manual" ${route.output_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${route.output_mode === "automatic" ? "selected" : ""}>Automática</option></select></label><label class="settings-field">Copias<input data-route-copies type="number" min="1" max="20" value="${Number(route.copies) || 1}"></label><label class="settings-field">Cadencia ms<input data-route-cadence type="number" min="0" max="60000" step="100" value="${Number(route.cadence_ms) || 0}"></label><label class="settings-field">Detalle<select data-route-depth><option value="compact" ${route.text_depth === "compact" ? "selected" : ""}>Compacto</option><option value="standard" ${!route.text_depth || route.text_depth === "standard" ? "selected" : ""}>Estándar</option><option value="detailed" ${route.text_depth === "detailed" ? "selected" : ""}>Detallado</option></select></label></div><div class="settings-checks printing-route-events">${PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" data-route-event value="${key}" ${(route.event_keys || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("")}</div><button type="button" class="rowaction" data-remove-route>Quitar este destino</button></div>`;
+    const templateOptions = (state.printingTicketTemplates || []).map((template) => `<option value="${esc(template.id)}">${esc(template.name)}</option>`).join("");
+    const routeMarkup = (route = {}) => `<div class="printing-route-row" data-print-route ${route.id ? `data-route-id="${esc(route.id)}"` : ""}><div class="printing-route-grid"><label class="settings-field">Punto<select data-route-point>${pointOptions}</select></label><label class="settings-field">Formato<select data-route-template><option value="">Selecciona un formato</option>${templateOptions}</select></label><label class="settings-field">Salida<select data-route-mode><option value="manual" ${route.output_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${route.output_mode === "automatic" ? "selected" : ""}>Automática</option></select></label><label class="settings-field">Copias<input data-route-copies type="number" min="1" max="20" value="${Number(route.copies) || 1}"></label><label class="settings-field">Cadencia ms<input data-route-cadence type="number" min="0" max="60000" step="100" value="${Number(route.cadence_ms) || 0}"></label></div><div class="settings-checks printing-route-events">${PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" data-route-event value="${key}" ${(route.event_keys || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("")}</div><button type="button" class="rowaction" data-remove-route>Quitar este destino</button></div>`;
     const routesHtml = currentRoutes.map(routeMarkup).join("");
     const body = `<label class="settings-field">Nombre del flujo<input name="name" maxlength="80" required value="${esc(flow?.name || "")}" placeholder="Ej. Comandas de cocina"></label><label class="settings-check"><input name="is_active" type="checkbox" ${flow?.is_active !== false ? "checked" : ""}><span>Flujo activo</span></label><fieldset class="printing-events-field"><legend>Eventos que captura este flujo</legend><div class="settings-checks">${eventChecks}</div></fieldset><div class="printing-routes-head"><strong>Destinos y formatos por evento</strong><button type="button" class="btn secondary" data-add-route>Agregar destino</button></div><div data-route-list>${routesHtml}</div>${!pointOptions ? '<p class="meta">Primero crea un Punto de Impresión para añadir destinos.</p>' : ""}`;
     const dialog = openPrintDialog(flow ? "Editar flujo de impresión" : "Crear flujo de impresión", body, async (d) => {
@@ -479,15 +754,16 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         if (!point || !point.is_active) throw new Error("Activa el punto elegido antes de usarlo en un flujo.");
         if (!supportedModes.includes(mode)) throw new Error("El punto elegido no admite ese tipo de impresión.");
         if (!templateId) throw new Error("Selecciona un formato de ticket.");
-        if (!(state.printingTicketTemplates || []).find((item) => item.id === templateId)?.is_active)
-          throw new Error("Activa el formato seleccionado antes de usarlo en un flujo.");
+        if (!(state.printingTicketTemplates || []).find((item) => item.id === templateId))
+          throw new Error("El formato seleccionado ya no existe. Elige otro formato.");
+        const selectedTemplate = (state.printingTicketTemplates || []).find((item) => item.id === templateId);
         const routePayload = {
           point_id: pointId,
           template_id: templateId,
           event_keys: selectedEvents, output_mode: mode,
           copies: Math.min(20, Math.max(1, Number(row.querySelector("[data-route-copies]").value) || 1)),
           cadence_ms: Math.min(60000, Math.max(0, Number(row.querySelector("[data-route-cadence]").value) || 0)),
-          text_depth: row.querySelector("[data-route-depth]").value,
+          text_depth: selectedTemplate?.format?.layout?.text_depth || "standard",
           sort_order: routeRows.indexOf(row),
         };
         const routeId = row.dataset.routeId;
@@ -575,9 +851,8 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       if (point) openPrintPointDetails(point);
     }));
     document.querySelectorAll("[data-print-edit-flow]").forEach((button) => button.addEventListener("click", () => openPrintFlowEditor((state.printingFlows || []).find((row) => row.id === button.dataset.printEditFlow))));
-    document.querySelectorAll("[data-print-edit-template]").forEach((button) => button.addEventListener("click", () => openPrintTemplateEditor((state.printingTicketTemplates || []).find((row) => row.id === button.dataset.printEditTemplate))));
+    document.querySelectorAll("[data-print-open-template]").forEach((button) => button.addEventListener("click", () => { const row = (state.printingTicketTemplates || []).find((item) => item.id === button.dataset.printOpenTemplate); if (row) void openPrintTemplateEditor(row); }));
     document.querySelectorAll("[data-print-toggle-flow]").forEach((button) => button.addEventListener("click", () => { const row = (state.printingFlows || []).find((item) => item.id === button.dataset.printToggleFlow); if (row) void togglePrintingRow("printing_flows", row); }));
-    document.querySelectorAll("[data-print-toggle-template]").forEach((button) => button.addEventListener("click", () => { const row = (state.printingTicketTemplates || []).find((item) => item.id === button.dataset.printToggleTemplate); if (row) void togglePrintingRow("printing_ticket_templates", row); }));
   }
   async function save() {
     const button = document.getElementById("save-restaurant-settings");

@@ -91,6 +91,157 @@ La tabla aún conserva columnas históricas `sunat_enabled` y `sunat_config`, y 
 - Configuración SUNAT solo muestra **Próximamente**. No se ha implementado la emisión ni su arquitectura.
 - `cpe_accepted` sigue siendo un evento propuesto; no está conectado a la cola.
 
+## Editor completo de formatos de ticket — especificación pendiente de implementar
+
+### Aclaración del comportamiento actual
+
+La interfaz web actual solo guarda nombre, ancho de papel, encabezado, pie y
+cuatro opciones de visibilidad en `printing_ticket_templates.format` (JSONB).
+El JSON no es un estándar de impresión. BPrint carga el snapshot de la tarea y
+su `TicketRenderer` actualmente decide valores fijos: ancho aproximado de
+caracteres, título BLACK&WHITE POS, orden de bloques, alimentación y corte. El
+usuario aclaró que esos valores no deben quedar implícitos en BPrint: el editor
+web debe tener valores predeterminados definidos y guardar esos valores de
+forma explícita dentro del JSON. BPrint debe interpretar la configuración y
+traducirla a comandos para el dispositivo, sin escoger el diseño por su cuenta.
+
+### Lista de formatos
+
+- Quitar las etiquetas «Activo» y los botones «Editar» y «Pausar».
+- Cada tarjeta es interactiva; al pulsarla abre el editor del formato.
+- Si el formato está referenciado por al menos una ruta de impresión, mostrar
+  «Enlazado». Si no se usa, no hace falta mostrar una etiqueta de estado.
+- El formato se elimina, no se pausa. La acción de eliminación va en el editor;
+  los botones al pie aparecen en este orden: **Cancelar**, **Eliminar**,
+  **Guardar**.
+- El editor presenta a la izquierda un panel de configuración con scroll y a la
+  derecha una vista previa del ticket. La vista previa incluye un botón «＋»
+  para insertar imagen, QR o valor resumen.
+
+### Editor y objetos visuales
+
+El editor conserva los controles básicos actuales: nombre, ancho del papel,
+encabezado, pie y opciones para mostrar sede, empleado, nota y desglose de pago.
+Debajo incluye un desplegable **Mostrar opciones avanzadas**. Cada control
+avanzado explica cómo dejar el valor vacío para aceptar el valor predeterminado;
+las listas presentan también la opción explícita «… (por defecto)».
+
+Al guardar, la web normaliza el documento y materializa en el JSON un valor para
+cada propiedad, incluyendo los valores predeterminados. No se deja la decisión
+visual a inferencias de BPrint. El nombre del formato y el contenido dinámico
+del evento siguen siendo datos separados del diseño.
+
+La vista previa funciona como un canvas con elementos posicionables y
+redimensionables:
+
+- **Imagen:** al agregarla se abre un selector propio con arrastrar/soltar,
+  exploración de archivos, Cancelar, Aceptar, resolución recomendada y límite
+  de peso visibles. Se admite una imagen por acción; el formato conserva una
+  referencia al recurso almacenado.
+- **QR:** elemento dinámico que BPrint renderiza a partir de los datos de la
+  tarea. Su configuración de tamaño y posición pertenece al formato.
+- **Valor resumen:** elemento dinámico del comprobante electrónico, distinto
+  del QR, que se imprime con los datos fiscales correspondientes.
+- **Márgenes:** elementos de espacio del canvas, redimensionables. Cada objeto
+  admite como máximo un margen por lado. Los márgenes solo ofrecen eliminar en
+  su menú contextual.
+- Al hacer clic en un objeto se selecciona y se puede mover o redimensionar.
+  En escritorio, doble clic abre sus opciones; en táctil, mantener presionado
+  abre el menú. Las opciones de un objeto son eliminar, agregar margen arriba,
+  izquierda, derecha o abajo, y centrar. Los lados con margen existente no se
+  ofrecen de nuevo. Centrar ajusta los márgenes laterales existentes y crea
+  solo los que falten.
+
+### Contrato de formato JSON
+
+Se mantiene `printing_ticket_templates.format` como JSONB; la estructura es un
+contrato propio, versionado para Black&White y BPrint, no un estándar que la
+impresora lea directamente. El esquema futuro debe representar como mínimo:
+
+- versión de esquema y ancho de papel;
+- orden explícito de bloques, dimensiones y posición/tamaño en unidades
+  definidas (preferentemente mm en el JSON, convertidas por BPrint a puntos del
+  dispositivo);
+- márgenes, espaciado/avance, altura mínima si se requiere, y corte/alimentación
+  final;
+- tipografía admitida, escala/tamaño, alineación, negrita y profundidad de
+  texto;
+- densidad/calidad cuando el dispositivo la soporte;
+- imágenes como referencias a archivos, con ancho, alineación y tratamiento de
+  rasterización;
+- QR y valor resumen como elementos dinámicos con tamaño y ubicación;
+- todas las propiedades con un valor final explícito, tanto las elegidas por
+  el usuario como los defaults materializados por la web.
+
+Las opciones que un dispositivo no soporte deben detectarse mediante el perfil
+de capacidades/modelo y reportarse claramente; no se deben sustituir en
+silencio por decisiones inventadas por BPrint. La conversión de mm a puntos y
+de una imagen vectorial a raster/ESC/POS es traducción del formato al hardware,
+no elección de diseño.
+
+### Contrato con la cola y BPrint
+
+Crear o editar un formato solo escribe la fila de plantilla; no crea una tarea.
+La tarea sigue naciendo cuando un evento coincide con un flujo. La fila de
+`printing_jobs` combina el payload del evento con un snapshot del formato y de
+la ruta. BPrint interpreta ese JSON completo, obtiene las imágenes referenciadas,
+compone el ticket y emite los comandos compatibles con la impresora concreta.
+La app no guarda plantillas en los archivos locales de BPrint: cada tarea trae
+su snapshot de formato. El selector de impresión de prueba puede consultar
+formatos de Supabase para generar una prueba, pero no los persiste localmente.
+
+En la etapa de prueba, QR y valor resumen son **objetos gráficos de referencia**:
+el canvas permite agregarlos, moverlos y dimensionarlos sin datos tributarios
+reales ni SUNAT configurado. Al implementar SUNAT, esos mismos tipos de elemento
+recibirán el contenido aprobado del comprobante. No se debe bloquear ahora su
+inserción por falta de configuración SUNAT.
+
+### Pendientes de datos, base e infraestructura
+
+- **No hace falta una tabla nueva para las propiedades del diseño:** `format`
+  ya es JSONB abierto. Sí se debe acordar y validar su esquema/versiones en
+  aplicación y BPrint; hoy la base solo exige que sea un objeto JSON.
+- **Eliminar formatos:** `printing_flow_routes.template_id` y
+  `printing_jobs.template_id` tienen FK `ON DELETE RESTRICT`. La migración nueva
+  permite borrar solo si no está enlazado a una ruta con eventos (aunque el flujo
+  esté pausado); libera referencias de rutas retiradas y de jobs históricos,
+  manteniendo el snapshot de impresión. El estado `is_active` heredado ya no se
+  muestra en la interfaz y no condiciona la selección en flujos.
+- La migración `202611250002_ticket_canvas_assets_and_template_delete.sql`
+  crea el bucket privado `ticket-assets`, agrega borrado administrativo que
+  rechaza formatos enlazados a rutas activas, libera referencias de rutas ya
+  retiradas y de jobs históricos manteniendo su snapshot, y deja de exigir el
+  flag `is_active` para guardar rutas. La fila y su JSON desaparecen al borrar;
+  las referencias de imagen históricas se conservan para no romper trabajos ya
+  encolados.
+- **Imágenes:** el editor convierte PNG/JPG/WebP/SVG a PNG, limita el archivo
+  original a 5 MB y lo guarda en el bucket privado `ticket-assets`, bajo la ruta
+  del restaurante y formato. La política permite leer dentro del restaurante y
+  solo al admin cargar o eliminar. El JSON guarda una ruta estable, no una URL
+  firmada. Los recursos referenciados por snapshots de trabajos históricos se
+  conservan para no romper reimpresiones; la limpieza de recursos huérfanos queda
+  como mantenimiento futuro.
+- **Cola:** definir cómo el payload conserva los datos de CPE necesarios y el
+  `DigestValue` correspondiente para generar QR/valor resumen de forma estable.
+  Hoy SUNAT no está implementada y `cpe_accepted` no está conectado.
+- **BPrint:** ampliar el renderer para márgenes, bloques, texto enriquecido,
+  alimentación/corte explícitos, QR y gráficos rasterizados; dejar de fijar por
+  código el título y las decisiones visuales. Definir perfiles de capacidades
+  y comprobarlos con impresoras/emuladores ESC/POS.
+- La versión web implementa canvas visual, redimensionamiento/movimiento,
+  márgenes, elemento QR y valor resumen de prueba, carga de imagen convertida a
+  PNG en Storage privado, guardado JSON v2 y borrado protegido. La impresión
+  física de esos elementos avanzados requiere completar la traducción en BPrint;
+  el renderer actual todavía no consume todo el esquema v2.
+- **Defaults v2 iniciales:** ancho 80 mm; márgenes 0 mm; altura mínima 0 mm;
+  tipografía nativa del dispositivo, 12 pt, espaciado normal, densidad normal,
+  profundidad estándar, avance inicial 0 mm, avance final 3 mm y corte parcial.
+  La web los guarda explícitamente en el JSON cuando el campo numérico se deja
+  vacío o se elige la opción predeterminada.
+- Por ahora el QR es un patrón gráfico ficticio y el valor resumen es texto
+  ficticio de referencia; ninguno codifica datos tributarios. SUNAT proveerá
+  contenido real solo cuando se implemente esa configuración.
+
 ## Dispositivos, operación y reportes (revisión 2026-11-25)
 
 La app de escritorio BPrint para Windows existe localmente; esta especificación y

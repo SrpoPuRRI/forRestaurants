@@ -81,6 +81,7 @@ Migraciones presentes en este repositorio, en orden:
 - `202611130010_printing_output_modes.sql`: añade los modos manual/automático compatibles por punto de impresión.
 - `202611130011_save_printing_flow_rpc.sql`: guarda atómicamente un flujo y sus rutas; valida eventos, permisos, puntos, modos de salida y formatos, y conserva rutas históricas al retirarlas.
 - `202611250001_create_printing_point_from_restaurant_device.sql`: permite crear puntos solo con un dispositivo ya registrado para el restaurante actual y revoca el RPC anterior que permitía reclamar dispositivos sin restaurante.
+- `202611250002_ticket_canvas_assets_and_template_delete.sql`: añade Storage privado de imágenes de ticket, RPC de borrado de formato que impide eliminar formatos enlazados, libera referencias históricas conservando snapshots y quita el requisito `is_active` al guardar rutas.
 
 El usuario indicó que desplegó los últimos cambios y que funcionan. Aun así, el Handoff no reemplaza la evidencia del historial remoto: si una nueva tarea depende de una columna/función específica, verifica `supabase_migrations.schema_migrations` o consulta el esquema remoto antes de proponer otra migración. Nunca edites migraciones ya aplicadas; agrega una con timestamp posterior.
 
@@ -157,7 +158,7 @@ La UI/código local de Cocina y Salón ya contiene trabajo sustancial (colas, pr
 
 - CRM: prototipo visual; no necesita conexión a base todavía.
 - Delivery: espacio «Próximamente»; el rol Repartidor aún no ejecuta el flujo.
-- Sistemas de Impresión: el alta web de punto pide nombre e ID; la base valida que el dispositivo pertenezca al restaurante y que no esté enlazado a otro punto. Al seleccionar el punto, se ve información de solo lectura y su estado BPrint. Los flujos, formatos, cola y reportes tienen implementación local; falta la vista imprimible manual y otros pendientes de `specs/Impresión/spec_001.md`.
+- Sistemas de Impresión: el alta web de punto pide nombre e ID; la base valida pertenencia y enlace único. El editor de ticket web ahora guarda formato JSON v2 con opciones avanzadas explícitas, canvas para imagen/QR/valor resumen gráfico, Storage `ticket-assets` y borrado de formato solo si no está enlazado. SUNAT sigue “Próximamente”; los QR/valores resumen de prueba son gráficos ficticios. Aplicar la migración `202611250002_ticket_canvas_assets_and_template_delete.sql`. BPrint no guarda formatos locales; imprime desde el snapshot de cada tarea. Su renderer todavía necesita implementar la interpretación física completa de layout e imágenes del JSON v2. Falta también completar vista imprimible manual y otros pendientes en `specs/Impresión/spec_001.md`.
 - SUNAT/PSE: Configuración solo muestra “Próximamente”. La emisión no está implementada y queda separada de Sistemas de Impresión.
 
 `printing_points.sunat_enabled` y `sunat_config` se conservan como columnas heredadas por compatibilidad; la interfaz nueva no las consulta ni configura. `cpe_accepted` sigue siendo un evento propuesto, todavía no conectado a la cola.
