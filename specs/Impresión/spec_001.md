@@ -156,6 +156,8 @@ márgenes. Los nuevos objetos empiezan en la esquina superior izquierda.
   sin margen superior/inferior no se puede mover verticalmente. Se dibujan con
   borde punteado transparente, sin relleno ni texto. Cada objeto admite como
   máximo un margen por lado y los márgenes solo ofrecen eliminar en su menú.
+  Un `MutationObserver` observa los cambios de tamaño o posición del objeto y
+  ajusta sus dimensiones dependientes en el mismo ciclo de renderizado.
   Los objetos no se arrastran directamente: se posicionan ajustando sus
   márgenes. Un objeto recién insertado empieza en la esquina superior izquierda.
 - Al hacer clic en un objeto se selecciona y se puede mover o redimensionar.

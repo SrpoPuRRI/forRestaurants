@@ -644,9 +644,14 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const canvas = editor.querySelector("[data-ticket-canvas]");
     canvas.dataset.paperWidth = String(format.paper_width_mm);
     const renderElements = () => {
+      marginObserver.disconnect();
       canvas.querySelectorAll("[data-ticket-element]").forEach((node) => node.remove());
       elements.forEach((element) => canvas.insertAdjacentHTML("beforeend", ticketElementMarkup(element, canvas, elements)));
       bindCanvasElements();
+      canvas.querySelectorAll("[data-ticket-element]").forEach((node) => {
+        const element = elements.find((item) => item.id === JSON.parse(node.dataset.ticketElement).id);
+        if (element && element.type !== "margin") marginObserver.observe(node, { attributes: true, attributeFilter: ["style"] });
+      });
     };
     const previewSample = canvas.querySelector(".ticket-preview-sample");
     const previewHeader = canvas.querySelector("[data-preview-header]");
@@ -708,6 +713,14 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         if (node) node.setAttribute("style", clampTicketElement(margin, canvas, elements));
       });
     };
+    const marginObserver = new MutationObserver((changes) => {
+      const parentIds = new Set();
+      changes.forEach(({ target }) => {
+        const element = elements.find((item) => item.id === JSON.parse(target.dataset.ticketElement || "{}").id);
+        if (element && element.type !== "margin") parentIds.add(element.id);
+      });
+      parentIds.forEach(syncMarginNodes);
+    });
     const openObjectMenu = (element, x, y) => {
       editor.querySelector("[data-ticket-object-menu]")?.remove();
       const menu = document.createElement("div");
@@ -779,7 +792,6 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         else target.y = Math.max(0, Math.min(100 - target.height, start.top + dy));
         const parentNode = [...canvas.querySelectorAll("[data-ticket-element]")].find((candidate) => JSON.parse(candidate.dataset.ticketElement).id === target.id);
         if (parentNode) { parentNode.style.left = `${target.x}%`; parentNode.style.top = `${target.y}%`; }
-        syncMarginNodes(target.id);
       });
       node.addEventListener("pointerup", () => { clearTimeout(longPress); start = null; updateDirtyState(); });
       node.querySelector("[data-ticket-resize]")?.addEventListener("pointerdown", (event) => {
@@ -798,7 +810,6 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         element.width = Math.max(4, Math.min(100 - (Number(element.x) || 0), start.width + (event.clientX - start.x) / start.rect.width * 100));
         element.height = Math.max(3, Math.min(100 - (Number(element.y) || 0), start.height + (event.clientY - start.y) / start.rect.height * 100));
         node.style.width = `${element.width}%`; node.style.height = `${element.height}%`;
-        syncMarginNodes(element.id);
       });
       node.addEventListener("pointerup", () => { if (start) { start = null; updateDirtyState(); } });
     });
@@ -824,7 +835,10 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     updatePreview();
     initialEditorState = currentEditorState();
     saveButton.disabled = true;
-    editor.addEventListener("close", () => objectUrls.forEach((url) => URL.revokeObjectURL(url)), { once: true });
+    editor.addEventListener("close", () => {
+      marginObserver.disconnect();
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    }, { once: true });
   }
   function openPrintFlowEditor(flow = null) {
     const currentRoutes = flow ? (state.printingFlowRoutes || []).filter((route) => route.flow_id === flow.id && route.event_keys?.length) : [];
