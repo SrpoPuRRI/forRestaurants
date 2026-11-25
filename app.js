@@ -8,7 +8,7 @@ import {
 } from "./supabase-config.js";
 import createOrderFlow from "./order-flow.js";
 import createStatistics from "./statistics.js?v=20261113-statistics-order-extremes";
-import createRestaurantSettings from "./restaurant-settings.js?v=20261125-ticket-editor-v2";
+import createRestaurantSettings from "./restaurant-settings.js?v=20261125-ticket-preview-v3";
 import createRestaurantWorkspaces from "./restaurant-workspaces.js";
 import createAppearance from "./appearance.js?v=20261113-appearance-builder";
 import createPrintingRuntime from "./printing-runtime.js";
@@ -750,7 +750,7 @@ function shell() {
     '</div><div class="top-sub"><span>' +
     shownLabel +
     '</span></div></div><div class="top-right">' +
-    appearance.buttonMarkup() +
+    (s.page === "account" ? appearance.buttonMarkup() : "") +
     '<button class="btn secondary" id="logout" style="padding:8px 10px;font-size:10px">Salir</button></div></header><div class="content">' +
     page() +
     '</div></main><nav class="mobile-nav ' +

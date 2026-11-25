@@ -371,12 +371,13 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     return `<section class="panel settings-panel printing-settings-panel"><div class="panel-head"><div><div class="panel-title">Sistemas de Impresión</div><div class="meta">Asigna impresoras a puntos, define flujos y guarda formatos de ticket.</div></div></div>${state.printingSettingsError ? `<p class="inline-error" role="alert">${esc(state.printingSettingsError)}</p>` : ""}${printingArea("Puntos de Impresión", "Agrega dispositivos BPrint registrados en tu restaurante.", pointCards, "create-print-point", "Crear punto de Impresión")}${printingArea("Flujos de impresión", "Elige qué eventos se capturan y a qué destinos se envían.", flowCards, "create-print-flow", "Crear flujo de impresión")}${printingArea("Formatos de ticket", "Guarda varios formatos y selecciona uno distinto en cada ruta.", templateCards, "create-print-template", "Crear formato de ticket")}</section>`;
   }
   function openPrintDialog(title, body, onSave, options = {}) {
-    const { submitLabel = "Guardar", errorMode = "inline", onDelete = null, dialogClass = "" } = options;
+    const { submitLabel = "Guardar", errorMode = "inline", onDelete = null, dialogClass = "", disableSaveInitially = false } = options;
     const dialog = document.createElement("dialog");
     dialog.className = `password-dialog printing-editor-dialog ${dialogClass}`.trim();
     dialog.innerHTML = `<form data-print-editor><div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button>${onDelete ? '<button type="button" class="btn danger" data-delete>Eliminar</button>' : ""}<button type="submit" class="btn primary" data-save>${esc(submitLabel)}</button></div></form>`;
     document.body.appendChild(dialog);
     const form = dialog.querySelector("[data-print-editor]");
+    if (disableSaveInitially) dialog.querySelector("[data-save]").disabled = true;
     dialog.querySelector("[data-cancel]").addEventListener("click", () => dialog.close());
     dialog.querySelector(".dialog-close").addEventListener("click", () => dialog.close());
     dialog.addEventListener("close", () => dialog.remove(), { once: true });
@@ -403,6 +404,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const saveButton = form.querySelector("[data-save]");
+      if (saveButton.disabled) return;
       const error = dialog.querySelector(".appearance-editor-error");
       error.textContent = "";
       saveButton.disabled = true;
@@ -600,6 +602,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       }
     }, {
       dialogClass: "ticket-format-editor",
+      disableSaveInitially: true,
       onDelete: template ? async () => {
         if (!(await ticketDeleteConfirmation())) return false;
         const { error } = await supabase.rpc("delete_printing_ticket_template", { p_template_id: template.id });
@@ -615,11 +618,53 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       elements.forEach((element) => canvas.insertAdjacentHTML("beforeend", ticketElementMarkup(element, canvas)));
       bindCanvasElements();
     };
-    const updateBasicPreview = () => {
-      const h = editor.querySelector('[name="header"]').value.trim() || "Nombre del restaurante";
-      const f = editor.querySelector('[name="footer"]').value.trim() || "Gracias por su compra";
-      editor.querySelector("[data-preview-header]").textContent = h;
-      editor.querySelector("[data-preview-footer]").textContent = f;
+    const previewSample = canvas.querySelector(".ticket-preview-sample");
+    const previewHeader = canvas.querySelector("[data-preview-header]");
+    const previewFooter = canvas.querySelector("[data-preview-footer]");
+    const saveButton = editor.querySelector("[data-save]");
+    const layoutState = () => Object.fromEntries(Object.entries(TICKET_FORMAT_DEFAULTS).map(([key, fallback]) => {
+      const value = editor.querySelector(`[data-layout="${key}"]`)?.value ?? "";
+      return [key, value === "" || value === "__default" ? fallback : typeof fallback === "number" ? Number(value) : value];
+    }));
+    const currentEditorState = () => JSON.stringify({
+      name: editor.querySelector('[name="name"]').value.trim(),
+      paper_width_mm: Number(editor.querySelector('[name="paper_width_mm"]').value),
+      header: editor.querySelector('[name="header"]').value,
+      footer: editor.querySelector('[name="footer"]').value,
+      body: Object.fromEntries([...editor.querySelectorAll("[data-template-body]")].map((input) => [input.dataset.templateBody, input.checked])),
+      layout: layoutState(),
+      elements: elements.map(({ preview_url, ...element }) => element),
+    });
+    let initialEditorState = "";
+    const updateDirtyState = () => {
+      if (initialEditorState) saveButton.disabled = currentEditorState() === initialEditorState;
+    };
+    const updatePreview = () => {
+      const layout = layoutState();
+      const body = Object.fromEntries([...editor.querySelectorAll("[data-template-body]")].map((input) => [input.dataset.templateBody, input.checked]));
+      const depthLines = {
+        compact: ["PEDIDO DE EJEMPLO", "2 × Producto", "TOTAL     S/ 00.00"],
+        standard: ["PEDIDO DE EJEMPLO", "2 × Producto", "1 × Bebida", "TOTAL     S/ 00.00"],
+        detailed: ["PEDIDO DE EJEMPLO", "2 × Producto     S/ 20.00", "  Variante: Regular", "1 × Bebida       S/ 8.00", "Subtotal         S/ 28.00", "TOTAL            S/ 28.00"],
+      };
+      const lines = [...(depthLines[layout.text_depth] || depthLines.standard)];
+      if (body.show_location) lines.splice(1, 0, "Sede: Principal");
+      if (body.show_operator) lines.splice(1, 0, "Atendió: Empleado");
+      if (body.show_note) lines.push("Nota: ejemplo");
+      if (body.show_payment_breakdown) lines.push("Efectivo        S/ 28.00");
+      previewHeader.textContent = editor.querySelector('[name="header"]').value.trim() || "Nombre del restaurante";
+      previewFooter.textContent = editor.querySelector('[name="footer"]').value.trim() || "Gracias por su compra";
+      previewSample.innerHTML = lines.map((line) => esc(line)).join("<br>");
+      canvas.style.padding = `${layout.margin_top_mm}mm ${layout.margin_right_mm}mm ${layout.margin_bottom_mm}mm ${layout.margin_left_mm}mm`;
+      canvas.style.minHeight = `${Math.max(138, layout.min_height_mm)}mm`;
+      canvas.style.fontFamily = ({ device: '"Courier New", monospace', sans: "Arial, sans-serif", serif: "Georgia, serif" })[layout.font_family] || '"Courier New", monospace';
+      canvas.style.fontSize = `${layout.font_size_pt}pt`;
+      canvas.style.lineHeight = ({ compact: "1.1", normal: "1.35", wide: "1.75" })[layout.line_spacing] || "1.35";
+      previewSample.style.color = ({ draft: "#777", normal: "#171717", high: "#000" })[layout.density] || "#171717";
+      previewSample.style.lineHeight = ({ compact: "1.1", normal: "1.65", wide: "1.9" })[layout.line_spacing] || "1.65";
+      previewHeader.style.marginTop = `${layout.feed_before_mm}mm`;
+      previewFooter.style.marginBottom = `${layout.feed_after_mm}mm`;
+      updateDirtyState();
     };
     const addMargin = (element, side) => {
       if (elements.some((item) => item.type === "margin" && item.parent_id === element.id && item.side === side)) return;
@@ -630,6 +675,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       if (side === "right") { geom.x += geom.width; geom.width = Math.max(0, 100 - geom.x); }
       elements.push({ id: crypto.randomUUID(), type: "margin", parent_id: element.id, side, ...geom });
       renderElements();
+      updateDirtyState();
     };
     const openObjectMenu = (element, x, y) => {
       editor.querySelector("[data-ticket-object-menu]")?.remove();
@@ -663,6 +709,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
           renderElements();
         }
         renderElements();
+        updateDirtyState();
       });
     };
     const bindCanvasElements = () => canvas.querySelectorAll("[data-ticket-element]").forEach((node) => {
@@ -688,7 +735,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         element.y = Math.max(0, Math.min(100 - (Number(element.height) || 5), start.top + dy));
         node.style.left = `${element.x}%`; node.style.top = `${element.y}%`;
       });
-      node.addEventListener("pointerup", () => { clearTimeout(longPress); start = null; });
+      node.addEventListener("pointerup", () => { clearTimeout(longPress); start = null; updateDirtyState(); });
       node.querySelector("[data-ticket-resize]")?.addEventListener("pointerdown", (event) => {
         event.stopPropagation(); event.preventDefault();
         const rect = canvas.getBoundingClientRect();
@@ -701,11 +748,13 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         element.height = Math.max(3, Math.min(100 - (Number(element.y) || 0), start.height + (event.clientY - start.y) / start.rect.height * 100));
         node.style.width = `${element.width}%`; node.style.height = `${element.height}%`;
       });
-      node.addEventListener("pointerup", () => { if (start?.resize) start = null; });
+      node.addEventListener("pointerup", () => { if (start?.resize) { start = null; updateDirtyState(); } });
     });
-    editor.querySelector('[name="header"]').addEventListener("input", updateBasicPreview);
-    editor.querySelector('[name="footer"]').addEventListener("input", updateBasicPreview);
-    editor.querySelector('[name="paper_width_mm"]').addEventListener("change", (event) => canvas.dataset.paperWidth = event.target.value);
+    editor.querySelectorAll("input, select, textarea").forEach((input) => {
+      input.addEventListener("input", updatePreview);
+      input.addEventListener("change", updatePreview);
+    });
+    editor.querySelector('[name="paper_width_mm"]').addEventListener("change", (event) => { canvas.dataset.paperWidth = event.target.value; updatePreview(); });
     editor.querySelector("[data-ticket-add]").addEventListener("click", () => { const menu = editor.querySelector("[data-ticket-add-menu]"); menu.hidden = !menu.hidden; });
     editor.querySelectorAll("[data-add-element]").forEach((button) => button.addEventListener("click", () => {
       editor.querySelector("[data-ticket-add-menu]").hidden = true;
@@ -715,10 +764,14 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         if (file) { pendingImages.set(element.id, file); element.preview_url = URL.createObjectURL(file); objectUrls.add(element.preview_url); }
         elements.push(element);
         renderElements();
+        updateDirtyState();
       };
       if (type === "image") showTicketImagePicker(insert); else insert();
     }));
     renderElements();
+    updatePreview();
+    initialEditorState = currentEditorState();
+    saveButton.disabled = true;
     editor.addEventListener("close", () => objectUrls.forEach((url) => URL.revokeObjectURL(url)), { once: true });
   }
   function openPrintFlowEditor(flow = null) {

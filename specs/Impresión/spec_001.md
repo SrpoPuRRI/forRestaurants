@@ -115,8 +115,15 @@ traducirla a comandos para el dispositivo, sin escoger el diseño por su cuenta.
   los botones al pie aparecen en este orden: **Cancelar**, **Eliminar**,
   **Guardar**.
 - El editor presenta a la izquierda un panel de configuración con scroll y a la
-  derecha una vista previa del ticket. La vista previa incluye un botón «＋»
+  derecha una vista previa del ticket. La vista previa incluye un botón «×»
   para insertar imagen, QR o valor resumen.
+- «Guardar» comienza desactivado y solo se activa cuando el estado del formato
+  cambia respecto al momento de apertura. Si se revierten todos los cambios,
+  vuelve a quedar desactivado.
+- La vista previa se actualiza mientras se editan encabezado, pie, ancho,
+  márgenes, altura mínima, tipografía, tamaño y espaciado de texto, densidad,
+  profundidad, avances y opciones de contenido. El modo de corte no requiere
+  una representación visual.
 
 ### Editor y objetos visuales
 

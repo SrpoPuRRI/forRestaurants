@@ -148,7 +148,7 @@ El catálogo de administración solo crea productos estándar. Ingreso/Egreso se
 
 **Caja aún es diseño/spec, no flujo terminado:** hay una propuesta de boolean abierta/cerrada, registro mensual por turnos con timestamps, cierre manual con contraseña y cierre automático cerca del siguiente turno. El fin de turno no debe cerrar automáticamente la caja. No decir que esto ya existe en producción. Ver `specs/Estadísticas/spec_001.md`.
 
-La migración `202611130003_restaurant_color_schemes.sql` es necesaria para la última versión de Configuración; no se aplicó desde este entorno. El esquema activo es compartido por restaurante y el tema claro/oscuro es una preferencia personal por navegador (`localStorage`).
+La migración `202611130003_restaurant_color_schemes.sql` es necesaria para la última versión de Configuración; no se aplicó desde este entorno. El esquema activo es compartido por restaurante y el tema claro/oscuro es una preferencia personal por navegador (`localStorage`). El botón para cambiar tema solo aparece en la pestaña Cuenta.
 
 ## Cocina, Salón y demás necesidades
 
