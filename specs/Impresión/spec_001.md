@@ -115,7 +115,7 @@ traducirla a comandos para el dispositivo, sin escoger el diseño por su cuenta.
   los botones al pie aparecen en este orden: **Cancelar**, **Eliminar**,
   **Guardar**.
 - El editor presenta a la izquierda un panel de configuración con scroll y a la
-  derecha una vista previa del ticket. La vista previa incluye un botón «×»
+  derecha una vista previa del ticket. La vista previa incluye un botón «+»
   para insertar imagen, QR o valor resumen.
 - «Guardar» comienza desactivado y solo se activa cuando el estado del formato
   cambia respecto al momento de apertura. Si se revierten todos los cambios,
@@ -150,8 +150,11 @@ redimensionables:
 - **Valor resumen:** elemento dinámico del comprobante electrónico, distinto
   del QR, que se imprime con los datos fiscales correspondientes.
 - **Márgenes:** elementos de espacio del canvas, redimensionables. Cada objeto
-  admite como máximo un margen por lado. Los márgenes solo ofrecen eliminar en
-  su menú contextual.
+  se anclan a su objeto y se redimensionan en un solo eje. Permiten desplazar el
+  objeto sobre ese eje; sin margen lateral no se puede mover horizontalmente y
+  sin margen superior/inferior no se puede mover verticalmente. Se dibujan con
+  borde punteado transparente, sin relleno ni texto. Cada objeto admite como
+  máximo un margen por lado y los márgenes solo ofrecen eliminar en su menú.
 - Al hacer clic en un objeto se selecciona y se puede mover o redimensionar.
   En escritorio, doble clic abre sus opciones; en táctil, mantener presionado
   abre el menú. Las opciones de un objeto son eliminar, agregar margen arriba,

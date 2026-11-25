@@ -451,14 +451,27 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       }
     }, { submitLabel: "Aceptar", errorMode: "dialog" });
   }
-  function clampTicketElement(element, canvas) {
+  function clampTicketElement(element, canvas, allElements = []) {
+    if (element.type === "margin") {
+      const parent = allElements.find((item) => item.id === element.parent_id);
+      if (!parent) return "display:none";
+      const x = Number(parent.x) || 0;
+      const y = Number(parent.y) || 0;
+      const width = Number(parent.width) || 0;
+      const height = Number(parent.height) || 0;
+      if (element.side === "top") return `left:${x}%;top:0;width:${width}%;height:${y}%;`;
+      if (element.side === "bottom") return `left:${x}%;top:${y + height}%;width:${width}%;height:${Math.max(0, 100 - y - height)}%;`;
+      if (element.side === "left") return `left:0;top:${y}%;width:${x}%;height:${height}%;`;
+      if (element.side === "right") return `left:${x + width}%;top:${y}%;width:${Math.max(0, 100 - x - width)}%;height:${height}%;`;
+      return "display:none";
+    }
     const x = Math.max(0, Math.min(95, Number(element.x) || 0));
     const y = Math.max(0, Math.min(95, Number(element.y) || 0));
     const width = Math.max(4, Math.min(100 - x, Number(element.width) || 24));
     const height = Math.max(3, Math.min(100 - y, Number(element.height) || 12));
     return `left:${x}%;top:${y}%;width:${width}%;height:${height}%;`;
   }
-  function ticketElementMarkup(element, canvas) {
+  function ticketElementMarkup(element, canvas, allElements = []) {
     const data = esc(JSON.stringify(element));
     let contents = "";
     if (element.type === "image") contents = element.preview_url
@@ -466,8 +479,8 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       : '<span class="ticket-image-placeholder">Imagen</span>';
     else if (element.type === "qr") contents = `<span class="ticket-fake-qr" aria-label="QR de ejemplo">${Array.from({ length: 121 }, (_, i) => ((i * 17 + Math.floor(i / 11) * 7) % 5 < 2) ? "<i></i>" : "<i class='off'></i>").join("")}</span>`;
     else if (element.type === "sunat_summary") contents = '<span class="ticket-summary-placeholder">VALOR RESUMEN<br>0123456789ABCDEF<br>(referencia visual)</span>';
-    else if (element.type === "margin") contents = `<span class="ticket-margin-label">Margen ${esc(element.side || "")}</span>`;
-    return `<div class="ticket-canvas-object ticket-object-${esc(element.type)} ${element.type === "margin" ? "is-margin" : ""}" data-ticket-element="${data}" style="${clampTicketElement(element, canvas)}" tabindex="0">${contents}<span class="ticket-object-resize" data-ticket-resize aria-label="Redimensionar"></span></div>`;
+    const marginClass = element.type === "margin" ? `is-margin ticket-margin-${esc(element.side || "")}` : "";
+    return `<div class="ticket-canvas-object ticket-object-${esc(element.type)} ${marginClass}" data-ticket-element="${data}" style="${clampTicketElement(element, canvas, allElements)}" tabindex="0">${contents}<span class="ticket-object-resize" data-ticket-resize aria-label="Redimensionar"></span></div>`;
   }
   function showTicketImagePicker(onPick) {
     const picker = document.createElement("dialog");
@@ -615,7 +628,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     let elements = format.elements;
     const renderElements = () => {
       canvas.querySelectorAll("[data-ticket-element]").forEach((node) => node.remove());
-      elements.forEach((element) => canvas.insertAdjacentHTML("beforeend", ticketElementMarkup(element, canvas)));
+      elements.forEach((element) => canvas.insertAdjacentHTML("beforeend", ticketElementMarkup(element, canvas, elements)));
       bindCanvasElements();
     };
     const previewSample = canvas.querySelector(".ticket-preview-sample");
@@ -668,14 +681,15 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     };
     const addMargin = (element, side) => {
       if (elements.some((item) => item.type === "margin" && item.parent_id === element.id && item.side === side)) return;
-      const geom = { x: Number(element.x) || 0, y: Number(element.y) || 0, width: Number(element.width) || 22, height: Number(element.height) || 8 };
-      if (side === "top") { geom.height = geom.y; geom.y = 0; }
-      if (side === "bottom") { geom.y += geom.height; geom.height = Math.max(0, 100 - geom.y); }
-      if (side === "left") { geom.width = geom.x; geom.x = 0; }
-      if (side === "right") { geom.x += geom.width; geom.width = Math.max(0, 100 - geom.x); }
-      elements.push({ id: crypto.randomUUID(), type: "margin", parent_id: element.id, side, ...geom });
+      elements.push({ id: crypto.randomUUID(), type: "margin", parent_id: element.id, side });
       renderElements();
       updateDirtyState();
+    };
+    const syncMarginNodes = (parentId) => {
+      elements.filter((item) => item.type === "margin" && item.parent_id === parentId).forEach((margin) => {
+        const node = [...canvas.querySelectorAll("[data-ticket-element]")].find((candidate) => JSON.parse(candidate.dataset.ticketElement).id === margin.id);
+        if (node) node.setAttribute("style", clampTicketElement(margin, canvas, elements));
+      });
     };
     const openObjectMenu = (element, x, y) => {
       editor.querySelector("[data-ticket-object-menu]")?.remove();
@@ -698,8 +712,8 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         else if (action.startsWith("margin:")) addMargin(element, action.split(":")[1]);
         else if (action === "center") {
           const sideMargins = elements.filter((item) => item.type === "margin" && item.parent_id === element.id && ["left", "right"].includes(item.side));
-          const left = sideMargins.find((item) => item.side === "left") || { id: crypto.randomUUID(), type: "margin", parent_id: element.id, side: "left", x: 0, y: element.y, width: 0, height: element.height };
-          const right = sideMargins.find((item) => item.side === "right") || { id: crypto.randomUUID(), type: "margin", parent_id: element.id, side: "right", x: 0, y: element.y, width: 0, height: element.height };
+          const left = sideMargins.find((item) => item.side === "left") || { id: crypto.randomUUID(), type: "margin", parent_id: element.id, side: "left" };
+          const right = sideMargins.find((item) => item.side === "right") || { id: crypto.randomUUID(), type: "margin", parent_id: element.id, side: "right" };
           const width = Math.min(Number(element.width) || 22, 70);
           left.width = Math.max(0, (100 - width) / 2); left.x = 0;
           right.width = left.width; right.x = 100 - right.width;
@@ -721,34 +735,51 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       node.addEventListener("contextmenu", (event) => { event.preventDefault(); openObjectMenu(element, event.clientX, event.clientY); });
       node.addEventListener("pointerdown", (event) => {
         if (event.target.closest("[data-ticket-resize]")) return;
-        start = { x: event.clientX, y: event.clientY, left: Number(element.x) || 0, top: Number(element.y) || 0, resize: false };
+        const parent = element.type === "margin" ? elements.find((item) => item.id === element.parent_id) : element;
+        start = { x: event.clientX, y: event.clientY, left: Number(parent?.x) || 0, top: Number(parent?.y) || 0, mode: element.type === "margin" ? "margin" : "move", parent };
         longPress = setTimeout(() => openObjectMenu(element, event.clientX, event.clientY), 500);
         node.setPointerCapture(event.pointerId);
       });
       node.addEventListener("pointermove", (event) => {
         if (!start || event.buttons === 0) return;
+        if (start.mode === "resize") return;
         const rect = canvas.getBoundingClientRect();
         const dx = (event.clientX - start.x) / rect.width * 100;
         const dy = (event.clientY - start.y) / rect.height * 100;
         if (Math.abs(dx) + Math.abs(dy) > 1) clearTimeout(longPress);
-        element.x = Math.max(0, Math.min(100 - (Number(element.width) || 10), start.left + dx));
-        element.y = Math.max(0, Math.min(100 - (Number(element.height) || 5), start.top + dy));
-        node.style.left = `${element.x}%`; node.style.top = `${element.y}%`;
+        const target = start.parent;
+        if (start.mode === "margin") {
+          if (["left", "right"].includes(element.side)) target.x = Math.max(0, Math.min(100 - target.width, start.left + dx));
+          else target.y = Math.max(0, Math.min(100 - target.height, start.top + dy));
+        } else {
+          const canMoveX = elements.some((item) => item.type === "margin" && item.parent_id === element.id && ["left", "right"].includes(item.side));
+          const canMoveY = elements.some((item) => item.type === "margin" && item.parent_id === element.id && ["top", "bottom"].includes(item.side));
+          if (canMoveX) element.x = Math.max(0, Math.min(100 - element.width, start.left + dx));
+          if (canMoveY) element.y = Math.max(0, Math.min(100 - element.height, start.top + dy));
+        }
+        const parentNode = start.mode === "margin" ? [...canvas.querySelectorAll("[data-ticket-element]")].find((candidate) => JSON.parse(candidate.dataset.ticketElement).id === target.id) : node;
+        if (parentNode) { parentNode.style.left = `${target.x}%`; parentNode.style.top = `${target.y}%`; }
+        syncMarginNodes(target.id);
       });
       node.addEventListener("pointerup", () => { clearTimeout(longPress); start = null; updateDirtyState(); });
       node.querySelector("[data-ticket-resize]")?.addEventListener("pointerdown", (event) => {
         event.stopPropagation(); event.preventDefault();
         const rect = canvas.getBoundingClientRect();
-        start = { x: event.clientX, y: event.clientY, width: Number(element.width) || 20, height: Number(element.height) || 8, resize: true, rect };
+        if (element.type === "margin") {
+          const parent = elements.find((item) => item.id === element.parent_id);
+          start = { x: event.clientX, y: event.clientY, left: Number(parent?.x) || 0, top: Number(parent?.y) || 0, mode: "margin", parent };
+        } else {
+          start = { x: event.clientX, y: event.clientY, width: Number(element.width) || 20, height: Number(element.height) || 8, mode: "resize", rect };
+        }
         node.setPointerCapture(event.pointerId);
       });
       node.addEventListener("pointermove", (event) => {
-        if (!start?.resize || event.buttons === 0) return;
+        if (element.type === "margin" || start?.mode !== "resize" || event.buttons === 0) return;
         element.width = Math.max(4, Math.min(100 - (Number(element.x) || 0), start.width + (event.clientX - start.x) / start.rect.width * 100));
         element.height = Math.max(3, Math.min(100 - (Number(element.y) || 0), start.height + (event.clientY - start.y) / start.rect.height * 100));
         node.style.width = `${element.width}%`; node.style.height = `${element.height}%`;
       });
-      node.addEventListener("pointerup", () => { if (start?.resize) { start = null; updateDirtyState(); } });
+      node.addEventListener("pointerup", () => { if (start) { start = null; updateDirtyState(); } });
     });
     editor.querySelectorAll("input, select, textarea").forEach((input) => {
       input.addEventListener("input", updatePreview);
