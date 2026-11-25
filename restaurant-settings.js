@@ -556,6 +556,12 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       layout: { ...TICKET_FORMAT_DEFAULTS, ...(initial.layout || {}) },
       elements: Array.isArray(initial.elements) ? initial.elements : [],
     };
+    const originalAssetPaths = new Set((initial.elements || []).filter((item) => item.type === "image" && item.asset_path).map((item) => item.asset_path));
+    for (const element of format.elements.filter((item) => item.type !== "margin")) {
+      const margins = format.elements.filter((item) => item.type === "margin" && item.parent_id === element.id);
+      if (!margins.some((item) => ["left", "right"].includes(item.side))) element.x = 0;
+      if (!margins.some((item) => ["top", "bottom"].includes(item.side))) element.y = 0;
+    }
     const pendingImages = new Map();
     const objectUrls = new Set();
     for (const element of format.elements.filter((item) => item.type === "image" && item.asset_path)) {
@@ -564,6 +570,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     }
     const header = (format.header?.lines || []).join("\n");
     const footer = (format.footer?.lines || []).join("\n");
+    let elements = format.elements;
     const numberField = (key, label, unit) => `<label class="settings-field">${label}<div class="ticket-number-input"><input type="number" step="0.5" data-layout="${key}" value="${Object.hasOwn(initial.layout || {}, key) ? esc(format.layout[key]) : ""}" placeholder="Dejar en blanco para el valor por defecto"><span>${unit}</span></div></label>`;
     const optionField = (key, label, defaultLabel, options) => `<label class="settings-field">${label}<select data-layout="${key}"><option value="__default">${defaultLabel} (por defecto)</option>${options.map(([value, text]) => `<option value="${value}" ${Object.hasOwn(initial.layout || {}, key) && format.layout[key] === value ? "selected" : ""}>${text}</option>`).join("")}</select></label>`;
     const body = `<div class="ticket-editor-layout"><div class="ticket-editor-controls"><label class="settings-field">Nombre del formato<input name="name" maxlength="80" required value="${esc(template?.name || "")}" placeholder="Ej. Ticket de venta"></label><label class="settings-field">Ancho del papel<select name="paper_width_mm"><option value="80" ${format.paper_width_mm === 80 ? "selected" : ""}>80 mm</option><option value="58" ${format.paper_width_mm === 58 ? "selected" : ""}>58 mm</option></select></label><label class="settings-field">Encabezado<textarea name="header" rows="3" placeholder="Una línea por renglón">${esc(header)}</textarea></label><label class="settings-field">Pie del ticket<textarea name="footer" rows="3" placeholder="Una línea por renglón">${esc(footer)}</textarea></label><div class="settings-checks ticket-basic-options"><label class="settings-check"><input type="checkbox" data-template-body="show_location" ${format.body.show_location ? "checked" : ""}><span>Mostrar sede</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_operator" ${format.body.show_operator ? "checked" : ""}><span>Mostrar empleado</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_note" ${format.body.show_note ? "checked" : ""}><span>Mostrar nota</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_payment_breakdown" ${format.body.show_payment_breakdown ? "checked" : ""}><span>Mostrar desglose de pago</span></label></div><details class="ticket-advanced-options"><summary>Mostrar opciones avanzadas</summary><p class="meta">Los valores en blanco usan el valor predeterminado del formato; se guardan explícitamente en el JSON.</p><div class="ticket-advanced-grid">${numberField("margin_top_mm", "Margen superior", "mm")}${numberField("margin_right_mm", "Margen derecho", "mm")}${numberField("margin_bottom_mm", "Margen inferior", "mm")}${numberField("margin_left_mm", "Margen izquierdo", "mm")}${numberField("min_height_mm", "Altura mínima", "mm")}${numberField("feed_before_mm", "Avance antes de imprimir", "mm")}${numberField("feed_after_mm", "Avance antes del corte", "mm")}${optionField("font_family", "Tipografía", "Tipografía de impresora", [["device", "Tipografía de impresora"], ["sans", "Sans serif rasterizada"], ["serif", "Serif rasterizada"]])}${optionField("font_size_pt", "Tamaño de texto", "12 pt", [["10", "10 pt"], ["12", "12 pt"], ["14", "14 pt"], ["16", "16 pt"], ["20", "20 pt"]])}${optionField("line_spacing", "Espaciado de línea", "Normal", [["compact", "Compacto"], ["normal", "Normal"], ["wide", "Amplio"]])}${optionField("density", "Densidad / calidad", "Normal", [["draft", "Borrador"], ["normal", "Normal"], ["high", "Alta"]])}${optionField("text_depth", "Profundidad del texto", "Estándar", [["compact", "Compacta"], ["standard", "Estándar"], ["detailed", "Detallada"]])}${optionField("cut_mode", "Corte al finalizar", "Corte parcial", [["none", "Sin corte"], ["partial", "Parcial"], ["full", "Completo"]])}</div></details></div><section class="ticket-preview-panel"><div class="ticket-preview-head"><div><strong>Vista previa</strong><span class="meta">Los elementos insertados son referencias visuales.</span></div><div class="ticket-add-control"><button type="button" class="ticket-add-button" data-ticket-add aria-label="Agregar elemento">+</button><div class="ticket-add-menu" data-ticket-add-menu hidden><button type="button" data-add-element="image">Agregar imagen</button><button type="button" data-add-element="qr">Agregar QR</button><button type="button" data-add-element="sunat_summary">Agregar valor resumen SUNAT</button></div></div></div><div class="ticket-preview-scroll"><div class="ticket-preview-paper" data-ticket-canvas><div class="ticket-preview-header" data-preview-header>${esc(header || "Nombre del restaurante")}</div><div class="ticket-preview-sample">PEDIDO DE EJEMPLO<br>2 × Producto<br>1 × Bebida<br><br>TOTAL&nbsp;&nbsp;&nbsp; S/ 00.00</div><div class="ticket-preview-footer" data-preview-footer>${esc(footer || "Gracias por su compra")}</div>${format.elements.map((element) => ticketElementMarkup(element, { getBoundingClientRect: () => ({ width: 260, height: 600 }) })).join("")}</div></div></section></div>`;
@@ -580,9 +587,9 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         else layout[key] = typeof defaultValue === "number" ? Number(input.value) : input.value;
       }
       const uploadedPaths = [];
-      const elements = format.elements.map((element) => ({ ...element }));
+      const templateElements = elements.map((element) => ({ ...element }));
       try {
-        for (const element of elements) {
+        for (const element of templateElements) {
           delete element.preview_url;
           const file = pendingImages.get(element.id);
           if (file) {
@@ -605,13 +612,24 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
           },
           footer: { lines: String(form.get("footer") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
           layout,
-          elements,
+          elements: templateElements,
         };
         const { error } = await supabase.from("printing_ticket_templates").upsert({ id: templateId, restaurant_id: state.restaurantId, name, format: formatPayload, is_active: true });
         if (error) throw error;
       } catch (error) {
         if (uploadedPaths.length) await supabase.storage.from("ticket-assets").remove(uploadedPaths);
         throw error;
+      }
+      for (const element of templateElements) {
+        const original = elements.find((item) => item.id === element.id);
+        if (original?.asset_path !== element.asset_path && element.asset_path) original.asset_path = element.asset_path;
+        if (pendingImages.has(element.id)) pendingImages.delete(element.id);
+      }
+      const retainedAssets = new Set(templateElements.map((item) => item.asset_path).filter(Boolean));
+      const removedAssets = [...originalAssetPaths].filter((path) => !retainedAssets.has(path));
+      if (removedAssets.length) {
+        const { error: removeError } = await supabase.storage.from("ticket-assets").remove(removedAssets);
+        if (removeError) throw new Error(`El formato se guardó, pero no se pudo eliminar una imagen anterior del almacenamiento: ${removeError.message}`);
       }
     }, {
       dialogClass: "ticket-format-editor",
@@ -625,7 +643,6 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     });
     const canvas = editor.querySelector("[data-ticket-canvas]");
     canvas.dataset.paperWidth = String(format.paper_width_mm);
-    let elements = format.elements;
     const renderElements = () => {
       canvas.querySelectorAll("[data-ticket-element]").forEach((node) => node.remove());
       elements.forEach((element) => canvas.insertAdjacentHTML("beforeend", ticketElementMarkup(element, canvas, elements)));
@@ -708,16 +725,25 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         const action = event.target.closest("[data-object-action]")?.dataset.objectAction;
         if (!action) return;
         menu.remove();
-        if (action === "remove") elements = elements.filter((item) => item.id !== element.id && item.parent_id !== element.id);
+        if (action === "remove") {
+          const removed = elements.filter((item) => item.id === element.id || item.parent_id === element.id);
+          removed.forEach((item) => {
+            pendingImages.delete(item.id);
+            if (item.preview_url && objectUrls.has(item.preview_url)) {
+              URL.revokeObjectURL(item.preview_url);
+              objectUrls.delete(item.preview_url);
+            }
+          });
+          elements = elements.filter((item) => item.id !== element.id && item.parent_id !== element.id);
+        }
         else if (action.startsWith("margin:")) addMargin(element, action.split(":")[1]);
         else if (action === "center") {
           const sideMargins = elements.filter((item) => item.type === "margin" && item.parent_id === element.id && ["left", "right"].includes(item.side));
           const left = sideMargins.find((item) => item.side === "left") || { id: crypto.randomUUID(), type: "margin", parent_id: element.id, side: "left" };
           const right = sideMargins.find((item) => item.side === "right") || { id: crypto.randomUUID(), type: "margin", parent_id: element.id, side: "right" };
           const width = Math.min(Number(element.width) || 22, 70);
-          left.width = Math.max(0, (100 - width) / 2); left.x = 0;
-          right.width = left.width; right.x = 100 - right.width;
-          element.x = left.width; element.width = width;
+          element.x = Math.max(0, (100 - width) / 2);
+          element.width = width;
           if (!elements.includes(left)) elements.push(left);
           if (!elements.includes(right)) elements.push(right);
           renderElements();
@@ -741,23 +767,17 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         node.setPointerCapture(event.pointerId);
       });
       node.addEventListener("pointermove", (event) => {
-        if (!start || event.buttons === 0) return;
-        if (start.mode === "resize") return;
+        if (!start || event.buttons === 0 || start.mode === "resize") return;
         const rect = canvas.getBoundingClientRect();
         const dx = (event.clientX - start.x) / rect.width * 100;
         const dy = (event.clientY - start.y) / rect.height * 100;
         if (Math.abs(dx) + Math.abs(dy) > 1) clearTimeout(longPress);
+        if (start.mode !== "margin") return;
         const target = start.parent;
-        if (start.mode === "margin") {
-          if (["left", "right"].includes(element.side)) target.x = Math.max(0, Math.min(100 - target.width, start.left + dx));
-          else target.y = Math.max(0, Math.min(100 - target.height, start.top + dy));
-        } else {
-          const canMoveX = elements.some((item) => item.type === "margin" && item.parent_id === element.id && ["left", "right"].includes(item.side));
-          const canMoveY = elements.some((item) => item.type === "margin" && item.parent_id === element.id && ["top", "bottom"].includes(item.side));
-          if (canMoveX) element.x = Math.max(0, Math.min(100 - element.width, start.left + dx));
-          if (canMoveY) element.y = Math.max(0, Math.min(100 - element.height, start.top + dy));
-        }
-        const parentNode = start.mode === "margin" ? [...canvas.querySelectorAll("[data-ticket-element]")].find((candidate) => JSON.parse(candidate.dataset.ticketElement).id === target.id) : node;
+        if (!target) return;
+        if (["left", "right"].includes(element.side)) target.x = Math.max(0, Math.min(100 - target.width, start.left + dx));
+        else target.y = Math.max(0, Math.min(100 - target.height, start.top + dy));
+        const parentNode = [...canvas.querySelectorAll("[data-ticket-element]")].find((candidate) => JSON.parse(candidate.dataset.ticketElement).id === target.id);
         if (parentNode) { parentNode.style.left = `${target.x}%`; parentNode.style.top = `${target.y}%`; }
         syncMarginNodes(target.id);
       });
@@ -791,7 +811,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       editor.querySelector("[data-ticket-add-menu]").hidden = true;
       const type = button.dataset.addElement;
       const insert = (file = null) => {
-        const element = { id: crypto.randomUUID(), type, x: 35, y: 35 + elements.length * 3, width: type === "image" ? 30 : 24, height: type === "image" ? 18 : 16 };
+        const element = { id: crypto.randomUUID(), type, x: 0, y: 0, width: type === "image" ? 30 : 24, height: type === "image" ? 18 : 16 };
         if (file) { pendingImages.set(element.id, file); element.preview_url = URL.createObjectURL(file); objectUrls.add(element.preview_url); }
         elements.push(element);
         renderElements();

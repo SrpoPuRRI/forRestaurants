@@ -138,8 +138,9 @@ cada propiedad, incluyendo los valores predeterminados. No se deja la decisión
 visual a inferencias de BPrint. El nombre del formato y el contenido dinámico
 del evento siguen siendo datos separados del diseño.
 
-La vista previa funciona como un canvas con elementos posicionables y
-redimensionables:
+La vista previa funciona como un canvas con elementos redimensionables. Los
+objetos no se arrastran directamente: solo se desplazan al añadir y ajustar sus
+márgenes. Los nuevos objetos empiezan en la esquina superior izquierda.
 
 - **Imagen:** al agregarla se abre un selector propio con arrastrar/soltar,
   exploración de archivos, Cancelar, Aceptar, resolución recomendada y límite
@@ -149,12 +150,14 @@ redimensionables:
   tarea. Su configuración de tamaño y posición pertenece al formato.
 - **Valor resumen:** elemento dinámico del comprobante electrónico, distinto
   del QR, que se imprime con los datos fiscales correspondientes.
-- **Márgenes:** elementos de espacio del canvas, redimensionables. Cada objeto
-  se anclan a su objeto y se redimensionan en un solo eje. Permiten desplazar el
+- **Márgenes:** elementos de espacio del canvas, redimensionables. Cada margen
+  se ancla a su objeto y se redimensiona en un solo eje. Permite desplazar el
   objeto sobre ese eje; sin margen lateral no se puede mover horizontalmente y
   sin margen superior/inferior no se puede mover verticalmente. Se dibujan con
   borde punteado transparente, sin relleno ni texto. Cada objeto admite como
   máximo un margen por lado y los márgenes solo ofrecen eliminar en su menú.
+  Los objetos no se arrastran directamente: se posicionan ajustando sus
+  márgenes. Un objeto recién insertado empieza en la esquina superior izquierda.
 - Al hacer clic en un objeto se selecciona y se puede mover o redimensionar.
   En escritorio, doble clic abre sus opciones; en táctil, mantener presionado
   abre el menú. Las opciones de un objeto son eliminar, agregar margen arriba,
@@ -228,9 +231,8 @@ inserción por falta de configuración SUNAT.
   original a 5 MB y lo guarda en el bucket privado `ticket-assets`, bajo la ruta
   del restaurante y formato. La política permite leer dentro del restaurante y
   solo al admin cargar o eliminar. El JSON guarda una ruta estable, no una URL
-  firmada. Los recursos referenciados por snapshots de trabajos históricos se
-  conservan para no romper reimpresiones; la limpieza de recursos huérfanos queda
-  como mantenimiento futuro.
+  firmada. Al guardar una edición, los recursos que dejaron de estar incluidos
+  en el formato se eliminan del bucket y sus referencias salen del JSON.
 - **Cola:** definir cómo el payload conserva los datos de CPE necesarios y el
   `DigestValue` correspondiente para generar QR/valor resumen de forma estable.
   Hoy SUNAT no está implementada y `cpe_accepted` no está conectado.
