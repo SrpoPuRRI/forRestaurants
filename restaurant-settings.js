@@ -798,6 +798,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         element.width = Math.max(4, Math.min(100 - (Number(element.x) || 0), start.width + (event.clientX - start.x) / start.rect.width * 100));
         element.height = Math.max(3, Math.min(100 - (Number(element.y) || 0), start.height + (event.clientY - start.y) / start.rect.height * 100));
         node.style.width = `${element.width}%`; node.style.height = `${element.height}%`;
+        syncMarginNodes(element.id);
       });
       node.addEventListener("pointerup", () => { if (start) { start = null; updateDirtyState(); } });
     });
