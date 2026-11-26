@@ -17,6 +17,7 @@ La siguiente tabla describe el modelo que ya se implementó y desplegó para el 
 | `architecture_configurations` | Configuraciones que ofrece cada versión y posibles valores iniciales propios. |
 | `restaurants.configuration` y `restaurants.configuration_keys` | Valores JSON actuales y copia de las claves disponibles para ese restaurante. |
 | `locations` | Sedes del restaurante, con dirección opcional y horario de atención. |
+| `printing_devices` | Dispositivos que BPrint registra para un restaurante; Setter debe mostrar todos los de ese restaurante con su UUID `id` y datos de conexión/último latido. Que exista aquí no significa que se haya creado un punto de impresión ni que el dispositivo pertenezca a un flujo. |
 | `location_hours` | Horario de atención estructurado por día de la semana. |
 | `account_schedules` | Uno o más horarios de entrada y salida asignados a una cuenta de empleado. |
 | Asistencia (propuesta) | Marcas de entrada/salida con actor, sede efectiva, turno y auditoría; el mapa de calor es un resumen derivado. |
@@ -44,6 +45,12 @@ Lógicamente, el esquema futuro necesita:
 La estructura restante de roles y campos se definirá con cada sección. La migración nueva elimina los objetos del flujo anterior y conserva restaurantes, roles, cuentas, sedes y preferencias de asistencia.
 
 ## Acceso desde ambos productos
+
+En la pestaña **Impresoras** de cada restaurante, Setter lee `printing_devices` filtrando por `restaurant_id` mediante `setter-admin` y muestra nombre/modelo, UUID, conexión USB/red, nombre de red, IP y estado calculado. Solo consulta una instantánea al abrir la pestaña o al pulsar **Refrescar**; no mantiene heartbeat desde Setter. El cálculo replica las ventanas del POS (7 s con tarea `taken`, 15 s en reposo).
+
+La baja de un dispositivo se permite desde la interfaz solo si la instantánea lo considera inactivo. `setter-admin` vuelve a consultar mediante el RPC `setter_delete_inactive_printing_device`, que bloquea la fila y vuelve a verificar el heartbeat de forma atómica contra las operaciones de BPrint. Si el equipo está activo, la RPC no borra nada y la Edge Function devuelve el estado actualizado para que Setter lo muestre. Si está inactivo, marca las tareas publicadas/tomadas como fallidas (`printing_device_removed`), desvincula las referencias de puntos y tareas históricas, completa los informes afectados y elimina la fila del dispositivo. El RPC solo se concede a `service_role`; la Edge Function valida primero la sesión y `platform_operators`.
+
+Esta vista separa tres conceptos: dispositivo registrado en la base, punto de impresión configurado por el restaurante y ruta incluida en un flujo. Ver o eliminar un dispositivo en Setter no crea ni modifica un flujo; eliminarlo solo retira el dispositivo y deja el punto existente sin dispositivo enlazado.
 
 - Black&White POS usa la clave pública de Supabase y el token Auth de la persona. Las políticas RLS limitan los datos a su restaurante, rol y sede, y bloquean la operación cuando el restaurante está dado de baja.
 - Setter lee y modifica los mismos registros y llama a Edge Functions para crear identidades Auth y gestionar el ciclo de vida de cuentas.

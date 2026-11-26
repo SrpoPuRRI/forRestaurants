@@ -61,6 +61,42 @@ Deno.serve(async (req) => {
   } catch { return reply(400, { error: "invalid_request_body" }); }
   const action = String(body.action ?? "");
   const restaurantId = String(body.restaurant_id ?? "");
+  if (action === "printing_devices") {
+    if (!/^[0-9a-f-]{36}$/i.test(restaurantId)) return reply(400, { error: "invalid_restaurant_id" });
+    const { data: rows, error: devicesError } = await db.from("printing_devices")
+      .select("id,hardware_key,model,display_name,serial_number,network_name,ip_address,tcp_port,connection_type,last_seen_at,operation_mode,created_at")
+      .eq("restaurant_id", restaurantId).order("created_at", { ascending: true });
+    if (devicesError) return reply(400, { error: `printing_devices_read_failed: ${devicesError.message}` });
+    const ids = (rows || []).map((device) => device.id);
+    const { data: takenJobs, error: jobsError } = ids.length
+      ? await db.from("printing_jobs").select("device_id").eq("restaurant_id", restaurantId).in("device_id", ids).eq("status", "taken")
+      : { data: [], error: null };
+    if (jobsError) return reply(400, { error: `printing_activity_read_failed: ${jobsError.message}` });
+    const takenIds = new Set((takenJobs || []).map((job) => job.device_id));
+    const now = Date.now();
+    const devices = (rows || []).map((device) => {
+      const lastSeen = device.last_seen_at ? Date.parse(device.last_seen_at) : Number.NaN;
+      const timeoutMs = takenIds.has(device.id) ? 7_000 : 15_000;
+      return {
+        ...device,
+        is_active: Number.isFinite(lastSeen) && now - lastSeen <= timeoutMs,
+        heartbeat_timeout_seconds: timeoutMs / 1000,
+      };
+    });
+    return reply(200, { devices });
+  }
+  if (action === "delete_printing_device") {
+    if (!/^[0-9a-f-]{36}$/i.test(restaurantId) || !/^[0-9a-f-]{36}$/i.test(String(body.device_id ?? "")))
+      return reply(400, { error: "invalid_printing_device_request" });
+    const { data, error } = await db.rpc("setter_delete_inactive_printing_device", {
+      p_restaurant_id: restaurantId,
+      p_device_id: String(body.device_id),
+    });
+    if (error) return reply(400, { error: `printing_device_delete_failed: ${error.message}` });
+    if (!data?.deleted && data?.device?.is_active) return reply(409, { error: "printing_device_active", device: data.device });
+    if (!data?.deleted) return reply(404, { error: "printing_device_not_found" });
+    return reply(200, { success: true, deleted: true });
+  }
   if (action === "logo_urls") {
     const ids = [...new Set(Array.isArray(body.restaurant_ids) ? body.restaurant_ids.map(String).filter((id) => /^[0-9a-f-]{36}$/i.test(id)) : [])];
     if (!ids.length) return reply(200, { logos: {} });

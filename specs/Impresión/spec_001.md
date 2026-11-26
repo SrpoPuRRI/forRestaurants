@@ -17,7 +17,9 @@ Las tablas `printing_points`, `printing_flows`, `printing_flow_routes`, `printin
 - **Manual:** la modalidad se configura en el flujo/ruta, no al crear el punto. Falta completar el renderizador de formatos y la vista imprimible del navegador.
 - **Automática:** crea trabajos y los entrega a un agente local o integración compatible. La arquitectura WPF de BPrint para múltiples impresoras, presencia por lotes, leases, reclamo y reporte de resultados está implementada; el usuario confirmó que la impresión de prueba está lista. BPrint queda cerrado como arquitectura, con protocolo de publicación pendiente de firma Authenticode mediante Velopack, verificación de paquetes/hashes y confirmación de Edge Function.
 
-La impresión es independiente de SUNAT. Los puntos y flujos no guardan RUC, credenciales PSE/OSE ni configuración fiscal. Un comprobante aceptado puede producir un evento imprimible en uno o varios flujos, igual que cualquier otro evento de la app.
+La impresión es un módulo desacoplado de SUNAT. Los puntos, formatos, flujos y la cola no guardan RUC, credenciales PSE/OSE ni configuración fiscal. El módulo SUNAT/PSE del POS es responsable de construir el comprobante, verificar su validez y autenticidad, y decidir si se acepta o rechaza antes de emitir el evento de negocio correspondiente.
+
+El contrato es unidireccional: una vez que un evento de impresión recibe un QR, valor resumen o contenido marcado por el POS como aprobado, el subsistema de impresión lo representa e imprime tal como fue recibido. No vuelve a consultar SUNAT/PSE, no inspecciona criptográficamente el QR ni cuestiona el estado fiscal recibido. BPrint solo valida que el JSON tenga estructura, valores de representación y geometría imprimibles; esa validación técnica no afirma ni comprueba legalidad tributaria. Tampoco se bloquea la creación de un QR o de su formato por no haber configurado SUNAT.
 
 ### Emisión de comprobantes electrónicos (SUNAT/PSE)
 
@@ -25,7 +27,7 @@ SUNAT no se implementa en esta etapa. Configuración muestra únicamente una tar
 
 - El restaurante configura y autoriza un PSE (o, en una etapa futura, otra modalidad SEE compatible). La integración transmite la solicitud de emisión y recibe el resultado; el estado del documento y su referencia quedan asociados al movimiento que lo originó.
 - Los movimientos deben distinguir al menos `not_sent`, `sent`, `accepted` y `rejected`, junto con identificadores, timestamps, respuesta/constancia y documento electrónico necesarios para trazabilidad. El rechazo no convierte la impresión en fallida: es un resultado tributario del movimiento y debe informarse al usuario.
-- El evento de negocio de aceptación —por ejemplo `cpe_accepted`— puede configurarse en **Flujos de impresión** para producir una representación impresa. Rechazo puede generar notificación/estado visible; no debe imprimirse como comprobante válido.
+- El evento de negocio de aceptación —por ejemplo `cpe_accepted`— lo emite el módulo fiscal solo después de obtener la aceptación; puede configurarse en **Flujos de impresión** para producir una representación impresa. Rechazo puede generar notificación/estado visible; no se emite como evento de comprobante aceptado. La responsabilidad de esta decisión está en el módulo fiscal, no en BPrint.
 - La impresión de una representación no es evidencia de aceptación tributaria. A la inversa, la aceptación por SUNAT/PSE no prueba que la impresora produjo papel ni que el cliente lo recogió.
 - `printTicket(event, options)` sigue siendo el punto de entrada de impresión. Debe recibir un evento de emisión ya ocurrido o confirmado; no es responsable de emitir, validar ni consultar el PSE.
 
@@ -146,10 +148,12 @@ márgenes. Los nuevos objetos empiezan en la esquina superior izquierda.
   exploración de archivos, Cancelar, Aceptar, resolución recomendada y límite
   de peso visibles. Se admite una imagen por acción; el formato conserva una
   referencia al recurso almacenado.
-- **QR:** elemento dinámico que BPrint renderiza a partir de los datos de la
-  tarea. Su configuración de tamaño y posición pertenece al formato.
-- **Valor resumen:** elemento dinámico del comprobante electrónico, distinto
-  del QR, que se imprime con los datos fiscales correspondientes.
+- **QR:** elemento gráfico que BPrint renderiza con el contenido entregado por
+  el evento. Su configuración de tamaño y posición pertenece al formato. BPrint
+  no determina si el contenido del QR es fiscalmente legítimo.
+- **Valor resumen:** elemento gráfico del comprobante electrónico, distinto del
+  QR, que el módulo fiscal genera y entrega; impresión conserva y representa el
+  valor recibido sin volver a validarlo.
 - **Márgenes:** elementos de espacio del canvas, redimensionables. Cada margen
   se ancla a su objeto y se redimensiona en un solo eje. Permite desplazar el
   objeto sobre ese eje; sin margen lateral no se puede mover horizontalmente y
@@ -200,15 +204,17 @@ Crear o editar un formato solo escribe la fila de plantilla; no crea una tarea.
 La tarea sigue naciendo cuando un evento coincide con un flujo. La fila de
 `printing_jobs` combina el payload del evento con un snapshot del formato y de
 la ruta. BPrint interpreta ese JSON completo, obtiene las imágenes referenciadas,
-compone el ticket y emite los comandos compatibles con la impresora concreta.
+compone el ticket en bitmap monocromo y lo envía a la cola Windows de la impresora.
+La interpretación fiscal del payload ocurrió antes, en el módulo fiscal del POS.
 La app no guarda plantillas en los archivos locales de BPrint: cada tarea trae
 su snapshot de formato. El selector de impresión de prueba puede consultar
 formatos de Supabase para generar una prueba, pero no los persiste localmente.
 
 En la etapa de prueba, QR y valor resumen son **objetos gráficos de referencia**:
 el canvas permite agregarlos, moverlos y dimensionarlos sin datos tributarios
-reales ni SUNAT configurado. Al implementar SUNAT, esos mismos tipos de elemento
-recibirán el contenido aprobado del comprobante. No se debe bloquear ahora su
+reales ni SUNAT configurado. Al implementar SUNAT, el módulo fiscal entregará el
+contenido aprobado a los eventos; esos mismos tipos de elemento lo representarán
+sin validar ni alterar su significado fiscal. No se debe bloquear ahora su
 inserción por falta de configuración SUNAT.
 
 ### Pendientes de datos, base e infraestructura

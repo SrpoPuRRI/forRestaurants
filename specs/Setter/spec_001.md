@@ -28,6 +28,10 @@
 - Quitar una necesidad revoca sus roles y accesos de interfaz/operación, pero conserva los registros y valores existentes. La información no se elimina ni se migra a otro restaurante.
 - Setter puede consultar el total de cuentas y los roles; nunca muestra contraseñas. Desde Setter se pueden crear o eliminar cuentas, pero no editar su perfil ni cambiar su contraseña.
 - El resumen de cada restaurante muestra en modo de solo lectura las sedes registradas y sus direcciones, además del número de sedes.
+- La ficha de cada restaurante incluye una pestaña **Impresoras** que muestra todos sus dispositivos de `printing_devices`, con UUID `id`, nombre/modelo, conexión (USB o red), nombre de red, IP y estado. Al abrir la pestaña se obtiene una sola instantánea; el botón **Refrescar** solicita una nueva. No hay sondeo continuo en Setter. El estado usa la misma ventana de actividad del POS: heartbeat de hasta 7 segundos si existe una tarea `taken`, o hasta 15 segundos si no existe.
+- Setter solo permite eliminar un dispositivo cuando la instantánea dice **Inactiva**. Al confirmar se vuelve a comprobar la actividad en una operación atómica; si el latido continúa, no se elimina, se actualiza la etiqueta a **Activa** y se informa: «No se puede borrar porque la impresora está en pleno latido».
+- Al eliminar un dispositivo inactivo se borra su fila de `printing_devices`, se conserva el punto configurado pero se desvincula el dispositivo, se marcan como fallidas sus tareas pendientes con `printing_device_removed` y se preservan los datos históricos de los flujos. La eliminación no equivale a añadirlo a un punto o a un flujo.
+- La lista representa dispositivos que BPrint registró para el restaurante; no significa que el administrador los haya añadido como puntos de impresión ni que estén incluidos en un flujo. El UUID visible es el que el administrador copia para enlazarlo desde Sistemas de Impresión en el POS.
 - La app POS muestra al administrador las configuraciones que corresponden a las necesidades elegidas y a las secciones fijas. CRM, Salón y Cocina sí pueden ser necesidades opcionales.
 - Cada sede puede guardar dirección opcional y horario de atención. Cada empleado puede tener asignado uno o más horarios de entrada y salida.
 - Si un restaurante está dado de baja, las cuentas asociadas no pueden operar Black&White POS. Tras resolver la sesión, la aplicación debe descartar los datos privados del restaurante, limpiar su interfaz y mostrar una pantalla bloqueante con el aviso **«Tu restaurante ha sido dado de baja»**. La restricción debe aplicarse también en los servicios de datos; limpiar el DOM por sí solo no controla el acceso.
@@ -56,6 +60,7 @@ La contraseña inicial debe tratarse como credencial temporal; nunca se almacena
 - `locations`: sedes pertenecientes a un restaurante.
 - Todo restaurante se crea con la sede **Sede principal** o el nombre que escriba el operador. La dirección es opcional; se pueden crear otras sedes desde el POS y no se permite eliminar la última.
 - Datos operativos de cada módulo: asociados al restaurante y, cuando aplique, a una sede.
+- `printing_devices`: dispositivos que BPrint registra para un restaurante. Setter los consulta por `restaurant_id` y muestra su UUID `id` y metadatos de conexión/latido en la pestaña Impresoras, sin crear ni editar `printing_points`, rutas o flujos.
 
 Las necesidades elegidas determinan qué opciones aparecen en la app POS, sin selector de arquitectura/versiones. El backend valida y persiste cada ajuste en campos o tablas con significado de dominio, en lugar de usar un almacén genérico clave-valor. Los valores, restricciones y relaciones deben quedar definidos en el esquema de cada área.
 
