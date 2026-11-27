@@ -144,6 +144,9 @@ traducirla a comandos para el dispositivo, sin escoger el diseño por su cuenta.
   desglose del pedido, desglose de pago, total y pie. Encabezado y pie solo están
   activos si contienen texto; las opciones de contenido dependen de sus switches
   (mesa requiere Salón). Total y desglose de pago también se pueden ordenar.
+- Identidad de la app y título del pedido son opcionales mediante switches del
+  panel. Al desactivarlos desaparecen de la lista y del JSON de secciones; el
+  resto del formato y el desglose de productos continúan disponibles.
 - El desglose del pedido permite configurar por separado de cero a cinco saltos
   entre cada producto. Cada grupo de producto incluye sus variantes y añadidos;
   los saltos se aplican entre grupos, no entre las líneas internas de un grupo.
