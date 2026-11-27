@@ -100,8 +100,16 @@ where flow.engine_account_order is distinct from coalesce((
 
 -- Retain the existing validated editor implementation as an internal routine;
 -- the public RPC now saves the shared order and synchronizes all flows atomically.
-alter function public.save_printing_flow_editor(uuid,text,text[],boolean,jsonb,uuid[])
-  rename to save_printing_flow_editor_with_flow_order;
+do $$
+begin
+  if to_regprocedure('public.save_printing_flow_editor_with_flow_order(uuid,text,text[],boolean,jsonb,uuid[])') is null then
+    if to_regprocedure('public.save_printing_flow_editor(uuid,text,text[],boolean,jsonb,uuid[])') is null then
+      raise exception 'printing_flow_editor_implementation_missing';
+    end if;
+    execute 'alter function public.save_printing_flow_editor(uuid,text,text[],boolean,jsonb,uuid[]) rename to save_printing_flow_editor_with_flow_order';
+  end if;
+end;
+$$;
 revoke all on function public.save_printing_flow_editor_with_flow_order(uuid,text,text[],boolean,jsonb,uuid[])
   from public,anon,authenticated;
 
