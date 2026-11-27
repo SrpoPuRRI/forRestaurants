@@ -1475,7 +1475,7 @@ export default function createOrderFlow({
           await refreshOpenOrders(false);
           render();
           if (paidOrderId && (state.restaurantNeeds || []).includes("printing_systems"))
-            await printTicket({ type: "paid_order_created", data: { order_id: paidOrderId } });
+            await printTicket({ type: "paid_order_created", data: { order_id: paidOrderId, table_label: paidQueueOrder.table_label || null } });
           else toast("Pago registrado correctamente.");
 
         } catch (error) {
@@ -1545,6 +1545,7 @@ export default function createOrderFlow({
     const payload = { ...(event?.data || event?.payload || {}) };
     if (!eventKey) throw new Error("printTicket requiere un tipo de evento.");
     if (!supabase) throw new Error("No hay conexión con la base de datos.");
+    payload.occurred_at ||= new Date().toISOString();
     try {
       if (payload.order_id && ["paid_order_created", "payment_corrected", "manual_reprint"].includes(eventKey)) {
         const [{ data: order, error: orderError }, { data: items, error: itemsError }] = await Promise.all([

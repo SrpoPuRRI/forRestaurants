@@ -34,6 +34,16 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     line_spacing: "normal", density: "normal", text_depth: "standard",
     feed_before_mm: 0, feed_after_mm: 3, cut_mode: "partial",
   });
+  const TICKET_SECTION_ORDER = Object.freeze([
+    "brand", "header", "event_title", "location", "order_datetime", "operator",
+    "table", "status", "establishment_ruc", "note", "items", "payment_breakdown", "total", "footer",
+  ]);
+  const TICKET_SECTION_LABELS = Object.freeze({
+    brand: "Identidad de la app", header: "Encabezado", event_title: "Título del pedido",
+    location: "Sede", order_datetime: "Fecha y hora", operator: "Empleado", table: "Mesa",
+    status: "Estado del pedido", establishment_ruc: "RUC del establecimiento", note: "Nota",
+    items: "Desglose del pedido", payment_breakdown: "Desglose de pago", total: "Total", footer: "Pie del ticket",
+  });
 
   async function load() {
     if (!supabase || !state.restaurantId) return;
@@ -361,7 +371,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const online = printingPointIsActive(point);
     const connectionType = deprecated ? "Dispositivo eliminado" : device?.connection_type || "No informada por BPrint";
     const networkDetails = !deprecated && device?.connection_type === "Red"
-      ? `<div class="printing-point-detail"><span>Red</span><strong>${esc(device?.network_name || "No informada")}</strong></div><div class="printing-point-detail"><span>IP actual</span><strong>${esc(device?.ip_address || "No informada")}</strong></div>`
+      ? `<div class="printing-point-detail"><span>Nombre de red</span><strong>${esc(device?.network_name || "No identificada en BPrint")}</strong></div><div class="printing-point-detail"><span>IP actual</span><strong>${esc(device?.ip_address || "No informada")}</strong></div>`
       : "";
     const dialog = document.createElement("dialog");
     dialog.className = "password-dialog printing-point-details-dialog";
@@ -603,10 +613,16 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   async function openPrintTemplateEditor(template = null) {
     const initial = template?.format ? JSON.parse(JSON.stringify(template.format)) : {};
     const format = {
-      schema_version: 2,
+      schema_version: 3,
       paper_width_mm: Number(initial.paper_width_mm) === 58 ? 58 : 80,
       header: initial.header || { lines: [] }, footer: initial.footer || { lines: [] },
-      body: { show_location: true, show_operator: true, show_note: true, show_payment_breakdown: true, ...(initial.body || {}) },
+      body: {
+        show_location: true, show_operator: true, show_note: true, show_payment_breakdown: true,
+        show_order_datetime: true, show_establishment_ruc: false,
+        show_status: true, show_total: true,
+        ...(initial.body || {}),
+        show_table: (state.restaurantNeeds || []).includes("salon") && (initial.body?.show_table ?? true),
+      },
       layout: { ...TICKET_FORMAT_DEFAULTS, ...(initial.layout || {}) },
       elements: Array.isArray(initial.elements) ? initial.elements : [],
     };
@@ -625,10 +641,38 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const header = (format.header?.lines || []).join("\n");
     const footer = (format.footer?.lines || []).join("\n");
     let elements = format.elements;
+    let sectionOrder = [...new Set([...(Array.isArray(initial.layout?.section_order) ? initial.layout.section_order.filter((key) => TICKET_SECTION_ORDER.includes(key)) : []), ...TICKET_SECTION_ORDER])];
+    const sectionBreaks = { ...(initial.layout?.section_breaks || {}) };
+    let itemLineBreaks = Math.max(0, Math.min(5, Number(initial.layout?.item_line_breaks) || 0));
     const numberField = (key, label, unit) => `<label class="settings-field">${label}<div class="ticket-number-input"><input type="number" step="0.5" data-layout="${key}" value="${Object.hasOwn(initial.layout || {}, key) ? esc(format.layout[key]) : ""}" placeholder="Dejar en blanco para el valor por defecto"><span>${unit}</span></div></label>`;
     const optionField = (key, label, defaultLabel, options) => `<label class="settings-field">${label}<select data-layout="${key}"><option value="__default">${defaultLabel} (por defecto)</option>${options.map(([value, text]) => `<option value="${value}" ${Object.hasOwn(initial.layout || {}, key) && format.layout[key] === value ? "selected" : ""}>${text}</option>`).join("")}</select></label>`;
-    const body = `<div class="ticket-editor-layout"><div class="ticket-editor-controls"><label class="settings-field">Nombre del formato<input name="name" maxlength="80" required value="${esc(template?.name || "")}" placeholder="Ej. Ticket de venta"></label><label class="settings-field">Ancho del papel<select name="paper_width_mm"><option value="80" ${format.paper_width_mm === 80 ? "selected" : ""}>80 mm</option><option value="58" ${format.paper_width_mm === 58 ? "selected" : ""}>58 mm</option></select></label><label class="settings-field">Encabezado<textarea name="header" rows="3" placeholder="Una línea por renglón">${esc(header)}</textarea></label><label class="settings-field">Pie del ticket<textarea name="footer" rows="3" placeholder="Una línea por renglón">${esc(footer)}</textarea></label><div class="settings-checks ticket-basic-options"><label class="settings-check"><input type="checkbox" data-template-body="show_location" ${format.body.show_location ? "checked" : ""}><span>Mostrar sede</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_operator" ${format.body.show_operator ? "checked" : ""}><span>Mostrar empleado</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_note" ${format.body.show_note ? "checked" : ""}><span>Mostrar nota</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_payment_breakdown" ${format.body.show_payment_breakdown ? "checked" : ""}><span>Mostrar desglose de pago</span></label></div><details class="ticket-advanced-options"><summary>Mostrar opciones avanzadas</summary><p class="meta">Los valores en blanco usan el valor predeterminado del formato; se guardan explícitamente en el JSON.</p><div class="ticket-advanced-grid">${numberField("margin_top_mm", "Margen superior", "mm")}${numberField("margin_right_mm", "Margen derecho", "mm")}${numberField("margin_bottom_mm", "Margen inferior", "mm")}${numberField("margin_left_mm", "Margen izquierdo", "mm")}${numberField("min_height_mm", "Altura mínima", "mm")}${numberField("feed_before_mm", "Avance antes de imprimir", "mm")}${numberField("feed_after_mm", "Avance antes del corte", "mm")}${optionField("font_family", "Tipografía", "Tipografía de impresora", [["device", "Tipografía de impresora"], ["sans", "Sans serif rasterizada"], ["serif", "Serif rasterizada"]])}${optionField("font_size_pt", "Tamaño de texto", "12 pt", [["10", "10 pt"], ["12", "12 pt"], ["14", "14 pt"], ["16", "16 pt"], ["20", "20 pt"]])}${optionField("line_spacing", "Espaciado de línea", "Normal", [["compact", "Compacto"], ["normal", "Normal"], ["wide", "Amplio"]])}${optionField("density", "Densidad / calidad", "Normal", [["draft", "Borrador"], ["normal", "Normal"], ["high", "Alta"]])}${optionField("text_depth", "Profundidad del texto", "Estándar", [["compact", "Compacta"], ["standard", "Estándar"], ["detailed", "Detallada"]])}${optionField("cut_mode", "Corte al finalizar", "Corte parcial", [["none", "Sin corte"], ["partial", "Parcial"], ["full", "Completo"]])}</div></details></div><section class="ticket-preview-panel"><div class="ticket-preview-head"><div><strong>Vista previa</strong><span class="meta">Los elementos insertados son referencias visuales.</span></div><div class="ticket-add-control"><button type="button" class="ticket-add-button" data-ticket-add aria-label="Agregar elemento">+</button><div class="ticket-add-menu" data-ticket-add-menu hidden><button type="button" data-add-element="image">Agregar imagen</button><button type="button" data-add-element="qr">Agregar QR</button><button type="button" data-add-element="sunat_summary">Agregar valor resumen SUNAT</button></div></div></div><div class="ticket-preview-scroll"><div class="ticket-preview-paper" data-ticket-canvas><div class="ticket-preview-header" data-preview-header>${esc(header || "Nombre del restaurante")}</div><div class="ticket-preview-sample">PEDIDO DE EJEMPLO<br>2 × Producto<br>1 × Bebida<br><br>TOTAL&nbsp;&nbsp;&nbsp; S/ 00.00</div><div class="ticket-preview-footer" data-preview-footer>${esc(footer || "Gracias por su compra")}</div>${format.elements.map((element) => ticketElementMarkup(element, { getBoundingClientRect: () => ({ width: 260, height: 600 }) })).join("")}</div></div></section></div>`;
-    const editor = openPrintDialog(template ? "Editar formato de ticket" : "Crear formato de ticket", body, async (dialog) => {
+    const body = `<div class="ticket-editor-layout"><div class="ticket-editor-controls"><label class="settings-field">Nombre del formato<input name="name" maxlength="80" required value="${esc(template?.name || "")}" placeholder="Ej. Ticket de venta"></label><label class="settings-field">Ancho del papel<select name="paper_width_mm"><option value="80" ${format.paper_width_mm === 80 ? "selected" : ""}>80 mm</option><option value="58" ${format.paper_width_mm === 58 ? "selected" : ""}>58 mm</option></select></label><label class="settings-field">Encabezado<textarea name="header" rows="3" placeholder="Una línea por renglón">${esc(header)}</textarea></label><label class="settings-field">Pie del ticket<textarea name="footer" rows="3" placeholder="Una línea por renglón">${esc(footer)}</textarea></label><div class="settings-checks ticket-basic-options"><label class="settings-check"><input type="checkbox" data-template-body="show_location" ${format.body.show_location ? "checked" : ""}><span>Mostrar sede</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_operator" ${format.body.show_operator ? "checked" : ""}><span>Mostrar empleado</span></label>${(state.restaurantNeeds || []).includes("salon") ? `<label class="settings-check"><input type="checkbox" data-template-body="show_table" ${format.body.show_table ? "checked" : ""}><span>Mostrar mesa</span></label>` : ""}<label class="settings-check"><input type="checkbox" data-template-body="show_order_datetime" ${format.body.show_order_datetime ? "checked" : ""}><span>Mostrar fecha y hora (dd/mm/yyyy hh:mm:ss)</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_establishment_ruc" ${format.body.show_establishment_ruc ? "checked" : ""}><span>Mostrar RUC del establecimiento (referencia de prueba)</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_note" ${format.body.show_note ? "checked" : ""}><span>Mostrar nota</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_payment_breakdown" ${format.body.show_payment_breakdown ? "checked" : ""}><span>Mostrar desglose de pago</span></label></div><details class="ticket-advanced-options"><summary>Mostrar opciones avanzadas</summary><p class="meta">Los valores en blanco usan el valor predeterminado del formato; se guardan explícitamente en el JSON.</p><div class="ticket-advanced-grid">${numberField("margin_top_mm", "Margen superior", "mm")}${numberField("margin_right_mm", "Margen derecho", "mm")}${numberField("margin_bottom_mm", "Margen inferior", "mm")}${numberField("margin_left_mm", "Margen izquierdo", "mm")}${numberField("min_height_mm", "Altura mínima", "mm")}${numberField("feed_before_mm", "Avance antes de imprimir", "mm")}${numberField("feed_after_mm", "Avance antes del corte", "mm")}${optionField("font_family", "Tipografía", "Tipografía de impresora", [["device", "Tipografía de impresora"], ["sans", "Sans serif rasterizada"], ["serif", "Serif rasterizada"]])}${optionField("font_size_pt", "Tamaño de texto", "12 pt", [["10", "10 pt"], ["12", "12 pt"], ["14", "14 pt"], ["16", "16 pt"], ["20", "20 pt"]])}${optionField("line_spacing", "Espaciado de línea", "Normal", [["compact", "Compacto"], ["normal", "Normal"], ["wide", "Amplio"]])}${optionField("density", "Densidad / calidad", "Normal", [["draft", "Borrador"], ["normal", "Normal"], ["high", "Alta"]])}${optionField("text_depth", "Profundidad del texto", "Estándar", [["compact", "Compacta"], ["standard", "Estándar"], ["detailed", "Detallada"]])}${optionField("cut_mode", "Corte al finalizar", "Corte parcial", [["none", "Sin corte"], ["partial", "Parcial"], ["full", "Completo"]])}</div></details></div><section class="ticket-preview-panel"><div class="ticket-preview-head"><div><strong>Vista previa</strong><span class="meta">Los elementos insertados son referencias visuales.</span></div><div class="ticket-add-control"><button type="button" class="ticket-add-button" data-ticket-add aria-label="Agregar elemento">+</button><div class="ticket-add-menu" data-ticket-add-menu hidden><button type="button" data-add-element="image">Agregar imagen</button><button type="button" data-add-element="qr">Agregar QR</button><button type="button" data-add-element="sunat_summary">Agregar valor resumen SUNAT</button></div></div></div><div class="ticket-preview-scroll"><div class="ticket-preview-paper" data-ticket-canvas><div class="ticket-preview-header" data-preview-header>${esc(header || "Nombre del restaurante")}</div><div class="ticket-preview-sample">PEDIDO DE EJEMPLO<br>2 × Producto<br>1 × Bebida<br><br>TOTAL&nbsp;&nbsp;&nbsp; S/ 00.00</div><div class="ticket-preview-footer" data-preview-footer>${esc(footer || "Gracias por su compra")}</div>${format.elements.map((element) => ticketElementMarkup(element, { getBoundingClientRect: () => ({ width: 260, height: 600 }) })).join("")}</div></div></section></div>`;
+    const sectionControls = `<details class="ticket-advanced-options ticket-sections-options"><summary>Ajuste de secciones</summary><div class="settings-checks ticket-section-toggles"><label class="settings-check"><input type="checkbox" data-template-body="show_status" ${format.body.show_status ? "checked" : ""}><span>Mostrar estado del pedido</span></label><label class="settings-check"><input type="checkbox" data-template-body="show_total" ${format.body.show_total ? "checked" : ""}><span>Mostrar total</span></label></div><p class="meta">Arrastra las secciones para ordenar el ticket. Los saltos entre secciones y productos usan el espaciado de línea seleccionado.</p><div class="ticket-section-list" data-ticket-section-list></div><label class="settings-field ticket-item-breaks">Saltos de línea entre cada producto<input type="number" min="0" max="5" step="1" data-ticket-item-breaks value="${itemLineBreaks}"></label></details>`;
+    const bodyWithSectionControls = body.replace(
+      `</div><details class="ticket-advanced-options"><summary>Mostrar opciones avanzadas</summary>`,
+      `</div>${sectionControls}<details class="ticket-advanced-options"><summary>Mostrar opciones avanzadas</summary>`,
+    );
+    const activeSectionKeys = () => {
+      const active = new Set(["brand", "event_title", "items"]);
+      const enabled = (key) => Boolean(editor?.querySelector(`[data-template-body="${key}"]`)?.checked);
+      if (editor?.querySelector('[name="header"]')?.value.trim()) active.add("header");
+      if (enabled("show_location")) active.add("location");
+      if (enabled("show_order_datetime")) active.add("order_datetime");
+      if (enabled("show_operator")) active.add("operator");
+      if (enabled("show_table")) active.add("table");
+      if (enabled("show_status")) active.add("status");
+      if (enabled("show_total")) active.add("total");
+      if (enabled("show_establishment_ruc")) active.add("establishment_ruc");
+      if (enabled("show_note")) active.add("note");
+      if (enabled("show_payment_breakdown")) active.add("payment_breakdown");
+      if (editor?.querySelector('[name="footer"]')?.value.trim()) active.add("footer");
+      return sectionOrder.filter((key) => active.has(key));
+    };
+    const activeSectionBreaks = () => {
+      const active = activeSectionKeys();
+      return Object.fromEntries(active.slice(0, -1).map((key) => [key, getSectionBreak(key, active)]));
+    };
+    const editor = openPrintDialog(template ? "Editar formato de ticket" : "Crear formato de ticket", bodyWithSectionControls, async (dialog) => {
       const form = new FormData(dialog);
       const name = String(form.get("name") || "").trim();
       if (!name) throw new Error("Escribe el nombre del formato.");
@@ -654,8 +698,12 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
             element.asset_path = path;
           }
         }
+        const activeSections = activeSectionKeys();
+        layout.section_order = activeSections;
+        layout.section_breaks = activeSectionBreaks();
+        layout.item_line_breaks = itemLineBreaks;
         const formatPayload = {
-          schema_version: 2,
+          schema_version: 3,
           paper_width_mm: Number(form.get("paper_width_mm")),
           header: { lines: String(form.get("header") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
           body: {
@@ -663,6 +711,11 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
             show_operator: dialog.querySelector('[data-template-body="show_operator"]').checked,
             show_note: dialog.querySelector('[data-template-body="show_note"]').checked,
             show_payment_breakdown: dialog.querySelector('[data-template-body="show_payment_breakdown"]').checked,
+            show_table: dialog.querySelector('[data-template-body="show_table"]')?.checked || false,
+            show_order_datetime: dialog.querySelector('[data-template-body="show_order_datetime"]').checked,
+            show_establishment_ruc: dialog.querySelector('[data-template-body="show_establishment_ruc"]').checked,
+            show_status: dialog.querySelector('[data-template-body="show_status"]').checked,
+            show_total: dialog.querySelector('[data-template-body="show_total"]').checked,
           },
           footer: { lines: String(form.get("footer") || "").split("\n").map((line) => line.trim()).filter(Boolean) },
           layout,
@@ -695,6 +748,94 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         if (error) throw new Error(error.message || "No se pudo eliminar el formato.");
       } : null,
     });
+    const sectionList = editor.querySelector("[data-ticket-section-list]");
+    const itemBreakInput = editor.querySelector("[data-ticket-item-breaks]");
+    const sectionBreakDefault = (key, activeKeys) => {
+      const index = activeKeys.indexOf(key);
+      const next = activeKeys[index + 1];
+      const orderInfoKeys = ["location", "order_datetime", "operator", "table", "status", "establishment_ruc", "note"];
+      if (next === "items" && orderInfoKeys.includes(key)) return 1;
+      if (key === "items" && ["payment_breakdown", "total"].includes(next)) return 1;
+      return 0;
+    };
+    const getSectionBreak = (key, activeKeys = activeSectionKeys()) => Math.max(0, Math.min(5,
+      Object.hasOwn(sectionBreaks, key) ? Number(sectionBreaks[key]) || 0 : sectionBreakDefault(key, activeKeys)));
+    const moveSection = (key, direction) => {
+      const active = activeSectionKeys();
+      const index = active.indexOf(key);
+      const target = active[index + direction];
+      if (!target) return;
+      const firstIndex = sectionOrder.indexOf(key);
+      const secondIndex = sectionOrder.indexOf(target);
+      [sectionOrder[firstIndex], sectionOrder[secondIndex]] = [sectionOrder[secondIndex], sectionOrder[firstIndex]];
+      renderSectionList();
+      updatePreview();
+    };
+    const renderSectionList = () => {
+      const active = activeSectionKeys();
+      sectionList.innerHTML = active.map((key, index) => {
+        const gap = index < active.length - 1
+          ? `<label class="ticket-section-gap"><span>Saltos de línea</span><select data-section-break="${key}">${Array.from({ length: 6 }, (_, value) => `<option value="${value}" ${getSectionBreak(key, active) === value ? "selected" : ""}>${value}</option>`).join("")}</select></label>`
+          : "";
+        return `<div class="ticket-section-entry"><div class="ticket-section-row" data-ticket-section-row="${key}" draggable="true"><span class="ticket-section-grip" aria-hidden="true">⠿</span><strong>${TICKET_SECTION_LABELS[key]}</strong><div class="ticket-section-move"><button type="button" data-section-move="-1" aria-label="Mover ${TICKET_SECTION_LABELS[key]} hacia arriba" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-section-move="1" aria-label="Mover ${TICKET_SECTION_LABELS[key]} hacia abajo" ${index === active.length - 1 ? "disabled" : ""}>↓</button></div></div>${gap}</div>`;
+      }).join("");
+    };
+    let draggedSectionKey = "";
+    sectionList.addEventListener("change", (event) => {
+      const key = event.target.dataset.sectionBreak;
+      if (key) sectionBreaks[key] = Math.max(0, Math.min(5, Number(event.target.value) || 0));
+      updatePreview();
+    });
+    sectionList.addEventListener("click", (event) => {
+      const move = event.target.closest("[data-section-move]");
+      if (move) moveSection(move.closest("[data-ticket-section-row]").dataset.ticketSectionRow, Number(move.dataset.sectionMove));
+    });
+    sectionList.addEventListener("dragstart", (event) => {
+      const row = event.target.closest("[data-ticket-section-row]");
+      if (!row) return;
+      draggedSectionKey = row.dataset.ticketSectionRow;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", draggedSectionKey);
+      row.classList.add("is-dragging");
+    });
+    sectionList.addEventListener("dragend", () => {
+      draggedSectionKey = "";
+      sectionList.querySelectorAll(".is-dragging,.is-drop-before,.is-drop-after").forEach((row) => row.classList.remove("is-dragging", "is-drop-before", "is-drop-after"));
+    });
+    sectionList.addEventListener("dragover", (event) => {
+      const row = event.target.closest("[data-ticket-section-row]");
+      if (!row || !draggedSectionKey) return;
+      event.preventDefault();
+      const rect = row.getBoundingClientRect();
+      row.classList.toggle("is-drop-before", event.clientY < rect.top + rect.height / 2);
+      row.classList.toggle("is-drop-after", event.clientY >= rect.top + rect.height / 2);
+    });
+    sectionList.addEventListener("drop", (event) => {
+      const row = event.target.closest("[data-ticket-section-row]");
+      const targetKey = row?.dataset.ticketSectionRow;
+      const sourceKey = event.dataTransfer?.getData("text/plain") || draggedSectionKey;
+      if (!row || !sourceKey || sourceKey === targetKey) return;
+      event.preventDefault();
+      const active = activeSectionKeys();
+      const from = active.indexOf(sourceKey);
+      const to = active.indexOf(targetKey);
+      if (from < 0 || to < 0) return;
+      const before = active[to];
+      active.splice(from, 1);
+      const insertAt = event.clientY >= row.getBoundingClientRect().top + row.getBoundingClientRect().height / 2
+        ? active.indexOf(before) + 1
+        : active.indexOf(before);
+      active.splice(Math.max(0, insertAt), 0, sourceKey);
+      const activeKeys = new Set(activeSectionKeys());
+      const activeSlots = sectionOrder.map((key, index) => activeKeys.has(key) ? index : -1).filter((index) => index >= 0);
+      active.forEach((key, index) => { sectionOrder[activeSlots[index]] = key; });
+      renderSectionList();
+      updatePreview();
+    });
+    itemBreakInput.addEventListener("input", () => {
+      itemLineBreaks = Math.max(0, Math.min(5, Number(itemBreakInput.value) || 0));
+      updatePreview();
+    });
     const canvas = editor.querySelector("[data-ticket-canvas]");
     canvas.dataset.paperWidth = String(format.paper_width_mm);
     const renderElements = () => {
@@ -710,6 +851,8 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const previewSample = canvas.querySelector(".ticket-preview-sample");
     const previewHeader = canvas.querySelector("[data-preview-header]");
     const previewFooter = canvas.querySelector("[data-preview-footer]");
+    previewHeader.style.display = "none";
+    previewFooter.style.display = "none";
     const saveButton = editor.querySelector("[data-save]");
     const layoutState = () => Object.fromEntries(Object.entries(TICKET_FORMAT_DEFAULTS).map(([key, fallback]) => {
       const value = editor.querySelector(`[data-layout="${key}"]`)?.value ?? "";
@@ -721,7 +864,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       header: editor.querySelector('[name="header"]').value,
       footer: editor.querySelector('[name="footer"]').value,
       body: Object.fromEntries([...editor.querySelectorAll("[data-template-body]")].map((input) => [input.dataset.templateBody, input.checked])),
-      layout: layoutState(),
+      layout: { ...layoutState(), section_order: activeSectionKeys(), section_breaks: activeSectionBreaks(), item_line_breaks: itemLineBreaks },
       elements: elements.map(({ preview_url, ...element }) => element),
     });
     let initialEditorState = "";
@@ -731,28 +874,52 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const updatePreview = () => {
       const layout = layoutState();
       const body = Object.fromEntries([...editor.querySelectorAll("[data-template-body]")].map((input) => [input.dataset.templateBody, input.checked]));
-      const depthLines = {
-        compact: ["PEDIDO DE EJEMPLO", "2 × Producto", "TOTAL     S/ 00.00"],
-        standard: ["PEDIDO DE EJEMPLO", "2 × Producto", "1 × Bebida", "TOTAL     S/ 00.00"],
-        detailed: ["PEDIDO DE EJEMPLO", "2 × Producto     S/ 20.00", "  Variante: Regular", "1 × Bebida       S/ 8.00", "Subtotal         S/ 28.00", "TOTAL            S/ 28.00"],
+      const date = new Intl.DateTimeFormat("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date());
+      const itemGroups = layout.text_depth === "compact"
+        ? [["2 × Producto"], ["1 × Bebida"]]
+        : layout.text_depth === "detailed"
+          ? [["2 × Producto     S/ 20.00", "  Variante: Regular"], ["1 × Bebida       S/ 8.00"]]
+          : [["2 × Producto"], ["1 × Bebida"]];
+      const sectionLines = {
+        brand: ["BLACK&WHITE POS"],
+        header: editor.querySelector('[name="header"]').value.split("\n").map((line) => line.trim()).filter(Boolean),
+        event_title: ["PEDIDO DE EJEMPLO"],
+        location: ["Sede: Principal"],
+        order_datetime: [`Fecha: ${date}`],
+        operator: ["Atendió: Empleado"],
+        table: ["Mesa: Mesa 1"],
+        status: ["Estado: Correcto"],
+        establishment_ruc: ["RUC: 00000000000 (PRUEBA)"],
+        note: ["Nota: ejemplo"],
+        payment_breakdown: ["Efectivo        S/ 28.00"],
+        total: ["TOTAL            S/ 28.00"],
+        footer: editor.querySelector('[name="footer"]').value.split("\n").map((line) => line.trim()).filter(Boolean),
       };
-      const lines = [...(depthLines[layout.text_depth] || depthLines.standard)];
-      if (body.show_location) lines.splice(1, 0, "Sede: Principal");
-      if (body.show_operator) lines.splice(1, 0, "Atendió: Empleado");
-      if (body.show_note) lines.push("Nota: ejemplo");
-      if (body.show_payment_breakdown) lines.push("Efectivo        S/ 28.00");
-      previewHeader.textContent = editor.querySelector('[name="header"]').value.trim() || "Nombre del restaurante";
-      previewFooter.textContent = editor.querySelector('[name="footer"]').value.trim() || "Gracias por su compra";
-      previewSample.innerHTML = lines.map((line) => esc(line)).join("<br>");
+      const active = activeSectionKeys();
+      const preview = [];
+      const pushLine = (key, value) => preview.push(`<div class="ticket-preview-text-line" data-ticket-preview-line="${key}">${value ? esc(value) : "&nbsp;"}</div>`);
+      active.forEach((key, index) => {
+        preview.push(`<div class="ticket-preview-text-section" data-ticket-preview-section="${key}">`);
+        if (key === "items") {
+          itemGroups.forEach((group, index) => {
+            if (index) for (let count = 0; count < itemLineBreaks; count += 1) pushLine(key, "");
+            group.forEach((line) => pushLine(key, line));
+          });
+        } else {
+          (sectionLines[key] || []).forEach((line) => pushLine(key, line));
+        }
+        preview.push("</div>");
+        if (index < active.length - 1)
+          for (let count = 0; count < getSectionBreak(key, active); count += 1) pushLine("section-break", "");
+      });
+      previewSample.innerHTML = preview.join("");
       canvas.style.padding = `${layout.margin_top_mm}mm ${layout.margin_right_mm}mm ${layout.margin_bottom_mm}mm ${layout.margin_left_mm}mm`;
       canvas.style.minHeight = `${Math.max(138, layout.min_height_mm)}mm`;
       canvas.style.fontFamily = ({ device: '"Courier New", monospace', sans: "Arial, sans-serif", serif: "Georgia, serif" })[layout.font_family] || '"Courier New", monospace';
       canvas.style.fontSize = `${layout.font_size_pt}pt`;
       canvas.style.lineHeight = ({ compact: "1.1", normal: "1.35", wide: "1.75" })[layout.line_spacing] || "1.35";
       previewSample.style.color = ({ draft: "#777", normal: "#171717", high: "#000" })[layout.density] || "#171717";
-      previewSample.style.lineHeight = ({ compact: "1.1", normal: "1.65", wide: "1.9" })[layout.line_spacing] || "1.65";
-      previewHeader.style.marginTop = `${layout.feed_before_mm}mm`;
-      previewFooter.style.marginBottom = `${layout.feed_after_mm}mm`;
+      renderSectionList();
       updateDirtyState();
     };
     const addMargin = (element, side) => {

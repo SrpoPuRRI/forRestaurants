@@ -92,6 +92,7 @@ La tabla aún conserva columnas históricas `sunat_enabled` y `sunat_config`, y 
 - Cuando Setter elimina un dispositivo inactivo, los puntos conservan el UUID anterior y los flujos que los usan se guardan inactivos. POS muestra el punto como **Deprecated** y el flujo como **Necesita actualizarse**; no permite reactivar o guardar activo ese flujo hasta sustituir/eliminar sus destinos. Al reemplazar la impresora del punto, las rutas y formatos se conservan y el admin puede reactivar el flujo.
 - `printing_points.device_id` ya no tiene una clave foránea hacia `printing_devices`: se conserva como referencia para reconocer una impresora eliminada. El alta y el RPC `replace_printing_point_device` verifican que el dispositivo exista y pertenezca al mismo restaurante; un índice único sigue impidiendo enlazarlo a más de un punto.
 - POS consulta puntos y dispositivos por separado y los relaciona por UUID; no depende de una unión PostgREST respaldada por la clave foránea retirada.
+- `printing_devices.network_name` representa el nombre del perfil de red de Windows que enruta hacia esa impresora: en una conexión Wi-Fi debe ser el SSID; en una conexión Ethernet es el nombre del perfil de red de Windows. No debe llenarse con `LAN`, porque eso solo describe el tipo de transporte. BPrint lo vuelve a consultar periódicamente y actualiza el mismo dispositivo sin cambiar su UUID.
 - El RPC nuevo asigna valores internos compatibles para salida BPrint automática. El usuario no configura modo, transporte ni SUNAT desde el alta.
 - Configuración SUNAT solo muestra **Próximamente**. No se ha implementado la emisión ni su arquitectura.
 - `cpe_accepted` sigue siendo un evento propuesto; no está conectado a la cola.
@@ -100,8 +101,10 @@ La tabla aún conserva columnas históricas `sunat_enabled` y `sunat_config`, y 
 
 ### Aclaración del comportamiento actual
 
-La interfaz web actual solo guarda nombre, ancho de papel, encabezado, pie y
-cuatro opciones de visibilidad en `printing_ticket_templates.format` (JSONB).
+La interfaz web guarda nombre, ancho de papel, encabezado, pie y opciones de
+visibilidad en `printing_ticket_templates.format` (JSONB): sede, empleado,
+nota, desglose de pago, mesa cuando Salón está activo, fecha/hora y RUC de
+referencia. El JSON se incluye como snapshot en cada tarea de impresión.
 El JSON no es un estándar de impresión. BPrint carga el snapshot de la tarea y
 su `TicketRenderer` actualmente decide valores fijos: ancho aproximado de
 caracteres, título BLACK&WHITE POS, orden de bloques, alimentación y corte. El
@@ -129,11 +132,41 @@ traducirla a comandos para el dispositivo, sin escoger el diseño por su cuenta.
   márgenes, altura mínima, tipografía, tamaño y espaciado de texto, densidad,
   profundidad, avances y opciones de contenido. El modo de corte no requiere
   una representación visual.
+- `layout.line_spacing` controla el interlineado del texto y de los espacios
+  entre bloques vacíos: `compact` (1.1), `normal` (1.35) o `wide` (1.75). No
+  cambia márgenes ni el avance físico del papel.
+- **Ajuste de secciones** es un panel colapsable. Solo enumera secciones activas;
+  permite reordenarlas con drag and drop (y controles accesibles de subir/bajar)
+  y configura de cero a cinco saltos de línea después de cada sección. Los saltos
+  son líneas vacías cuyo alto sigue `layout.line_spacing`.
+- Las secciones disponibles son identidad de la app, encabezado, título del
+  evento, sede, fecha y hora, empleado, mesa, estado, RUC de referencia, nota,
+  desglose del pedido, desglose de pago, total y pie. Encabezado y pie solo están
+  activos si contienen texto; las opciones de contenido dependen de sus switches
+  (mesa requiere Salón). Total y desglose de pago también se pueden ordenar.
+- El desglose del pedido permite configurar por separado de cero a cinco saltos
+  entre cada producto. Cada grupo de producto incluye sus variantes y añadidos;
+  los saltos se aplican entre grupos, no entre las líneas internas de un grupo.
+- El contrato JSON v3 guarda `layout.section_order` (secciones activas en orden),
+  `layout.section_breaks` (saltos después de cada sección),
+  `layout.item_line_breaks`, `body.show_status` y `body.show_total`. BPrint debe
+  renderizar esas secciones en ese orden, emitir saltos explícitos y conservar
+  compatibilidad con snapshots v1/v2 usando su orden histórico.
 
 ### Editor y objetos visuales
 
 El editor conserva los controles básicos actuales: nombre, ancho del papel,
 encabezado, pie y opciones para mostrar sede, empleado, nota y desglose de pago.
+Si la necesidad Salón está activa, también permite mostrar la mesa. Puede
+mostrar la fecha y hora del evento en formato `dd/mm/yyyy hh:mm:ss`, sin
+fracciones de segundo y expresada en hora de Lima. Para pedidos pagados usa
+`order.paid_at`; para los demás eventos usa `payload.occurred_at`. La web
+preserva `table_label` al pagar un pedido de mesa, y BPrint solo la imprime
+cuando `body.show_table` es verdadero. Puede mostrar un RUC de referencia mientras la
+configuración SUNAT aún no esté disponible; el valor de prueba es
+`00000000000 (PRUEBA)`, nunca se presenta como dato fiscal validado. Cuando
+SUNAT esté implementado, el renderizador usará el RUC que entregue esa
+configuración fiscal.
 Debajo incluye un desplegable **Mostrar opciones avanzadas**. Cada control
 avanzado explica cómo dejar el valor vacío para aceptar el valor predeterminado;
 las listas presentan también la opción explícita «… (por defecto)».
