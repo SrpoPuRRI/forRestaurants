@@ -7,10 +7,227 @@ La necesidad opcional se llama **Sistemas de Impresión** en toda interfaz nueva
 ## Tres áreas de configuración
 
 1. **Puntos de Impresión:** varios destinos por restaurante. En la web, el alta solo pide nombre e ID del dispositivo. El ID debe pertenecer ya al restaurante y el dispositivo solo puede enlazarse a un punto. Al abrir un punto se muestran nombre, ID, conexión USB/red, nombre de red e IP cuando correspondan, y estado activo/inactivo calculado a partir del heartbeat de BPrint. Si la fila del dispositivo se elimina, el punto conserva ese UUID y muestra **Deprecated**; su ficha permite enlazar otro dispositivo registrado sin perder las rutas.
-2. **Flujos de impresión:** el administrador elige los eventos observados y una o más rutas por evento. Una ruta puede mandar el mismo pedido a cocina, barra, caja u otro punto, con formato y copias propios.
+2. **Flujos de impresión:** el administrador define eventos observados y, para cada evento, una impresora y una secuencia de tareas de impresión.
 3. **Formatos de ticket:** colección de formatos del restaurante. Un flujo selecciona el formato aplicable para cada punto/ruta. La migración convierte el formato único anterior a `Formato predeterminado`.
 
 Las tablas `printing_points`, `printing_flows`, `printing_flow_routes`, `printing_ticket_templates` y `printing_jobs` implementan la base de datos de esta arquitectura. Los cambios de configuración son de administrador. Las políticas mantienen acceso por restaurante aunque la necesidad esté desactivada; la necesidad controla visibilidad y ejecución del flujo. Los trabajos se crean mediante `enqueue_print_event`; una clave de evento y ruta no se duplica para el mismo `event_id`.
+
+## Editor visual y motor único de flujos
+
+Las imágenes de referencia del lienzo están en `Diseño Editor Flujos/1.png` a
+`Diseño Editor Flujos/6.png`.
+
+### Modelo del flujo configurado
+
+- El administrador configura un flujo visual en un lienzo, le asigna nombre y
+  guarda la definición para reutilizarla. El lienzo muestra una cadena lineal de
+  nodos principales; no se admiten ramas paralelas.
+- La cadena principal contiene los nodos de evento que el flujo escucha. Cada
+  nodo `eventListener` representa un evento que, cuando sucede, inicia una
+  ejecución de impresión.
+- A cada `eventListener` se conecta exactamente un nodo de impresora/punto de
+  impresión. Esa impresora recibe las tareas del evento; un evento no se divide
+  entre varias impresoras.
+- Después del punto se configura una secuencia ordenada de tareas. Cada tarea
+  identifica el objeto/datos que se representarán, el formato de ticket, la
+  información que se mostrará y el número de copias. Puede haber varias tareas
+  bajo el mismo evento y la misma impresora. Se completan en orden: por ejemplo,
+  una tarea de 3 comandas seguida por otra de 2 boletas produce 5 copias con sus
+  respectivos formatos.
+- El orden es semántico: se imprime primero la tarea anterior en la lista y
+  después la siguiente. La estructura no debe interpretarse como un grafo que
+  permite ejecución simultánea.
+- Al editar cualquier flujo se muestra la lista global de cuentas motor del
+  restaurante. Reordenarla y guardar actualiza el orden compartido por todos
+  los flujos. Desde el mismo editor se puede activar/desactivar o eliminar el
+  flujo actual. Los puntos `Deprecated` se muestran con aviso rojo para retirar
+  o reemplazar ese destino dentro del flujo antes de volver a activarlo.
+
+### Elección de la cuenta que ejecuta el algoritmo
+
+Black&White necesita un único motor algorítmico por ejecución de flujo para
+evitar que varias sesiones creen las mismas tareas de impresión. El motor es
+una cuenta empleada del restaurante cuya sesión está activa. El restaurante
+guarda una sola lista global de cuentas motor y respaldo en
+`printing_flow_engine_accounts`. La lista se puede editar desde el editor de
+cualquier flujo; al guardar, el mismo orden pasa a todos los flujos. El motor de
+cada flujo recorre esa lista compartida y elige la siguiente cuenta si la actual
+deja de poder escuchar o procesar.
+La antigua columna `printing_flows.engine_account_order` queda únicamente como
+espejo sincronizado para compatibilidad con el runtime ya desplegado; no se lee
+ni se edita como configuración independiente de cada flujo.
+
+Una cuenta puede ser motor de varias ejecuciones distintas del mismo flujo. La
+identidad de una ejecución se determina por el flujo, el evento y los
+identificadores de los objetos de negocio que originaron ese evento. Si ya hay
+una ejecución activa con los mismos identificadores, se reconoce como duplicada
+y no se vuelve a procesar. Si el mismo flujo recibe otro movimiento/pedido, crea
+otra ejecución independiente y la agrega a la cola.
+
+El objetivo es persistir el evento y su ejecución pendiente en la misma
+transacción que confirma el movimiento que los originó. La implementación actual
+crea una ejecución durable en `enqueue_print_event`, inmediatamente después de la
+RPC comercial; esa parte ya no depende de que el motor esté abierto, aunque aún
+existe una ventana entre la operación comercial y el alta del evento que debe
+cerrarse en una etapa posterior.
+
+### Cola y estados de ejecución
+
+Cada restaurante tiene una fila de estado por flujo en `printing_flow_runtime`.
+Esa fila identifica la cuenta motor actual y su lease; `printing_flow_runs`
+conserva por separado varias ejecuciones simultáneas del mismo flujo para
+movimientos distintos. Una cuenta puede procesar varias ejecuciones del flujo;
+cada ejecución conserva su propio ID, evento, snapshot, estado de materialización
+y cuenta que la publicó.
+
+Los estados acordados son. `inactivo` describe el estado de configuración del
+flujo; los demás describen el estado de una ejecución en la cola:
+
+- `inactivo`: el flujo fue desactivado por el administrador; no se asigna ni
+  escucha eventos.
+- `noRunning{cuenta}`: la cuenta indicada es el motor asignado y escucha los
+  eventos configurados; en ese momento no está procesando una ejecución.
+- `searching{cuenta}`: se solicita asistencia a la cuenta indicada, por ejemplo
+  porque el motor actual dejó de responder. Todas las cuentas leen el estado,
+  pero solo la cuenta nombrada debe responder y reclamarlo si su sesión sigue
+  activa. La respuesta cambia el estado a `noRunning{cuenta}` si queda asignada
+  para escuchar, o a `Running{cuenta}` si toma una ejecución pendiente.
+- `Running{cuenta}`: la cuenta indicada está procesando una ejecución concreta
+  del flujo y generando sus tareas de impresión.
+
+El estado `printing_flow_runtime` es por flujo y la lista global ordenada de
+cuentas define el siguiente destino de `searching{cuenta}` para todos. Las ejecuciones del flujo
+son independientes entre sí, aunque las coordine la misma cuenta motor. Las
+demás sesiones no deben apropiarse de una solicitud dirigida a otra cuenta.
+
+### Operaciones de base de datos y carga
+
+Cuando una operación de base de datos crea/reconoce un evento, asigna o
+transfiere un motor, cambia el avance de una ejecución o publica tareas, esa
+misma operación debe actualizar también los estados correspondientes de la
+cola de flujos del restaurante. Se realizará en una única operación atómica de
+base de datos (RPC/transacción), en vez de emitir otra escritura o un sondeo
+separado solo para recalcular estados. Esto reduce operaciones y trabajo
+repetido del procesador, y evita que el estado de la cola quede desincronizado
+de los eventos y trabajos que representa.
+
+La lectura persistente de la cola por las sesiones web tampoco tendrá su propio
+temporizador ni una consulta independiente. El POS ya ejecuta
+`operate_printing_web_runtime()` desde `printing-runtime.js` cada 5 segundos.
+Esta llamada combina el heartbeat de dispositivos, presencia de la cuenta,
+estado del motor, cola de ejecuciones, tareas publicadas/tomadas y reportes.
+No hay un temporizador aparte para el editor o el motor.
+
+El motor único amplía esa misma operación para que lea los estados relevantes
+para la sesión/cuenta actual, registre su presencia, atienda únicamente una
+solicitud `searching{esaCuenta}` dirigida a ella y devuelva las ejecuciones que
+esa cuenta debe procesar o los reportes que debe mostrar. El navegador publica
+los runs devueltos llamando a `publish_printing_flow_run`, que los reclama y
+materializa de forma idempotente. No se añade otro `setInterval` ni RPC
+periódico para mirar la cola.
+
+El sondeo web conserva su cadencia actual de 5 segundos y se ejecuta solo
+mientras la sesión POS está activa y la necesidad de impresión está habilitada.
+La respuesta se limita al restaurante y a la cuenta autenticados; cada ejecución
+se reclama de forma atómica e idempotente para impedir que dos pestañas o
+cuentas publiquen los mismos trabajos. Las operaciones que originan eventos y
+las operaciones del motor actualizan la cola en la transacción que ya realizan,
+así la lectura periódica sirve para coordinar/reanudar y no para reconstruir o
+recalcular toda la cola en cada vuelta.
+
+Esta llamada web no sustituye la reconciliación de Supabase: cuando no hay
+ninguna sesión POS activa no existe cliente que pueda hacer el sondeo de 5
+segundos. Cron sigue siendo responsable de expirar leases y avanzar una sola
+pasada de búsqueda; la siguiente llamada combinada de la sesión web despierta y
+procesa el trabajo cuando una cuenta vuelva a estar activa. El heartbeat de
+BPrint es distinto: reporta dispositivos y atiende trabajos de impresión ya
+publicados, pero no ejecuta ni coordina el algoritmo de flujos del POS.
+
+El cierre de todas las sesiones no puede ser detectado por otra app web. Supabase
+debe reconciliar esos estados mediante un proceso programado en la propia base
+(Supabase Cron/`pg_cron`) que revise heartbeats/leases vencidos y actualice las
+entradas de cola en la misma transacción de reconciliación. No se espera una
+notificación instantánea al cerrar la ventana: el cambio sucede cuando vence el
+lease del motor y corre la siguiente reconciliación.
+
+- Si un motor `Running{cuenta}` o `noRunning{cuenta}` deja de reportar heartbeat,
+  la reconciliación expira su lease y pasa la ejecución a `searching{cuenta}`
+  para solicitar el siguiente respaldo de la lista.
+- Si se recorren las cuentas y ninguna tiene una sesión activa, la ejecución se
+  conserva pendiente en estado `waitingForAccount`. No se cancela ni se publica
+  como completada. `searching` recorre la lista de
+  respaldo completa una sola vez por ciclo; cada cuenta se solicita como máximo
+  una vez en esa pasada. Si nadie responde, no se vuelve a iniciar otra pasada
+  solo porque corra Cron.
+- Una nueva pasada solo se habilita cuando Supabase detecta que una cuenta del
+  restaurante inició sesión y pasó a estar activa. La operación que registra
+  esa presencia despierta los flujos `waitingForAccount` y comienza
+  un solo ciclo nuevo de búsqueda, respetando el orden configurado. Debe ser
+  idempotente si llegan varias señales de presencia de la misma sesión.
+- La reconciliación es idempotente, procesa solo leases vencidos y
+  serializa la transferencia del motor para evitar ciclos de búsqueda
+  repetidos sin inicios de sesión y que dos cuentas reclamen la misma ejecución.
+  Cron se programa cada minuto cuando `pg_cron` está disponible; el lease del
+  motor es de 15 segundos y es independiente del lease de 20 segundos de BPrint.
+- Cron solo mantiene la cola y sus estados. No sustituye la sesión web que
+  ejecuta el algoritmo del flujo, construye los trabajos y los publica en la
+  cola de impresión. Si no queda ninguna sesión activa, la impresión nueva
+  espera; BPrint aún puede terminar trabajos que ya estaban publicados.
+
+La reconciliación se agenda cada minuto si la extensión `pg_cron` está instalada.
+En el proyecto de producción debe confirmarse que ese job quedó creado; la
+función se puede invocar desde Supabase Cron si la extensión no estaba habilitada
+al aplicar la migración. Consulte la [documentación oficial de Supabase Cron](https://supabase.com/docs/guides/cron).
+
+### Implementación actual del editor y el motor
+
+- El editor visual guarda una lista ordenada de eventos; cada evento tiene un
+  solo punto de impresión y una lista ordenada de tareas con objeto de datos,
+  formato y copias. Se guardan el estado del flujo y la lista global compartida
+  de cuentas motor/respaldo. Cambiar esa lista desde cualquier editor actualiza
+  todos los flujos. Los eventos y tareas se pueden reordenar y eliminar.
+- `save_printing_flow_editor` valida la lista global de cuentas activas,
+  eventos, puntos, formatos, modos de salida, tareas y la regla de un único
+  punto por evento. Guarda la lista global y sincroniza su representación de
+  compatibilidad para todos los flujos dentro de la misma transacción. Los
+  formatos y objetos se validan en servidor, además de la validación visual.
+- `enqueue_print_event` guarda primero una ejecución durable en
+  `printing_flow_runs`, con payload del evento y snapshot de las rutas/tareas.
+  La inserción es idempotente por `(flow_id,event_id)`. Los IDs de pedidos,
+  revisiones y entradas de cola producen claves estables cuando representan un
+  evento de negocio repetible; reimpresión manual conserva un ID nuevo.
+  La ejecución y su snapshot se escriben atómicamente dentro de esta RPC. Hoy
+  el POS la invoca después de completar la RPC del movimiento/pedido; el evento
+  aún no comparte la misma transacción que la operación de negocio original.
+- La cuenta elegida como motor recoge solo las ejecuciones de su flujo y llama
+  `publish_printing_flow_run`. Esta operación bloquea la fila de ejecución,
+  materializa todas sus tareas en orden y marca el run como materializado dentro
+  de una transacción. Dos pestañas o cuentas no publican dos veces la misma
+  tarea. El snapshot conserva formato, copias, destino y objeto aunque luego se
+  edite la ruta.
+- El trigger aplica el selector de objeto y el orden guardados en el snapshot.
+  Las tareas de un run comparten timestamp y `operate_printing_batch` las
+  reclama en `task_order`, de modo que un punto procesa primero una tarea y
+  luego la siguiente.
+- La emisión del evento actualiza `printing_flow_runtime` en la misma operación
+  cuando ya hay un motor con lease vigente. La publicación de tareas actualiza
+  el estado en esa transacción; un trigger de sentencia mantiene el estado al
+  cambiar las impresoras cada trabajo. La sesión web recibe una única llamada
+  cada cinco segundos y, si es el motor, materializa la lista de runs que le
+  corresponde.
+- Los runs no materializados cuentan como trabajo pendiente: no se puede
+  eliminar el flujo mientras existan. Pausar un flujo impide eventos nuevos y
+  asignaciones nuevas, pero no invalida un evento que ya fue capturado; su
+  snapshot puede completarse cuando vuelva una sesión motor.
+- Los eventos de pago y reimpresión cargan pedido, productos, complementos y
+  sede desde las tablas. Los eventos de pedido abierto usan el snapshot guardado
+  por `create_open_order`/`update_open_order`; los eventos de cocina/salón
+  conservan el objeto de cola, la entrada de origen y los productos que ya
+  acompañan esos eventos.
+- La modalidad automática crea tareas para BPrint. La vista de impresión
+  manual del navegador sigue pendiente; mientras no se implemente, las rutas
+  manuales fallan con un estado explícito en el reporte y no se presentan como
+  impresas.
 
 ### Opciones de salida
 
@@ -78,7 +295,7 @@ Referencias técnicas: [guía Epson TM-T20III](https://files.support.epson.com/p
 - Implementado en el código local: alta de punto con nombre e ID, validación de pertenencia al restaurante en UI y RPC, bloqueo de doble enlace, y vista de solo lectura con metadatos/estado de BPrint. SUNAT aparece como característica **Próximamente**, sin implementación funcional. También existen editores de flujos y formatos, cola idempotente, `printTicket()`, registro seguro de dispositivos, estados y monitor web.
 - Requiere las migraciones de impresión 007–011, `202611150001_printing_devices_and_operations.sql` y `202611240001_printing_agent_leases.sql`, además de publicar el frontend. El usuario confirmó que aplicó la migración de leases; el estado remoto no se verificó desde este entorno.
 - BPrint para Windows implementa el agente de escritorio multiimpresora y su impresión de prueba está lista, según confirmó el usuario. La arquitectura correspondiente a BPrint se da por completada; queda su protocolo de publicación: firmar con Authenticode mediante Velopack, generar los paquetes firmados, verificar firmas/hashes y confirmar la Edge Function desplegada. El certificado de firma aún no está disponible en el entorno.
-- El trabajo pendiente de arquitectura está en Black&White web: completar la vista imprimible manual, validar eventos/reportes y terminar el recorrido web con el agente provisionado. La integración SUNAT/PSE queda aplazada y separada, no bloquea el flujo de puntos.
+- El trabajo pendiente de Black&White web es completar la vista imprimible manual y validar el recorrido integrado de eventos/reportes con el agente provisionado. La integración SUNAT/PSE queda aplazada y separada, no bloquea el flujo automático.
 - `restaurant_receipt_templates` se conserva durante el despliegue como tabla heredada, de solo compatibilidad. Nuevas escrituras deben usar `printing_ticket_templates`.
 
 ### Compatibilidad de datos heredados
@@ -92,7 +309,7 @@ La tabla aún conserva columnas históricas `sunat_enabled` y `sunat_config`, y 
 - Cuando Setter elimina un dispositivo inactivo, los puntos conservan el UUID anterior y los flujos que los usan se guardan inactivos. POS muestra el punto como **Deprecated** y el flujo como **Necesita actualizarse**; no permite reactivar o guardar activo ese flujo hasta sustituir/eliminar sus destinos. Al reemplazar la impresora del punto, las rutas y formatos se conservan y el admin puede reactivar el flujo.
 - `printing_points.device_id` ya no tiene una clave foránea hacia `printing_devices`: se conserva como referencia para reconocer una impresora eliminada. El alta y el RPC `replace_printing_point_device` verifican que el dispositivo exista y pertenezca al mismo restaurante; un índice único sigue impidiendo enlazarlo a más de un punto.
 - POS consulta puntos y dispositivos por separado y los relaciona por UUID; no depende de una unión PostgREST respaldada por la clave foránea retirada.
-- `printing_devices.network_name` representa el nombre del perfil de red de Windows que enruta hacia esa impresora: en una conexión Wi-Fi debe ser el SSID; en una conexión Ethernet es el nombre del perfil de red de Windows. No debe llenarse con `LAN`, porque eso solo describe el tipo de transporte. BPrint lo vuelve a consultar periódicamente y actualiza el mismo dispositivo sin cambiar su UUID.
+- `printing_devices.network_name` representa la red donde la propia ticketera está configurada para operar (por ejemplo, el SSID configurado en la ticketera o en su utilidad oficial). BPrint debe leer el valor de la ticketera o del software del fabricante y publicarlo; no debe usar el perfil de Windows del PC ni inferirlo mediante rutas/IP. Si aún no hay una fuente compatible, deja el valor sin informar. El simulador puede publicar `Red de ejemplo (simulada)`, claramente marcado como ilustrativo. `connection_type` conserva por separado `Red` o `USB`; nunca pongas `LAN` en `network_name`.
 - El RPC nuevo asigna valores internos compatibles para salida BPrint automática. El usuario no configura modo, transporte ni SUNAT desde el alta.
 - Configuración SUNAT solo muestra **Próximamente**. No se ha implementado la emisión ni su arquitectura.
 - `cpe_accepted` sigue siendo un evento propuesto; no está conectado a la cola.
@@ -384,21 +601,27 @@ dispositivos.
   Authenticode a través de Velopack, generar paquetes firmados, verificar
   firmas/hashes y confirmar el despliegue de `printing-device-provision`.
 
-### Black&White web — arquitectura por completar
+### Black&White web — estado actual
 
-- Completar y revisar en la app web rutas, dispositivos, modo manual/automático
-  por ruta y formatos. El alta y la consulta de puntos ya siguen el contrato
-  nombre+ID y ficha de solo lectura.
-- Completar la salida manual desde el navegador: renderizar el formato elegido y
-  abrir/imprimir la vista adecuada desde el dispositivo.
-- Verificar de extremo a extremo la emisión ya implementada de eventos de
-  negocio a `enqueue_print_event`, los snapshots de evento/ruta/formato y la
-  experiencia del reporte de un flujo.
+- El alta y la consulta de puntos siguen el contrato nombre+ID y ficha de solo
+  lectura; el editor de flujos y el motor único ya están implementados por las
+  migraciones `202611270005` a `202611270009` y el código web correspondiente.
+- Falta completar la salida manual desde el navegador: renderizar el formato
+  elegido y abrir/imprimir la vista adecuada desde el dispositivo.
+- En una etapa posterior, mover la captura de cada evento dentro de la misma
+  RPC que confirma el pedido, pago o cambio de estado. La cola ya es durable
+  desde `enqueue_print_event`, pero una pérdida de sesión en el pequeño
+  intervalo entre la operación comercial y esta llamada puede dejar el cambio
+  comercial sin su evento de impresión.
+- Revisar en entorno de pruebas el ciclo de evento, selección del motor,
+  materialización en orden, reclamo BPrint, reporte y aceptación. La revisión
+  estática del código no sustituye esa prueba integrada.
 - Mantener las columnas históricas `printing_points.sunat_enabled` y
   `sunat_config` fuera del flujo web activo; su retiro de base se decidirá con
   una migración compatible posterior.
 - Confirmar que la Edge Function `printing-device-provision` y sus permisos
   estén desplegados en el proyecto destino y probar el contrato web–BPrint.
 
-La cola y la RPC de la base ya están descritas e implementadas en migraciones;
-el trabajo arquitectónico restante para completar el flujo recae en la app web.
+La arquitectura del editor y del motor ya está descrita e implementada en la
+base y en la app web. Antes de ofrecerlo a clientes, falta probar el recorrido
+integrado en Supabase con BPrint y completar la modalidad manual del navegador.

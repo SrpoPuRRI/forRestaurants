@@ -1569,7 +1569,8 @@ export default function createOrderFlow({
           locationName = data?.name || null;
         }
         payload.order = {
-          id: order.id, paid_at: order.paid_at, location: locationName,
+          id: order.id, created_at: order.created_at, paid_at: order.paid_at,
+          table_label: payload.table_label || order.table_label || null, location: locationName,
           operator: order.operator_name_snapshot, note: order.note, status: order.status,
           total: order.total, payment_amounts: order.payment_amounts,
           payment_method_keys: order.payment_method_keys,
@@ -1585,16 +1586,57 @@ export default function createOrderFlow({
         }));
         payload.schema_version = 1;
       }
+      if (!payload.order && payload.order_id) {
+        payload.order = {
+          id: payload.order_id,
+          created_at: payload.occurred_at,
+          table_label: payload.table_label || null,
+          location: payload.location_name || null,
+          note: payload.note || null,
+          status: eventKey.startsWith("open_order_") ? "open" : null,
+        };
+      }
+      if (!payload.order && payload.source_order_id) {
+        payload.order = {
+          id: payload.source_order_id,
+          table_label: payload.table_label || null,
+          location: payload.location_name || null,
+          note: payload.note || null,
+        };
+      }
+      let eventId = options.eventId;
+      const stableObjectId = payload.queue_entry_id || payload.order_id || payload.source_order_id;
+      const stableRevision = payload.revision || payload.payment_id || payload.correction_id;
+      const shouldDeduplicate = eventKey !== "manual_reprint"
+        && stableObjectId
+        && (eventKey !== "open_order_updated" || stableRevision)
+        && (eventKey !== "payment_corrected" || stableRevision);
+      if (!eventId && shouldDeduplicate && globalThis.crypto?.subtle) {
+        const identity = `${eventKey}:${stableObjectId}:${stableRevision || ""}`;
+        const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity)));
+        digest[6] = (digest[6] & 0x0f) | 0x50;
+        digest[8] = (digest[8] & 0x3f) | 0x80;
+        const hex = [...digest.slice(0, 16)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+        eventId = `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+      }
       const { data, error } = await supabase.rpc("enqueue_print_event", {
         p_event_key: eventKey,
         p_payload: payload,
-        p_event_id: options.eventId || crypto.randomUUID(),
+        p_event_id: eventId || crypto.randomUUID(),
       });
       if (error) throw error;
       const result = Array.isArray(data) ? data[0] : data;
       if (result?.status === "no_matching_flow") {
         if (eventKey === "manual_reprint") toast("No hay un flujo de impresión activo para reimpresiones.");
         return false;
+      }
+      if (result?.status === "queued") {
+        toast("Evento enviado al flujo de impresión.");
+        return result;
+      }
+      if (result?.status === "duplicate") {
+        toast("Este evento ya estaba en la cola de impresión.");
+        return result;
       }
       toast(`${result?.queued || 0} trabajo${result?.queued === 1 ? "" : "s"} de impresión registrado${result?.queued === 1 ? "" : "s"}.`);
       return result;

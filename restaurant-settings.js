@@ -435,7 +435,15 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       const needsUpdate = printingFlowNeedsUpdate(flow.id);
       const flowRoutes = routes.filter((route) => route.flow_id === flow.id && route.event_keys?.length);
       const events = (flow.captured_events || []).map(printEventLabel).join(" · ") || "Sin eventos";
-      return `<article class="printing-config-card" data-print-flow-card="${esc(flow.id)}"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${needsUpdate ? "is-deprecated" : flow.is_active ? "is-on" : ""}" data-print-flow-status>${needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} destino${flowRoutes.length === 1 ? "" : "s"} configurado${flowRoutes.length === 1 ? "" : "s"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar flujo</button><button type="button" class="rowaction" data-print-toggle-flow="${esc(flow.id)}" ${needsUpdate ? "disabled title=\"Primero actualiza los puntos de impresión\"" : ""}>${flow.is_active ? "Pausar" : "Activar"}</button></div></article>`;
+      const queuedRuns = (state.printingFlowQueue || []).filter((run) => run.flow_id === flow.id);
+      const queuedJobs = queuedRuns.reduce((sum, run) => sum + Number(run.published_count || 0), 0);
+      const takenJobs = queuedRuns.reduce((sum, run) => sum + Number(run.taken_count || 0), 0);
+      const queueStatus = state.printingFlowQueueLoaded
+        ? queuedRuns.length
+          ? `${queuedRuns.length} ${queuedRuns.length === 1 ? "ejecución" : "ejecuciones"} · ${queuedJobs} en cola · ${takenJobs} en impresión`
+          : "Sin ejecuciones pendientes"
+        : "Consultando estado de la cola…";
+      return `<article class="printing-config-card" data-print-flow-card="${esc(flow.id)}"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${needsUpdate ? "is-deprecated" : flow.is_active ? "is-on" : ""}" data-print-flow-status>${needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} tarea${flowRoutes.length === 1 ? "" : "s"} secuencial${flowRoutes.length === 1 ? "" : "es"}</p><p class="meta" data-print-flow-queue="${esc(flow.id)}">${esc(queueStatus)}</p><p class="meta" data-print-flow-runtime="${esc(flow.id)}">${state.printingFlowRuntimeLoaded ? "Motor inactivo" : "Consultando motor…"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar lista</button><button type="button" class="rowaction" data-print-toggle-flow="${esc(flow.id)}" ${needsUpdate ? "disabled title=\"Primero actualiza los puntos de impresión\"" : ""}>${flow.is_active ? "Pausar" : "Activar"}</button></div></article>`;
     }).join("");
     const templateCards = templates.map((template) => {
       const linked = routes.some((route) => route.template_id === template.id && route.event_keys?.length);
@@ -444,7 +452,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     return `<section class="panel settings-panel printing-settings-panel"><div class="panel-head"><div><div class="panel-title">Sistemas de Impresión</div><div class="meta">Asigna impresoras a puntos, define flujos y guarda formatos de ticket.</div></div></div>${state.printingSettingsError ? `<p class="inline-error printing-settings-error" role="alert">${esc(state.printingSettingsError)}</p>` : ""}${printingArea("Puntos de Impresión", "Agrega dispositivos BPrint registrados en tu restaurante.", pointCards, "create-print-point", "Crear punto de Impresión")}${printingArea("Flujos de impresión", "Elige qué eventos se capturan y a qué destinos se envían.", flowCards, "create-print-flow", "Crear flujo de impresión")}${printingArea("Formatos de ticket", "Guarda varios formatos y selecciona uno distinto en cada ruta.", templateCards, "create-print-template", "Crear formato de ticket")}</section>`;
   }
   function openPrintDialog(title, body, onSave, options = {}) {
-    const { submitLabel = "Guardar", errorMode = "inline", onDelete = null, dialogClass = "", disableSaveInitially = false } = options;
+    const { submitLabel = "Guardar", errorMode = "inline", onDelete = null, deleteToast = "Formato eliminado.", dialogClass = "", disableSaveInitially = false } = options;
     const dialog = document.createElement("dialog");
     dialog.className = `password-dialog printing-editor-dialog ${dialogClass}`.trim();
     dialog.innerHTML = `<form data-print-editor><div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button>${onDelete ? '<button type="button" class="btn danger" data-delete>Eliminar</button>' : ""}<button type="submit" class="btn primary" data-save>${esc(submitLabel)}</button></div></form>`;
@@ -467,7 +475,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         dialog.close();
         await load();
         render();
-        toast("Formato eliminado.");
+        toast(deleteToast);
       } catch (deleteError) {
         error.textContent = deleteError.message || "No se pudo eliminar el formato.";
         deleteButton.disabled = false;
@@ -1074,86 +1082,80 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       objectUrls.forEach((url) => URL.revokeObjectURL(url));
     }, { once: true });
   }
-  function openPrintFlowEditor(flow = null) {
-    const currentRoutes = flow ? (state.printingFlowRoutes || []).filter((route) => route.flow_id === flow.id && route.event_keys?.length) : [];
-    const eventChecks = PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" name="flow_event" value="${key}" ${(flow?.captured_events || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("");
-    const pointOptions = (state.printingPoints || []).map((point) => {
-      const deprecated = printingPointIsDeprecated(point);
-      const device = (state.printingDeviceStatuses || []).find((item) => item.id === point.device_id) || point.device;
-      const automaticCapable = (point.supported_output_modes || [point.output_mode]).includes("automatic");
-      const unavailable = automaticCapable && (deprecated || !point.device_id || device?.available === false || device?.operation_mode === "offline");
-      const modeLabel = deprecated ? " · Deprecated — necesita actualizarse" : device ? (unavailable ? " · impresora inactiva" : " · impresora enlazada") : " · sin impresora";
-      return `<option value="${esc(point.id)}">${esc(point.name)}${modeLabel}${point.is_active ? "" : " · pausado"}</option>`;
-    }).join("");
-    const templateOptions = (state.printingTicketTemplates || []).map((template) => `<option value="${esc(template.id)}">${esc(template.name)}</option>`).join("");
-    const routeMarkup = (route = {}) => `<div class="printing-route-row" data-print-route ${route.id ? `data-route-id="${esc(route.id)}"` : ""}><div class="printing-route-grid"><label class="settings-field">Punto<select data-route-point>${pointOptions}</select></label><label class="settings-field">Formato<select data-route-template><option value="">Selecciona un formato</option>${templateOptions}</select></label><label class="settings-field">Salida<select data-route-mode><option value="manual" ${route.output_mode === "manual" ? "selected" : ""}>Manual</option><option value="automatic" ${route.output_mode === "automatic" ? "selected" : ""}>Automática</option></select></label><label class="settings-field">Copias<input data-route-copies type="number" min="1" max="20" value="${Number(route.copies) || 1}"></label><label class="settings-field">Cadencia ms<input data-route-cadence type="number" min="0" max="60000" step="100" value="${Number(route.cadence_ms) || 0}"></label></div><div class="settings-checks printing-route-events">${PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" data-route-event value="${key}" ${(route.event_keys || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("")}</div><button type="button" class="rowaction" data-remove-route>Quitar este destino</button></div>`;
-    const routesHtml = currentRoutes.map(routeMarkup).join("");
-    const body = `<label class="settings-field">Nombre del flujo<input name="name" maxlength="80" required value="${esc(flow?.name || "")}" placeholder="Ej. Comandas de cocina"></label><label class="settings-check"><input name="is_active" type="checkbox" ${flow?.is_active !== false ? "checked" : ""}><span>Flujo activo</span></label><fieldset class="printing-events-field"><legend>Eventos que captura este flujo</legend><div class="settings-checks">${eventChecks}</div></fieldset><div class="printing-routes-head"><strong>Destinos y formatos por evento</strong><button type="button" class="btn secondary" data-add-route>Agregar destino</button></div><div data-route-list>${routesHtml}</div>${!pointOptions ? '<p class="meta">Primero crea un Punto de Impresión para añadir destinos.</p>' : ""}`;
-    const dialog = openPrintDialog(flow ? "Editar flujo de impresión" : "Crear flujo de impresión", body, async (d) => {
-      const form = new FormData(d);
-      const name = String(form.get("name") || "").trim();
-      const events = [...d.querySelectorAll('[name="flow_event"]:checked')].map((input) => input.value);
-      const flowIsActive = d.querySelector('[name="is_active"]').checked;
-      if (!name) throw new Error("Escribe un nombre para el flujo.");
-      if (!events.length) throw new Error("Selecciona al menos un evento.");
-      const routeRows = [...d.querySelectorAll("[data-print-route]")];
-      const routesPayload = [];
-      for (const row of routeRows) {
-        const pointId = row.querySelector("[data-route-point]").value;
-        const selectedEvents = [...row.querySelectorAll("[data-route-event]:checked")].map((input) => input.value).filter((key) => events.includes(key));
-        if (!pointId || !selectedEvents.length) throw new Error("Cada destino debe tener un punto y al menos un evento capturado por el flujo.");
-        const point = (state.printingPoints || []).find((item) => item.id === pointId);
-        if (flowIsActive && (!point?.device_id || printingPointIsDeprecated(point)))
-          throw new Error("Este flujo necesita actualizarse: reemplaza la impresora eliminada antes de activarlo.");
-        const mode = row.querySelector("[data-route-mode]").value;
-        const templateId = row.querySelector("[data-route-template]").value || null;
-        const supportedModes = point?.supported_output_modes || [point?.output_mode || "manual"];
-        if (!point || !point.is_active) throw new Error("Activa el punto elegido antes de usarlo en un flujo.");
-        if (!supportedModes.includes(mode)) throw new Error("El punto elegido no admite ese tipo de impresión.");
-        if (!templateId) throw new Error("Selecciona un formato de ticket.");
-        if (!(state.printingTicketTemplates || []).find((item) => item.id === templateId))
-          throw new Error("El formato seleccionado ya no existe. Elige otro formato.");
-        const selectedTemplate = (state.printingTicketTemplates || []).find((item) => item.id === templateId);
-        const routePayload = {
-          point_id: pointId,
-          template_id: templateId,
-          event_keys: selectedEvents, output_mode: mode,
-          copies: Math.min(20, Math.max(1, Number(row.querySelector("[data-route-copies]").value) || 1)),
-          cadence_ms: Math.min(60000, Math.max(0, Number(row.querySelector("[data-route-cadence]").value) || 0)),
-          text_depth: selectedTemplate?.format?.layout?.text_depth || "standard",
-          sort_order: routeRows.indexOf(row),
-        };
-        const routeId = row.dataset.routeId;
-        if (routeId) routePayload.route_id = routeId;
-        routesPayload.push(routePayload);
-      }
-      const { error: saveError } = await supabase.rpc("save_printing_flow", {
-        p_flow_id: flow?.id || null,
-        p_name: name,
-        p_captured_events: events,
-        p_is_active: d.querySelector('[name="is_active"]').checked,
-        p_routes: routesPayload,
-      });
-      if (saveError) throw saveError;
-    });
-    dialog.querySelectorAll('[name="flow_event"]').forEach((input) => input.addEventListener("change", syncFlowEventOptions));
-    const list = dialog.querySelector("[data-route-list]");
-    const addRoute = () => {
-      if (!pointOptions) return;
-      list.insertAdjacentHTML("beforeend", routeMarkup());
-      bindRouteRows(list);
+  async function openPrintFlowEditor(flow = null) {
+    const routes = flow ? (state.printingFlowRoutes || []).filter((r) => r.flow_id === flow.id && r.event_keys?.length) : [];
+    const [{ data: accountRows, error: accountError }, { data: sharedAccountOrder, error: orderError }] = await Promise.all([
+      supabase.from("accounts").select("auth_user_id,username,display_name,role_ids")
+        .eq("restaurant_id",state.restaurantId).eq("is_active",true).order("display_name"),
+      supabase.from("printing_flow_engine_accounts").select("account_id").eq("restaurant_id",state.restaurantId).order("priority"),
+    ]);
+    if (accountError || orderError) { toast("No se pudo cargar la lista global de cuentas motor."); return; }
+    const enabledRoles = state.availableRoles || [];
+    const hasPrintPermission = (account) => {
+      const roles = enabledRoles.filter((role) => (account.role_ids || []).includes(role.id));
+      if (roles.some((role) => role.key === "admin")) return true;
+      if (roles.some((role) => role.key === "employee")) return enabledRoles.some((role) => ["orders","payments","kitchen","salon"].some((key) => role.permissions?.[key]));
+      return roles.some((role) => ["orders","payments","kitchen","salon"].some((key) => role.permissions?.[key]));
     };
-    dialog.querySelector("[data-add-route]").addEventListener("click", addRoute);
-    bindRouteRows(list);
-    currentRoutes.forEach((route, index) => {
-      const row = list.querySelectorAll("[data-print-route]")[index];
-      if (row) {
-        row.querySelector("[data-route-point]").value = route.point_id;
-        row.querySelector("[data-route-template]").value = route.template_id || "";
-        row.querySelector("[data-route-mode]").value = route.output_mode;
-      }
+    const accounts = (accountRows || []).filter(hasPrintPermission);
+    const points = state.printingPoints || [], templates = state.printingTicketTemplates || [];
+    const pointOptions = points.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${printingPointIsDeprecated(p) ? " · Deprecated — necesita actualizarse" : ""}</option>`).join("");
+    const templateOptions = templates.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
+    const dataOptions = (value="event") => [["event","Objeto del evento"],["order","Pedido completo"],["items","Pedido y productos"],["payment","Pedido y pago"]]
+      .map(([key,label]) => `<option value="${key}" ${value===key?"selected":""}>${label}</option>`).join("");
+    const groups = (flow?.captured_events || []).map((key) => {
+      const tasks = routes.filter((r) => r.event_keys.includes(key)).sort((a,b) => a.sort_order-b.sort_order);
+      return { key, point: tasks[0]?.point_id || "", mode: tasks[0]?.output_mode || "automatic", tasks };
     });
-    list.querySelectorAll("[data-print-route]").forEach(syncRoutePointOptions);
+    const accountOrder = (sharedAccountOrder || []).map((row) => row.account_id).filter((id) => accounts.some((a) => a.auth_user_id===id));
+    accounts.forEach((a) => { if (!accountOrder.includes(a.auth_user_id)) accountOrder.push(a.auth_user_id); });
+    const taskMarkup = (task={}) => `<div class="flow-task-node" draggable="true" data-flow-task data-route-id="${esc(task.id||"")}"><span class="flow-grip">⠿</span><label class="settings-field">Objeto<select data-task-object>${dataOptions(task.data_object_key||"event")}</select></label><label class="settings-field">Formato<select data-task-template><option value="">Selecciona formato</option>${templateOptions}</select></label><label class="settings-field flow-copies">Copias<input data-task-copies type="number" min="1" max="20" value="${Number(task.copies)||1}"></label><button type="button" class="rowaction" data-remove-task>Quitar</button></div>`;
+    const nodeMarkup = (group={}) => {
+      const events=PRINT_EVENTS.map(([key,label])=>`<option value="${key}" ${group.key===key?"selected":""}>${label}</option>`).join("");
+      const point=points.find((p)=>p.id===group.point);
+      const modes=point?.supported_output_modes||[point?.output_mode||"manual"];
+      const modeOptions=modes.map((m)=>`<option value="${m}" ${m===(group.mode||"automatic")?"selected":""}>${m==="automatic"?"Automática":"Manual"}</option>`).join("");
+      const tasks=(group.tasks?.length?group.tasks:[{}]).map(taskMarkup).join("");
+      return `<article class="flow-event-node" draggable="true" data-flow-node><div class="flow-node-head"><span class="flow-node-icon">▣</span><label class="settings-field">Evento<select data-event-key>${events}</select></label><button type="button" class="rowaction" data-remove-event>Quitar evento</button></div><div class="flow-printer-node"><span class="flow-node-icon">▤</span><label class="settings-field">Único punto de impresión<select data-event-point><option value="">Selecciona un punto</option>${pointOptions}</select></label><label class="settings-field">Salida<select data-event-mode>${modeOptions}</select></label></div><div class="flow-task-list" data-task-list>${tasks}</div><button type="button" class="flow-add-task" data-add-task>+ Añadir tarea secuencial</button></article>`;
+    };
+    const accountsHtml=accountOrder.map((id,i)=>{const a=accounts.find((x)=>x.auth_user_id===id);return `<li class="flow-account-item" draggable="true" data-flow-account="${esc(id)}"><span class="flow-grip">⠿</span><span><strong>${esc(a.display_name)}</strong><small>${esc(a.username)}</small></span><span class="flow-rank">Respaldo ${i+1}</span></li>`;}).join("");
+    const body=`<label class="settings-field">Nombre del flujo<input name="name" required maxlength="80" value="${esc(flow?.name||"")}" placeholder="Ej. Comandas y boletas"></label><label class="settings-check"><input name="is_active" type="checkbox" ${flow?.is_active!==false?"checked":""}><span>Flujo activo</span></label><section class="flow-account-section"><strong>Orden global de cuentas motor</strong><p class="meta">Esta lista es compartida por todos los flujos del restaurante. Si la cambias aquí, también cambia para los demás. La primera cuenta disponible coordina; arrastra para ordenar los respaldos.</p><ol class="flow-account-list" data-account-list>${accountsHtml||'<li class="meta">No hay cuentas activas.</li>'}</ol></section><section class="flow-canvas-shell"><div class="flow-canvas-head"><div><strong>Cadena de eventos</strong><p class="meta">Cada evento usa un único punto y ejecuta tareas en orden.</p></div><button type="button" class="btn secondary" data-add-event>+ Agregar evento</button></div><div class="flow-event-list" data-event-list>${groups.map(nodeMarkup).join("")||'<div class="flow-empty">Agrega un evento para comenzar.</div>'}</div></section>`;
+    const dialog=openPrintDialog(flow?"Editar flujo de impresión":"Crear flujo de impresión",body,async(d)=>{
+      const name=String(new FormData(d).get("name")||"").trim(), active=d.querySelector('[name="is_active"]').checked;
+      const nodes=[...d.querySelectorAll("[data-flow-node]")]; if(!name)throw new Error("Escribe un nombre."); if(!nodes.length)throw new Error("Agrega al menos un evento.");
+      const events=[], payloadRoutes=[]; let order=0;
+      for(const node of nodes){
+        const key=node.querySelector("[data-event-key]").value; if(events.includes(key))throw new Error("No repitas eventos."); events.push(key);
+        const pointId=node.querySelector("[data-event-point]").value, point=points.find((p)=>p.id===pointId);
+        if(!point||!point.is_active)throw new Error("Selecciona un punto de impresión activo.");
+        if(active&&(!point.device_id||printingPointIsDeprecated(point)))throw new Error("El punto está Deprecated; reemplaza su impresora.");
+        const mode=node.querySelector("[data-event-mode]").value;
+        if(!(point.supported_output_modes||[point.output_mode||"manual"]).includes(mode))throw new Error("El punto no admite esa salida.");
+        const tasks=[...node.querySelectorAll("[data-flow-task]")]; if(!tasks.length)throw new Error("Cada evento necesita al menos una tarea.");
+        for(const task of tasks){
+          const template=templates.find((t)=>t.id===task.querySelector("[data-task-template]").value); if(!template)throw new Error("Selecciona un formato para cada tarea.");
+          const route={point_id:pointId,template_id:template.id,event_keys:[key],output_mode:mode,copies:Math.min(20,Math.max(1,Number(task.querySelector("[data-task-copies]").value)||1)),cadence_ms:0,text_depth:template.format?.layout?.text_depth||"standard",data_object_key:task.querySelector("[data-task-object]").value,sort_order:order++};
+          if(task.dataset.routeId)route.route_id=task.dataset.routeId; payloadRoutes.push(route);
+        }
+      }
+      const engineOrder=[...d.querySelectorAll("[data-flow-account]")].map((r)=>r.dataset.flowAccount); if(active&&!engineOrder.length)throw new Error("Añade una cuenta motor.");
+      const {error}=await supabase.rpc("save_printing_flow_editor",{p_flow_id:flow?.id||null,p_name:name,p_captured_events:events,p_is_active:active,p_routes:payloadRoutes,p_engine_account_order:engineOrder});
+      if(error)throw new Error(({printing_event_multiple_points:"Cada evento debe tener un solo punto de impresión.",printing_event_without_task:"Cada evento necesita al menos una tarea.",invalid_print_data_object:"El objeto de datos de una tarea no es válido.",duplicate_flow_engine_account:"No repitas una cuenta en el orden global del motor.",printing_flow_account_order_required:"Deja al menos una cuenta en la lista global, porque hay flujos activos.",printing_flow_account_unavailable:"Una cuenta ya no está activa.",printing_point_unavailable:"Uno de los puntos ya no está disponible.",ticket_template_required:"Cada tarea necesita un formato de ticket.",ticket_template_unavailable:"Uno de los formatos ya no está disponible."})[error.message]||error.message);
+    },{onDelete:flow?async()=>{if(!window.confirm("¿Eliminar este flujo? No puede tener impresiones pendientes."))return false;const {error}=await supabase.rpc("delete_printing_flow",{p_flow_id:flow.id});if(error)throw new Error(error.message?.includes("printing_flow_has_pending_jobs")?"El flujo tiene impresiones pendientes o reportes sin aceptar.":error.message);return true;}:null,deleteToast:"Flujo eliminado."});
+    const eventList=dialog.querySelector("[data-event-list]"), accountList=dialog.querySelector("[data-account-list]");
+    const rank=()=>accountList.querySelectorAll("[data-flow-account]").forEach((r,i)=>r.querySelector(".flow-rank").textContent="Respaldo "+(i+1));
+    const bindNode=(node,group)=>{
+      if(group)node.querySelector("[data-event-point]").value=group.point;
+      node.querySelector("[data-remove-event]").addEventListener("click",()=>{node.remove();if(!eventList.querySelector("[data-flow-node]"))eventList.innerHTML='<div class="flow-empty">Agrega un evento para comenzar.</div>';});
+      node.querySelector("[data-event-point]").addEventListener("change",()=>{const p=points.find((x)=>x.id===node.querySelector("[data-event-point]").value),m=p?.supported_output_modes||[p?.output_mode||"manual"],sel=node.querySelector("[data-event-mode]"),old=sel.value;sel.innerHTML="";m.forEach((v)=>{const o=document.createElement("option");o.value=v;o.textContent=v==="automatic"?"Automática":"Manual";sel.append(o);});if(m.includes(old))sel.value=old;});
+      node.querySelectorAll("[data-flow-task]").forEach((task,i)=>{const r=group?.tasks[i];if(r){task.querySelector("[data-task-template]").value=r.template_id||"";task.querySelector("[data-task-object]").value=r.data_object_key||"event";task.querySelector("[data-task-copies]").value=r.copies||1;}task.querySelector("[data-remove-task]").addEventListener("click",()=>task.remove());});
+      node.querySelector("[data-add-task]").addEventListener("click",()=>{const list=node.querySelector("[data-task-list]");list.insertAdjacentHTML("beforeend",taskMarkup());list.lastElementChild.querySelector("[data-remove-task]").addEventListener("click",(e)=>e.currentTarget.closest("[data-flow-task]").remove());});
+    };
+    [...eventList.querySelectorAll("[data-flow-node]")].forEach((n,i)=>bindNode(n,groups[i]));
+    const drag=(list,selector,vertical)=>{let item=null;list.addEventListener("dragstart",(e)=>{e.stopPropagation();item=e.target.closest(selector);if(item){e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain","flow-item");item.classList.add("is-dragging");}});list.addEventListener("dragend",()=>{item?.classList.remove("is-dragging");item=null;rank();});list.addEventListener("dragover",(e)=>{const target=e.target.closest(selector);if(!item||!target||target===item)return;e.preventDefault();const r=target.getBoundingClientRect(),after=vertical?e.clientY>r.top+r.height/2:e.clientX>r.left+r.width/2;list.insertBefore(item,after?target.nextSibling:target);});};
+    drag(eventList,"[data-flow-node]",false); drag(accountList,"[data-flow-account]",true);
+    eventList.querySelectorAll("[data-task-list]").forEach((list)=>drag(list,"[data-flow-task]",true));
+    dialog.querySelector("[data-add-event]").addEventListener("click",()=>{const used=new Set([...eventList.querySelectorAll("[data-event-key]")].map((x)=>x.value)),next=PRINT_EVENTS.find(([key])=>!used.has(key));if(!next){toast("Ya agregaste todos los eventos.");return;}eventList.querySelector(".flow-empty")?.remove();const g={key:next[0],point:"",mode:"automatic",tasks:[{}]};eventList.insertAdjacentHTML("beforeend",nodeMarkup(g));bindNode(eventList.lastElementChild,g);drag(eventList.lastElementChild.querySelector("[data-task-list]"),"[data-flow-task]",true);});
   }
   function bindRouteRows(container) {
     container.querySelectorAll("[data-remove-route]").forEach((button) => {

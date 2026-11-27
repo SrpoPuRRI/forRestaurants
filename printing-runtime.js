@@ -67,6 +67,44 @@ export default function createPrintingRuntime({ supabase, state, esc }) {
     }
   }
 
+  function syncFlowQueue(runs) {
+    state.printingFlowQueue = Array.isArray(runs) ? runs : [];
+    state.printingFlowQueueLoaded = true;
+    const countsByFlow = new Map();
+    for (const run of state.printingFlowQueue) {
+      const counts = countsByFlow.get(run.flow_id) || { runs: 0, waiting: 0, published: 0, taken: 0 };
+      counts.runs += 1;
+      if (run.state === "queued") counts.waiting += 1;
+      counts.published += Number(run.published_count || 0);
+      counts.taken += Number(run.taken_count || 0);
+      countsByFlow.set(run.flow_id, counts);
+    }
+    for (const flow of state.printingFlows || []) {
+      const element = document.querySelector(`[data-print-flow-queue="${CSS.escape(flow.id)}"]`);
+      if (!element) continue;
+      const counts = countsByFlow.get(flow.id);
+      element.textContent = counts
+        ? `${counts.runs} ${counts.runs === 1 ? "ejecución" : "ejecuciones"}${counts.waiting ? ` · ${counts.waiting} esperando motor` : ""} · ${counts.published} en cola · ${counts.taken} en impresión`
+        : "Sin ejecuciones pendientes";
+    }
+  }
+
+  function syncFlowRuntime(rows) {
+    state.printingFlowRuntime = Array.isArray(rows) ? rows : [];
+    state.printingFlowRuntimeLoaded = true;
+    const byFlow = new Map(state.printingFlowRuntime.map((row) => [row.flow_id, row]));
+    for (const flow of state.printingFlows || []) {
+      const element = document.querySelector(`[data-print-flow-runtime="${CSS.escape(flow.id)}"]`);
+      if (!element) continue;
+      const runtime = byFlow.get(flow.id);
+      if (!runtime || runtime.state === "inactive") element.textContent = "Motor inactivo";
+      else if (runtime.state === "searching") element.textContent = `Buscando cuenta: ${runtime.target_account_name || "siguiente respaldo"}`;
+      else if (runtime.state === "waitingForAccount") element.textContent = "En espera de una cuenta activa";
+      else if (runtime.state === "Running") element.textContent = `Motor ejecutando: ${runtime.motor_account_name || "cuenta asignada"}`;
+      else element.textContent = `Motor escuchando: ${runtime.motor_account_name || "cuenta asignada"}`;
+    }
+  }
+
   function renderRunReport(run) {
     if (document.querySelector("dialog[data-print-run-report]")) return;
     const tasks = run.tasks || [];
@@ -118,11 +156,20 @@ export default function createPrintingRuntime({ supabase, state, esc }) {
     inFlight = true;
     const pollGeneration = generation;
     try {
-      const { data, error } = await supabase.rpc("operate_printing_web");
+      const { data, error } = await supabase.rpc("operate_printing_web_runtime");
       if (error) throw error;
       if (pollGeneration !== generation) return;
       state.printingRuntimeError = "";
       syncDeviceLabels(data?.devices || []);
+      syncFlowQueue(data?.flow_queue || []);
+      syncFlowRuntime(data?.flow_runtime || []);
+      for (const pending of data?.pending_flow_runs || []) {
+        if (pollGeneration !== generation) return;
+        const { error: publishError } = await supabase.rpc("publish_printing_flow_run", {
+          p_run_id: pending.run_id,
+        });
+        if (publishError) throw publishError;
+      }
       for (const run of data?.completed_runs || []) {
         if (seenRunIds.has(run.id)) continue;
         seenRunIds.add(run.id);
@@ -162,6 +209,10 @@ export default function createPrintingRuntime({ supabase, state, esc }) {
     queuedRuns.clear();
     state.printingDeviceStatuses = [];
     state.printingDeviceStatusesLoaded = false;
+    state.printingFlowQueue = [];
+    state.printingFlowQueueLoaded = false;
+    state.printingFlowRuntime = [];
+    state.printingFlowRuntimeLoaded = false;
     state.printingRuntimeError = "";
     document.querySelectorAll("dialog[data-print-run-report]").forEach((dialog) => dialog.close());
   }
