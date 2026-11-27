@@ -92,8 +92,13 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     state.printingTicketTemplates = templates.error ? [] : (templates.data || []);
     state.printingDevices = devices.error ? [] : (devices.data || []);
     state.printingDevicesLoaded = !devices.error;
-    state.printingSettingsError = points.error || flows.error || routes.error || templates.error || devices.error
-      ? "No se pudieron cargar los ajustes de impresión. Aplica la migración de impresión y vuelve a cargar."
+    const printingLoadErrors = [
+      ["puntos", points.error], ["flujos", flows.error], ["rutas", routes.error],
+      ["formatos", templates.error], ["dispositivos", devices.error],
+    ].filter(([, queryError]) => queryError)
+      .map(([section, queryError]) => `${section}: ${queryError.message || "error desconocido"}`);
+    state.printingSettingsError = printingLoadErrors.length
+      ? `No se pudieron cargar los ajustes de impresión (${printingLoadErrors.join("; ")}).`
       : "";
     state.settingsLoading = false;
   }
