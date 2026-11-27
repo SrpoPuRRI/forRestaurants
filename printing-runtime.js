@@ -13,6 +13,7 @@ export default function createPrintingRuntime({ supabase, state, esc }) {
     printing_device_inactive: "La impresora estaba inactiva.",
     printing_device_not_linked: "El punto no tiene una impresora enlazada.",
     printing_point_inactive: "El punto de impresión está pausado.",
+    printing_data_object_unavailable: "El evento no entregó los datos que esta tarea necesita para imprimir.",
     manual_printing_view_pending: "La vista de impresión manual todavía no está implementada.",
     sunat_integration_pending: "La integración SUNAT todavía no está conectada.",
   }[value] || value || "No se pudo completar la impresión.");

@@ -38,14 +38,36 @@ Las imágenes de referencia del lienzo están en `Diseño Editor Flujos/1.png` a
   después la siguiente. La estructura no debe interpretarse como un grafo que
   permite ejecución simultánea.
 - El editor muestra esa estructura en un lienzo visual cuadriculado con nodos
-  conectados: evento, impresora y tareas secuenciales. El nodo seleccionado se
-  configura con su acción de editar; los nodos se pueden reordenar y retirar.
-- El editor principal no muestra un checkbox de estado. El botón «Editar lista»
-  abre la administración del flujo: ahí se cambia entre activo y pausado, se
-  elimina el flujo y se reordena la lista global de cuentas motor/respaldo.
-  Cambiar esa lista desde cualquier flujo la cambia para todo el restaurante.
-- Al editar cualquier flujo se muestra la lista global de cuentas motor del
-  restaurante. Reordenarla y guardar actualiza el orden compartido por todos
+  conectados: evento, impresora y tareas secuenciales. Los nodos son circulares
+  y muestran iconos; el lienzo se puede desplazar arrastrándolo, ampliar,
+  reducir y ajustar. Los eventos forman la cadena horizontal; debajo de cada
+  evento se conectan su impresora y sus tareas en una rama vertical. Los
+  grupos se pueden mover sobre el lienzo sin cambiar el orden lógico de eventos,
+  y las conexiones se actualizan mientras se mueven.
+- «Crear flujo» abre el editor con el botón **Crear**. Para crear un nodo hay
+  que escoger primero un evento, un punto de impresión, la salida y su primera
+  tarea completa (objeto de datos, formato y copias). No se deduce ninguna de
+  esas elecciones. Los objetos disponibles dependen del evento; por ejemplo,
+  `open_order_created` solo ofrece `open_order`, mientras `paid_order_created`
+  ofrece `paid_order` y, cuando el pago procede de una orden abierta,
+  `open_order`.
+- Después de crear un nodo, se puede editar o eliminar. Editarlo permite dejar
+  campos o tareas incompletos; esos nodos se conservan en `printing_flows.editor_nodes`,
+  aparecen atenuados como inactivos y no generan rutas ni trabajos. El botón
+  **Crear** o **Guardar** del flujo solo está habilitado cuando existe al menos
+  un nodo completamente configurado. En un flujo existente, **Guardar** también
+  requiere cambios pendientes.
+- Al guardar, la cadena visual completa, incluidos borradores incompletos, se
+  persiste aparte de las rutas ejecutables. Solo los nodos completos se
+  registran en `captured_events` y `printing_flow_routes`. El payload contiene
+  el objeto elegido con ese nombre; si un evento no entrega un objeto opcional
+  seleccionado, su tarea termina como fallida con un mensaje explícito.
+- El editor principal no muestra un checkbox de estado. «Editar lista» aparece
+  en la ficha de acciones después de seleccionar un nodo. Abre la administración
+  del flujo: ahí se cambia entre activo y pausado, se elimina el flujo y se
+  reordena la lista global de cuentas motor/respaldo. Cambiar esa lista desde
+  cualquier flujo la cambia para todo el restaurante.
+- Reordenar y guardar la lista global actualiza el orden compartido por todos
   los flujos. Desde el mismo editor se puede activar/desactivar o eliminar el
   flujo actual. Los puntos `Deprecated` se muestran con aviso rojo para retirar
   o reemplazar ese destino dentro del flujo antes de volver a activarlo.
@@ -611,8 +633,9 @@ dispositivos.
 ### Black&White web — estado actual
 
 - El alta y la consulta de puntos siguen el contrato nombre+ID y ficha de solo
-  lectura; el editor de flujos y el motor único ya están implementados por las
-  migraciones `202611270005` a `202611270010` y el código web correspondiente.
+  lectura. El editor visual de flujos persiste borradores de nodos separados de
+  sus rutas ejecutables; requiere la migración `202611270011` además del motor
+  implementado en las migraciones `202611270005` a `202611270010`.
 - Falta completar la salida manual desde el navegador: renderizar el formato
   elegido y abrir/imprimir la vista adecuada desde el dispositivo.
 - En una etapa posterior, mover la captura de cada evento dentro de la misma

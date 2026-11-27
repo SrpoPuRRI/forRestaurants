@@ -1475,7 +1475,7 @@ export default function createOrderFlow({
           await refreshOpenOrders(false);
           render();
           if (paidOrderId && (state.restaurantNeeds || []).includes("printing_systems"))
-            await printTicket({ type: "paid_order_created", data: { order_id: paidOrderId, table_label: paidQueueOrder.table_label || null } });
+            await printTicket({ type: "paid_order_created", data: { order_id: paidOrderId, table_label: paidQueueOrder.table_label || null, source_open_order_id: sourceOpenOrderId || null, open_order: sourceOpenOrderId ? { id: sourceOpenOrderId, location_id: paidQueueOrder.location_id || null, table_label: paidQueueOrder.table_label || null, note: paidQueueOrder.note || "", status: "open", items: paidQueueOrder.items } : null } });
           else toast("Pago registrado correctamente.");
 
         } catch (error) {
@@ -1604,6 +1604,10 @@ export default function createOrderFlow({
           note: payload.note || null,
         };
       }
+      if (["paid_order_created", "payment_corrected", "manual_reprint"].includes(eventKey) && payload.order)
+        payload.paid_order = { ...payload.order, items: payload.items || [] };
+      if (["open_order_created", "open_order_updated"].includes(eventKey) && payload.order)
+        payload.open_order ||= { ...payload.order, items: payload.items || [] };
       let eventId = options.eventId;
       const stableObjectId = payload.queue_entry_id || payload.order_id || payload.source_order_id;
       const stableRevision = payload.revision || payload.payment_id || payload.correction_id;
