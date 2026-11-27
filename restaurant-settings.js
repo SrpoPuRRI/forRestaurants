@@ -443,7 +443,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
           ? `${queuedRuns.length} ${queuedRuns.length === 1 ? "ejecución" : "ejecuciones"} · ${queuedJobs} en cola · ${takenJobs} en impresión`
           : "Sin ejecuciones pendientes"
         : "Consultando estado de la cola…";
-      return `<article class="printing-config-card" data-print-flow-card="${esc(flow.id)}"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${needsUpdate ? "is-deprecated" : flow.is_active ? "is-on" : ""}" data-print-flow-status>${needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} tarea${flowRoutes.length === 1 ? "" : "s"} secuencial${flowRoutes.length === 1 ? "" : "es"}</p><p class="meta" data-print-flow-queue="${esc(flow.id)}">${esc(queueStatus)}</p><p class="meta" data-print-flow-runtime="${esc(flow.id)}">${state.printingFlowRuntimeLoaded ? "Motor inactivo" : "Consultando motor…"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar lista</button><button type="button" class="rowaction" data-print-toggle-flow="${esc(flow.id)}" ${needsUpdate ? "disabled title=\"Primero actualiza los puntos de impresión\"" : ""}>${flow.is_active ? "Pausar" : "Activar"}</button></div></article>`;
+      return `<article class="printing-config-card" data-print-flow-card="${esc(flow.id)}"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${needsUpdate ? "is-deprecated" : flow.is_active ? "is-on" : ""}" data-print-flow-status>${needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} tarea${flowRoutes.length === 1 ? "" : "s"} secuencial${flowRoutes.length === 1 ? "" : "es"}</p><p class="meta" data-print-flow-queue="${esc(flow.id)}">${esc(queueStatus)}</p><p class="meta" data-print-flow-runtime="${esc(flow.id)}">${state.printingFlowRuntimeLoaded ? "Motor inactivo" : "Consultando motor…"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar flujo</button></div></article>`;
     }).join("");
     const templateCards = templates.map((template) => {
       const linked = routes.some((route) => route.template_id === template.id && route.event_keys?.length);
@@ -452,10 +452,10 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     return `<section class="panel settings-panel printing-settings-panel"><div class="panel-head"><div><div class="panel-title">Sistemas de Impresión</div><div class="meta">Asigna impresoras a puntos, define flujos y guarda formatos de ticket.</div></div></div>${state.printingSettingsError ? `<p class="inline-error printing-settings-error" role="alert">${esc(state.printingSettingsError)}</p>` : ""}${printingArea("Puntos de Impresión", "Agrega dispositivos BPrint registrados en tu restaurante.", pointCards, "create-print-point", "Crear punto de Impresión")}${printingArea("Flujos de impresión", "Elige qué eventos se capturan y a qué destinos se envían.", flowCards, "create-print-flow", "Crear flujo de impresión")}${printingArea("Formatos de ticket", "Guarda varios formatos y selecciona uno distinto en cada ruta.", templateCards, "create-print-template", "Crear formato de ticket")}</section>`;
   }
   function openPrintDialog(title, body, onSave, options = {}) {
-    const { submitLabel = "Guardar", errorMode = "inline", onDelete = null, deleteToast = "Formato eliminado.", dialogClass = "", disableSaveInitially = false } = options;
+    const { submitLabel = "Guardar", deleteLabel = "Eliminar", errorMode = "inline", onDelete = null, deleteToast = "Formato eliminado.", dialogClass = "", disableSaveInitially = false } = options;
     const dialog = document.createElement("dialog");
     dialog.className = `password-dialog printing-editor-dialog ${dialogClass}`.trim();
-    dialog.innerHTML = `<form data-print-editor><div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button>${onDelete ? '<button type="button" class="btn danger" data-delete>Eliminar</button>' : ""}<button type="submit" class="btn primary" data-save>${esc(submitLabel)}</button></div></form>`;
+    dialog.innerHTML = `<form data-print-editor><div class="color-scheme-editor-head"><div><div class="panel-title">${title}</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div>${body}<p class="appearance-editor-error" role="alert"></p><div class="dialog-actions"><button type="button" class="btn secondary" data-cancel>Cancelar</button>${onDelete ? `<button type="button" class="btn danger" data-delete>${esc(deleteLabel)}</button>` : ""}<button type="submit" class="btn primary" data-save>${esc(submitLabel)}</button></div></form>`;
     document.body.appendChild(dialog);
     const form = dialog.querySelector("[data-print-editor]");
     if (disableSaveInitially) dialog.querySelector("[data-save]").disabled = true;
@@ -1099,63 +1099,138 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     };
     const accounts = (accountRows || []).filter(hasPrintPermission);
     const points = state.printingPoints || [], templates = state.printingTicketTemplates || [];
-    const pointOptions = points.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}${printingPointIsDeprecated(p) ? " · Deprecated — necesita actualizarse" : ""}</option>`).join("");
-    const templateOptions = templates.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join("");
-    const dataOptions = (value="event") => [["event","Objeto del evento"],["order","Pedido completo"],["items","Pedido y productos"],["payment","Pedido y pago"]]
-      .map(([key,label]) => `<option value="${key}" ${value===key?"selected":""}>${label}</option>`).join("");
-    const groups = (flow?.captured_events || []).map((key) => {
-      const tasks = routes.filter((r) => r.event_keys.includes(key)).sort((a,b) => a.sort_order-b.sort_order);
-      return { key, point: tasks[0]?.point_id || "", mode: tasks[0]?.output_mode || "automatic", tasks };
-    });
     const accountOrder = (sharedAccountOrder || []).map((row) => row.account_id).filter((id) => accounts.some((a) => a.auth_user_id===id));
     accounts.forEach((a) => { if (!accountOrder.includes(a.auth_user_id)) accountOrder.push(a.auth_user_id); });
-    const taskMarkup = (task={}) => `<div class="flow-task-node" draggable="true" data-flow-task data-route-id="${esc(task.id||"")}"><span class="flow-grip">⠿</span><label class="settings-field">Objeto<select data-task-object>${dataOptions(task.data_object_key||"event")}</select></label><label class="settings-field">Formato<select data-task-template><option value="">Selecciona formato</option>${templateOptions}</select></label><label class="settings-field flow-copies">Copias<input data-task-copies type="number" min="1" max="20" value="${Number(task.copies)||1}"></label><button type="button" class="rowaction" data-remove-task>Quitar</button></div>`;
-    const nodeMarkup = (group={}) => {
-      const events=PRINT_EVENTS.map(([key,label])=>`<option value="${key}" ${group.key===key?"selected":""}>${label}</option>`).join("");
-      const point=points.find((p)=>p.id===group.point);
-      const modes=point?.supported_output_modes||[point?.output_mode||"manual"];
-      const modeOptions=modes.map((m)=>`<option value="${m}" ${m===(group.mode||"automatic")?"selected":""}>${m==="automatic"?"Automática":"Manual"}</option>`).join("");
-      const tasks=(group.tasks?.length?group.tasks:[{}]).map(taskMarkup).join("");
-      return `<article class="flow-event-node" draggable="true" data-flow-node><div class="flow-node-head"><span class="flow-node-icon">▣</span><label class="settings-field">Evento<select data-event-key>${events}</select></label><button type="button" class="rowaction" data-remove-event>Quitar evento</button></div><div class="flow-printer-node"><span class="flow-node-icon">▤</span><label class="settings-field">Único punto de impresión<select data-event-point><option value="">Selecciona un punto</option>${pointOptions}</select></label><label class="settings-field">Salida<select data-event-mode>${modeOptions}</select></label></div><div class="flow-task-list" data-task-list>${tasks}</div><button type="button" class="flow-add-task" data-add-task>+ Añadir tarea secuencial</button></article>`;
+    const dataOptions = (value="event") => [["event","Objeto del evento"],["order","Pedido completo"],["items","Pedido y productos"],["payment","Pedido y pago"]]
+      .map(([key,label]) => `<option value="${key}" ${value===key?"selected":""}>${label}</option>`).join("");
+    const templateOptions = (value="") => `<option value="">Selecciona formato</option>${templates.map((t) => `<option value="${esc(t.id)}" ${value===t.id?"selected":""}>${esc(t.name)}</option>`).join("")}`;
+    const groups = (flow?.captured_events || []).map((key) => {
+      const tasks = routes.filter((r) => r.event_keys.includes(key)).sort((a,b) => a.sort_order-b.sort_order);
+      return { key, point: tasks[0]?.point_id || "", mode: tasks[0]?.output_mode || "automatic", tasks: tasks.map((task) => ({...task})) };
+    });
+    let currentActive = Boolean(flow?.is_active);
+    let flowEditorDialog = null;
+    let flowWasDeleted = false;
+    let selectedGroup = groups.length ? 0 : -1;
+    const eventLabel = (key) => printEventLabel(key) || key;
+    const pointLabel = (id) => points.find((point) => point.id===id)?.name || "Selecciona impresora";
+    const groupMarkup = (group,index) => {
+      const tasks = group.tasks?.length ? group.tasks : [{}];
+      const taskNodes = tasks.map((task,i) => `<div class="flow-graph-node flow-graph-task ${selectedGroup===index?"is-selected":""}"><span class="flow-graph-icon">▤</span><span><strong>${esc(templates.find((t)=>t.id===task.template_id)?.name||`Tarea ${i+1}`)}</strong><small>${Number(task.copies)||1} copia${Number(task.copies)===1?"":"s"}</small></span></div>`).join('<span class="flow-graph-link" aria-hidden="true"></span>');
+      return `<div class="flow-graph-chain" draggable="true" data-graph-group-index="${index}"><button type="button" class="flow-graph-node flow-graph-event ${selectedGroup===index?"is-selected":""}" data-select-graph-group="${index}"><span class="flow-graph-icon">▣</span><span><strong>${esc(eventLabel(group.key))}</strong><small>Evento</small></span></button><span class="flow-graph-link" aria-hidden="true"></span><button type="button" class="flow-graph-node flow-graph-printer ${selectedGroup===index?"is-selected":""}" data-select-graph-group="${index}"><span class="flow-graph-icon">▤</span><span><strong>${esc(pointLabel(group.point))}</strong><small>Impresora · ${group.mode==="manual"?"Manual":"Automática"}</small></span></button><span class="flow-graph-link" aria-hidden="true"></span>${taskNodes}</div>`;
     };
-    const accountsHtml=accountOrder.map((id,i)=>{const a=accounts.find((x)=>x.auth_user_id===id);return `<li class="flow-account-item" draggable="true" data-flow-account="${esc(id)}"><span class="flow-grip">⠿</span><span><strong>${esc(a.display_name)}</strong><small>${esc(a.username)}</small></span><span class="flow-rank">Respaldo ${i+1}</span></li>`;}).join("");
-    const body=`<label class="settings-field">Nombre del flujo<input name="name" required maxlength="80" value="${esc(flow?.name||"")}" placeholder="Ej. Comandas y boletas"></label><label class="settings-check"><input name="is_active" type="checkbox" ${flow?.is_active!==false?"checked":""}><span>Flujo activo</span></label><section class="flow-account-section"><strong>Orden global de cuentas motor</strong><p class="meta">Esta lista es compartida por todos los flujos del restaurante. Si la cambias aquí, también cambia para los demás. La primera cuenta disponible coordina; arrastra para ordenar los respaldos.</p><ol class="flow-account-list" data-account-list>${accountsHtml||'<li class="meta">No hay cuentas activas.</li>'}</ol></section><section class="flow-canvas-shell"><div class="flow-canvas-head"><div><strong>Cadena de eventos</strong><p class="meta">Cada evento usa un único punto y ejecuta tareas en orden.</p></div><button type="button" class="btn secondary" data-add-event>+ Agregar evento</button></div><div class="flow-event-list" data-event-list>${groups.map(nodeMarkup).join("")||'<div class="flow-empty">Agrega un evento para comenzar.</div>'}</div></section>`;
-    const dialog=openPrintDialog(flow?"Editar flujo de impresión":"Crear flujo de impresión",body,async(d)=>{
-      const name=String(new FormData(d).get("name")||"").trim(), active=d.querySelector('[name="is_active"]').checked;
-      const nodes=[...d.querySelectorAll("[data-flow-node]")]; if(!name)throw new Error("Escribe un nombre."); if(!nodes.length)throw new Error("Agrega al menos un evento.");
-      const events=[], payloadRoutes=[]; let order=0;
-      for(const node of nodes){
-        const key=node.querySelector("[data-event-key]").value; if(events.includes(key))throw new Error("No repitas eventos."); events.push(key);
-        const pointId=node.querySelector("[data-event-point]").value, point=points.find((p)=>p.id===pointId);
+    const editorBody = `<label class="settings-field flow-name-field">Nombre del flujo<input name="name" required maxlength="80" value="${esc(flow?.name||"")}" placeholder="Ej. Comandas de cocina"></label><div class="flow-editor-toolbar"><div><strong>Diseño del flujo</strong><p class="meta">Conecta un evento con su impresora y las tareas que deben salir, en orden.</p></div><button type="button" class="btn secondary" data-edit-global-list>Editar lista</button></div><section class="flow-graph-shell"><div class="flow-graph-canvas" data-flow-graph>${groups.map(groupMarkup).join("")||'<div class="flow-graph-empty"><button type="button" class="flow-graph-add" data-add-event aria-label="Agregar evento">+</button><strong>Empieza con un evento</strong><span>Agrega el primer nodo que iniciará este flujo.</span></div>'}${groups.length?'<button type="button" class="flow-graph-add flow-graph-add-tail" data-add-event aria-label="Agregar evento">+</button>':""}</div></section><div class="flow-graph-selection" data-graph-selection>${selectedGroup>=0?`<div><strong>Este flujo escucha: ${esc(eventLabel(groups[selectedGroup].key))}</strong><span>${esc(pointLabel(groups[selectedGroup].point))} · ${groups[selectedGroup].tasks.length} tarea${groups[selectedGroup].tasks.length===1?"":"s"}</span></div><div class="flow-selection-actions"><button type="button" class="flow-icon-action" data-edit-selected aria-label="Editar nodo" title="Editar">✎</button><button type="button" class="flow-icon-action is-danger" data-remove-selected aria-label="Eliminar nodo" title="Eliminar">×</button></div>`:'<span class="meta">Selecciona un nodo para editarlo.</span>'}</div>`;
+    flowEditorDialog = openPrintDialog(flow?"Editar flujo de impresión":"Crear flujo de impresión",editorBody,async(d)=>{
+      const name=String(new FormData(d).get("name")||"").trim();
+      syncGraphOrder();
+      const orderedGroups=[...groups];
+      if(!name)throw new Error("Escribe un nombre."); if(!orderedGroups.length)throw new Error("Agrega al menos un evento.");
+      const events=[],payloadRoutes=[];let order=0;
+      for(const group of orderedGroups){
+        const key=group.key;if(events.includes(key))throw new Error("No repitas eventos.");events.push(key);
+        const point=points.find((p)=>p.id===group.point);
         if(!point||!point.is_active)throw new Error("Selecciona un punto de impresión activo.");
-        if(active&&(!point.device_id||printingPointIsDeprecated(point)))throw new Error("El punto está Deprecated; reemplaza su impresora.");
-        const mode=node.querySelector("[data-event-mode]").value;
-        if(!(point.supported_output_modes||[point.output_mode||"manual"]).includes(mode))throw new Error("El punto no admite esa salida.");
-        const tasks=[...node.querySelectorAll("[data-flow-task]")]; if(!tasks.length)throw new Error("Cada evento necesita al menos una tarea.");
-        for(const task of tasks){
-          const template=templates.find((t)=>t.id===task.querySelector("[data-task-template]").value); if(!template)throw new Error("Selecciona un formato para cada tarea.");
-          const route={point_id:pointId,template_id:template.id,event_keys:[key],output_mode:mode,copies:Math.min(20,Math.max(1,Number(task.querySelector("[data-task-copies]").value)||1)),cadence_ms:0,text_depth:template.format?.layout?.text_depth||"standard",data_object_key:task.querySelector("[data-task-object]").value,sort_order:order++};
-          if(task.dataset.routeId)route.route_id=task.dataset.routeId; payloadRoutes.push(route);
+        if(currentActive&&(!point.device_id||printingPointIsDeprecated(point)))throw new Error("El punto está Deprecated; reemplaza su impresora.");
+        const modes=point.supported_output_modes||[point.output_mode||"manual"];
+        if(!modes.includes(group.mode))throw new Error("El punto no admite esa salida.");
+        if(!group.tasks?.length)throw new Error("Cada evento necesita al menos una tarea.");
+        for(const task of group.tasks){
+          const template=templates.find((t)=>t.id===task.template_id);if(!template)throw new Error("Selecciona un formato para cada tarea.");
+          const route={point_id:point.id,template_id:template.id,event_keys:[key],output_mode:group.mode,copies:Math.min(20,Math.max(1,Number(task.copies)||1)),cadence_ms:0,text_depth:template.format?.layout?.text_depth||"standard",data_object_key:task.data_object_key||"event",sort_order:order++};
+          if(task.id)route.route_id=task.id;payloadRoutes.push(route);
         }
       }
-      const engineOrder=[...d.querySelectorAll("[data-flow-account]")].map((r)=>r.dataset.flowAccount); if(active&&!engineOrder.length)throw new Error("Añade una cuenta motor.");
-      const {error}=await supabase.rpc("save_printing_flow_editor",{p_flow_id:flow?.id||null,p_name:name,p_captured_events:events,p_is_active:active,p_routes:payloadRoutes,p_engine_account_order:engineOrder});
+      const {error}=await supabase.rpc("save_printing_flow_editor",{p_flow_id:flow?.id||null,p_name:name,p_captured_events:events,p_is_active:currentActive,p_routes:payloadRoutes,p_engine_account_order:accountOrder});
       if(error)throw new Error(({printing_event_multiple_points:"Cada evento debe tener un solo punto de impresión.",printing_event_without_task:"Cada evento necesita al menos una tarea.",invalid_print_data_object:"El objeto de datos de una tarea no es válido.",duplicate_flow_engine_account:"No repitas una cuenta en el orden global del motor.",printing_flow_account_order_required:"Deja al menos una cuenta en la lista global, porque hay flujos activos.",printing_flow_account_unavailable:"Una cuenta ya no está activa.",printing_point_unavailable:"Uno de los puntos ya no está disponible.",ticket_template_required:"Cada tarea necesita un formato de ticket.",ticket_template_unavailable:"Uno de los formatos ya no está disponible."})[error.message]||error.message);
-    },{onDelete:flow?async()=>{if(!window.confirm("¿Eliminar este flujo? No puede tener impresiones pendientes."))return false;const {error}=await supabase.rpc("delete_printing_flow",{p_flow_id:flow.id});if(error)throw new Error(error.message?.includes("printing_flow_has_pending_jobs")?"El flujo tiene impresiones pendientes o reportes sin aceptar.":error.message);return true;}:null,deleteToast:"Flujo eliminado."});
-    const eventList=dialog.querySelector("[data-event-list]"), accountList=dialog.querySelector("[data-account-list]");
-    const rank=()=>accountList.querySelectorAll("[data-flow-account]").forEach((r,i)=>r.querySelector(".flow-rank").textContent="Respaldo "+(i+1));
-    const bindNode=(node,group)=>{
-      if(group)node.querySelector("[data-event-point]").value=group.point;
-      node.querySelector("[data-remove-event]").addEventListener("click",()=>{node.remove();if(!eventList.querySelector("[data-flow-node]"))eventList.innerHTML='<div class="flow-empty">Agrega un evento para comenzar.</div>';});
-      node.querySelector("[data-event-point]").addEventListener("change",()=>{const p=points.find((x)=>x.id===node.querySelector("[data-event-point]").value),m=p?.supported_output_modes||[p?.output_mode||"manual"],sel=node.querySelector("[data-event-mode]"),old=sel.value;sel.innerHTML="";m.forEach((v)=>{const o=document.createElement("option");o.value=v;o.textContent=v==="automatic"?"Automática":"Manual";sel.append(o);});if(m.includes(old))sel.value=old;});
-      node.querySelectorAll("[data-flow-task]").forEach((task,i)=>{const r=group?.tasks[i];if(r){task.querySelector("[data-task-template]").value=r.template_id||"";task.querySelector("[data-task-object]").value=r.data_object_key||"event";task.querySelector("[data-task-copies]").value=r.copies||1;}task.querySelector("[data-remove-task]").addEventListener("click",()=>task.remove());});
-      node.querySelector("[data-add-task]").addEventListener("click",()=>{const list=node.querySelector("[data-task-list]");list.insertAdjacentHTML("beforeend",taskMarkup());list.lastElementChild.querySelector("[data-remove-task]").addEventListener("click",(e)=>e.currentTarget.closest("[data-flow-task]").remove());});
+    },{submitLabel:"Guardar",dialogClass:"flow-editor-dialog"});
+    const graph=flowEditorDialog.querySelector("[data-flow-graph]");
+    const syncGraphOrder=()=>{
+      const selected=selectedGroup>=0?groups[selectedGroup]:null;
+      const next=[...graph.querySelectorAll(":scope > [data-graph-group-index]")].map((node)=>groups[Number(node.dataset.graphGroupIndex)]).filter(Boolean);
+      if(next.length===groups.length)groups.splice(0,groups.length,...next);
+      selectedGroup=selected?groups.indexOf(selected):-1;
     };
-    [...eventList.querySelectorAll("[data-flow-node]")].forEach((n,i)=>bindNode(n,groups[i]));
-    const drag=(list,selector,vertical)=>{let item=null;list.addEventListener("dragstart",(e)=>{e.stopPropagation();item=e.target.closest(selector);if(item){e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain","flow-item");item.classList.add("is-dragging");}});list.addEventListener("dragend",()=>{item?.classList.remove("is-dragging");item=null;rank();});list.addEventListener("dragover",(e)=>{const target=e.target.closest(selector);if(!item||!target||target===item)return;e.preventDefault();const r=target.getBoundingClientRect(),after=vertical?e.clientY>r.top+r.height/2:e.clientX>r.left+r.width/2;list.insertBefore(item,after?target.nextSibling:target);});};
-    drag(eventList,"[data-flow-node]",false); drag(accountList,"[data-flow-account]",true);
-    eventList.querySelectorAll("[data-task-list]").forEach((list)=>drag(list,"[data-flow-task]",true));
-    dialog.querySelector("[data-add-event]").addEventListener("click",()=>{const used=new Set([...eventList.querySelectorAll("[data-event-key]")].map((x)=>x.value)),next=PRINT_EVENTS.find(([key])=>!used.has(key));if(!next){toast("Ya agregaste todos los eventos.");return;}eventList.querySelector(".flow-empty")?.remove();const g={key:next[0],point:"",mode:"automatic",tasks:[{}]};eventList.insertAdjacentHTML("beforeend",nodeMarkup(g));bindNode(eventList.lastElementChild,g);drag(eventList.lastElementChild.querySelector("[data-task-list]"),"[data-flow-task]",true);});
+    const renderGraph=()=>{
+      graph.innerHTML=groups.map((group,index)=>groupMarkup(group,index)).join("")||'<div class="flow-graph-empty"><button type="button" class="flow-graph-add" data-add-event aria-label="Agregar evento">+</button><strong>Empieza con un evento</strong><span>Agrega el primer nodo que iniciará este flujo.</span></div>';
+      if(groups.length)graph.insertAdjacentHTML("beforeend",'<button type="button" class="flow-graph-add flow-graph-add-tail" data-add-event aria-label="Agregar evento">+</button>');
+      graph.querySelectorAll("[data-select-graph-group]").forEach((button)=>button.addEventListener("click",()=>{const target=groups[Number(button.dataset.selectGraphGroup)];syncGraphOrder();selectedGroup=groups.indexOf(target);renderGraph();}));
+      graph.querySelectorAll("[data-add-event]").forEach((button)=>button.addEventListener("click",addEvent));
+      let dragged=null;
+      graph.querySelectorAll("[data-graph-group-index]").forEach((node)=>{
+        node.addEventListener("dragstart",(event)=>{dragged=node;event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",node.dataset.graphGroupIndex);node.classList.add("is-dragging");});
+        node.addEventListener("dragend",()=>{node.classList.remove("is-dragging");dragged=null;syncGraphOrder();renderGraph();});
+        node.addEventListener("dragover",(event)=>{if(!dragged||dragged===node)return;event.preventDefault();const rect=node.getBoundingClientRect();graph.insertBefore(dragged,event.clientX>rect.left+rect.width/2?node.nextSibling:node);});
+      });
+      const selection=flowEditorDialog.querySelector("[data-graph-selection]");
+      if(selectedGroup>=0&&groups[selectedGroup]){
+        const selected=groups[selectedGroup];selection.innerHTML=`<div><strong>Este flujo escucha: ${esc(eventLabel(selected.key))}</strong><span>${esc(pointLabel(selected.point))} · ${selected.tasks.length} tarea${selected.tasks.length===1?"":"s"}</span></div><div class="flow-selection-actions"><button type="button" class="flow-icon-action" data-edit-selected aria-label="Editar nodo" title="Editar">✎</button><button type="button" class="flow-icon-action is-danger" data-remove-selected aria-label="Eliminar nodo" title="Eliminar">×</button></div>`;
+        selection.querySelector("[data-edit-selected]").addEventListener("click",()=>openGroupEditor(selected));
+        selection.querySelector("[data-remove-selected]").addEventListener("click",()=>{syncGraphOrder();groups.splice(selectedGroup,1);selectedGroup=groups.length?Math.min(selectedGroup,groups.length-1):-1;renderGraph();});
+      }else selection.innerHTML='<span class="meta">Selecciona un nodo para editarlo.</span>';
+    };
+    const addEvent=()=>{
+      syncGraphOrder();
+      const used=new Set(groups.map((group)=>group.key));const next=PRINT_EVENTS.find(([key])=>!used.has(key));
+      if(!next){toast("Ya agregaste todos los eventos disponibles.");return;}
+      groups.push({key:next[0],point:"",mode:"automatic",tasks:[{data_object_key:"event",copies:1}]});selectedGroup=groups.length-1;renderGraph();
+    };
+    const openGroupEditor=(group)=>{
+      const eventOptions=PRINT_EVENTS.map(([key,label])=>`<option value="${esc(key)}" ${group.key===key?"selected":""}>${esc(label)}</option>`).join("");
+      const pointOptions=`<option value="">Selecciona un punto</option>${points.map((point)=>`<option value="${esc(point.id)}" ${group.point===point.id?"selected":""}>${esc(point.name)}${printingPointIsDeprecated(point)?" · Deprecated — necesita actualizarse":""}</option>`).join("")}`;
+      const renderTask=(task={})=>`<div class="flow-task-config" draggable="true" data-flow-task data-route-id="${esc(task.id||"")}"><span class="flow-task-grip" aria-hidden="true">⠿</span><label class="settings-field">Datos<select data-task-object>${dataOptions(task.data_object_key||"event")}</select></label><label class="settings-field">Formato<select data-task-template>${templateOptions(task.template_id||"")}</select></label><label class="settings-field flow-copies">Copias<input data-task-copies type="number" min="1" max="20" value="${Number(task.copies)||1}"></label><button type="button" class="flow-icon-action is-danger" data-remove-task aria-label="Quitar tarea">×</button></div>`;
+      const selectedPoint=points.find((point)=>point.id===group.point),initialModes=selectedPoint?.supported_output_modes||[selectedPoint?.output_mode||"manual"];
+      const modeOptions=initialModes.map((mode)=>`<option value="${mode}" ${mode===(initialModes.includes(group.mode)?group.mode:initialModes[0])?"selected":""}>${mode==="automatic"?"Automática":"Manual"}</option>`).join("");
+      const body=`<label class="settings-field">Evento que inicia el flujo<select name="event_key">${eventOptions}</select></label><div class="flow-printer-config"><label class="settings-field">Punto de impresión<select name="point_id">${pointOptions}</select></label><label class="settings-field">Salida<select name="output_mode">${modeOptions}</select></label></div><section class="flow-task-config-section"><div><strong>Tareas secuenciales</strong><p class="meta">Se imprimen una después de otra en el orden mostrado.</p></div><div data-task-config-list>${(group.tasks?.length?group.tasks:[{}]).map(renderTask).join("")}</div><button type="button" class="btn secondary" data-add-config-task>+ Añadir tarea</button></section>`;
+      const editor=openPrintDialog("Configurar nodo del flujo",body,async(d)=>{
+        const pointId=d.querySelector('[name="point_id"]').value,point=points.find((item)=>item.id===pointId);
+        if(!point)throw new Error("Selecciona un punto de impresión.");
+        if(currentActive&&printingPointIsDeprecated(point))throw new Error("Este punto está Deprecated; reemplaza la impresora antes de activar el flujo.");
+        const taskRows=[...d.querySelectorAll("[data-flow-task]")];if(!taskRows.length)throw new Error("Agrega al menos una tarea.");
+        const tasks=taskRows.map((row)=>({id:row.dataset.routeId||null,data_object_key:row.querySelector("[data-task-object]").value,template_id:row.querySelector("[data-task-template]").value,copies:Math.min(20,Math.max(1,Number(row.querySelector("[data-task-copies]").value)||1))}));
+        if(tasks.some((task)=>!task.template_id))throw new Error("Selecciona un formato para cada tarea.");
+        group.key=d.querySelector('[name="event_key"]').value;group.point=pointId;group.mode=d.querySelector('[name="output_mode"]').value;group.tasks=tasks;renderGraph();
+      },{dialogClass:"flow-node-editor-dialog"});
+      const taskList=editor.querySelector("[data-task-config-list]");
+      taskList.querySelectorAll("[data-remove-task]").forEach((button)=>button.addEventListener("click",()=>button.closest("[data-flow-task]").remove()));
+      let draggedTask=null;
+      const bindTaskRow=(row)=>{
+        row.querySelector("[data-remove-task]")?.addEventListener("click",(event)=>event.currentTarget.closest("[data-flow-task]").remove());
+        row.addEventListener("dragstart",(event)=>{draggedTask=row;event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",row.dataset.routeId||"new-task");row.classList.add("is-dragging");});
+        row.addEventListener("dragend",()=>{row.classList.remove("is-dragging");draggedTask=null;});
+        row.addEventListener("dragover",(event)=>{if(!draggedTask||draggedTask===row)return;event.preventDefault();const rect=row.getBoundingClientRect();taskList.insertBefore(draggedTask,event.clientY>rect.top+rect.height/2?row.nextSibling:row);});
+      };
+      taskList.querySelectorAll("[data-flow-task]").forEach(bindTaskRow);
+      editor.querySelector("[data-add-config-task]").addEventListener("click",()=>{taskList.insertAdjacentHTML("beforeend",renderTask());bindTaskRow(taskList.lastElementChild);});
+      editor.querySelector('[name="point_id"]').addEventListener("change",(event)=>{const point=points.find((item)=>item.id===event.target.value),modes=point?.supported_output_modes||[point?.output_mode||"manual"],select=editor.querySelector('[name="output_mode"]'),old=select.value;select.innerHTML=modes.map((mode)=>`<option value="${mode}">${mode==="automatic"?"Automática":"Manual"}</option>`).join("");select.value=modes.includes(old)?old:modes[0];});
+    };
+    flowEditorDialog.querySelector("[data-edit-global-list]").addEventListener("click",()=>{
+      const accountMarkup=()=>accountOrder.map((id,index)=>{const account=accounts.find((item)=>item.auth_user_id===id);if(!account)return "";return `<li class="flow-account-item" draggable="true" data-flow-account="${esc(id)}"><span class="flow-grip">⠿</span><span><strong>${esc(account.display_name)}</strong><small>${esc(account.username)}</small></span><span class="flow-rank">${index===0?"Motor principal":"Respaldo "+index}</span></li>`;}).join("");
+      const managerBody=`<p class="meta">Este orden es global para el restaurante. La primera cuenta disponible coordina todos los flujos; las demás son respaldos.</p>${flow?`<label class="flow-manager-state"><span><strong>Estado del flujo</strong><small>${flow.is_active?"El flujo escucha sus eventos":"El flujo está pausado"}</small></span><input type="checkbox" name="flow_active" ${currentActive?"checked":""}><span class="flow-switch" aria-hidden="true"></span></label>`:""}<ol class="flow-account-list flow-account-manager-list" data-account-list>${accountMarkup()||'<li class="meta">No hay cuentas disponibles con permisos para operar impresión.</li>'}</ol>`;
+      const manager=openPrintDialog("Editar lista",managerBody,async(managerDialog)=>{
+        const nextOrder=[...managerDialog.querySelectorAll("[data-flow-account]")].map((item)=>item.dataset.flowAccount);
+        const nextActive=flow?managerDialog.querySelector('[name="flow_active"]').checked:false;
+        if(nextActive&&flow&&printingFlowNeedsUpdate(flow.id))throw new Error("Este flujo necesita actualizarse: reemplaza la impresora marcada como Deprecated.");
+        if(nextActive&&!nextOrder.length)throw new Error("Añade al menos una cuenta disponible a la lista global.");
+        const {error:orderError}=await supabase.rpc("save_printing_flow_engine_accounts",{p_account_ids:nextOrder});
+        if(orderError)throw new Error(({admin_required:"Solo un administrador puede editar la lista global.",duplicate_flow_engine_account:"No repitas cuentas en la lista.",printing_flow_account_order_required:"Deja al menos una cuenta en la lista global porque hay flujos activos.",printing_flow_account_unavailable:"Una cuenta ya no está activa o no tiene permisos para operar impresión."})[orderError.message]||orderError.message||"No se pudo guardar la lista global.");
+        if(flow&&nextActive!==currentActive){
+          const {error:activeError}=await supabase.rpc("set_printing_flow_active",{p_flow_id:flow.id,p_is_active:nextActive});
+          if(activeError)throw new Error(activeError.message?.includes("printing_flow_needs_update")?"Necesita actualizarse: reemplaza primero la impresora del punto.":activeError.message||"No se pudo cambiar el estado del flujo.");
+        }
+        accountOrder.splice(0,accountOrder.length,...nextOrder);currentActive=nextActive;if(flow)flow.is_active=nextActive;
+        renderGraph();
+      },{onDelete:flow?async()=>{if(!window.confirm("¿Eliminar este flujo? No puede tener impresiones pendientes."))return false;const {error}=await supabase.rpc("delete_printing_flow",{p_flow_id:flow.id});if(error)throw new Error(error.message?.includes("printing_flow_has_pending_jobs")?"El flujo tiene impresiones pendientes o reportes sin aceptar.":error.message);flowWasDeleted=true;return true;}:null,deleteLabel:"Eliminar flujo",deleteToast:"Flujo eliminado.",dialogClass:"flow-list-manager-dialog"});
+      manager.querySelector('[name="flow_active"]')?.addEventListener("change",(event)=>{manager.querySelector(".flow-manager-state small").textContent=event.target.checked?"El flujo escuchará sus eventos":"El flujo quedará pausado";});
+      const list=manager.querySelector("[data-account-list]");let dragged=null;
+      const updateRanks=()=>list.querySelectorAll("[data-flow-account]").forEach((item,index)=>item.querySelector(".flow-rank").textContent=`${index===0?"Motor principal":"Respaldo "+index}`);
+      list.querySelectorAll("[data-flow-account]").forEach((item)=>{
+        item.addEventListener("dragstart",(event)=>{dragged=item;event.dataTransfer.effectAllowed="move";event.dataTransfer.setData("text/plain",item.dataset.flowAccount);item.classList.add("is-dragging");});
+        item.addEventListener("dragend",()=>{item.classList.remove("is-dragging");dragged=null;updateRanks();});
+        item.addEventListener("dragover",(event)=>{if(!dragged||dragged===item)return;event.preventDefault();const rect=item.getBoundingClientRect();list.insertBefore(dragged,event.clientY>rect.top+rect.height/2?item.nextSibling:item);});
+      });
+      manager.addEventListener("close",()=>{if(flowWasDeleted)flowEditorDialog.close();},{once:true});
+    });
+    renderGraph();
   }
   function bindRouteRows(container) {
     container.querySelectorAll("[data-remove-route]").forEach((button) => {

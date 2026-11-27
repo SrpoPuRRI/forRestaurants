@@ -37,6 +37,13 @@ Las imágenes de referencia del lienzo están en `Diseño Editor Flujos/1.png` a
 - El orden es semántico: se imprime primero la tarea anterior en la lista y
   después la siguiente. La estructura no debe interpretarse como un grafo que
   permite ejecución simultánea.
+- El editor muestra esa estructura en un lienzo visual cuadriculado con nodos
+  conectados: evento, impresora y tareas secuenciales. El nodo seleccionado se
+  configura con su acción de editar; los nodos se pueden reordenar y retirar.
+- El editor principal no muestra un checkbox de estado. El botón «Editar lista»
+  abre la administración del flujo: ahí se cambia entre activo y pausado, se
+  elimina el flujo y se reordena la lista global de cuentas motor/respaldo.
+  Cambiar esa lista desde cualquier flujo la cambia para todo el restaurante.
 - Al editar cualquier flujo se muestra la lista global de cuentas motor del
   restaurante. Reordenarla y guardar actualiza el orden compartido por todos
   los flujos. Desde el mismo editor se puede activar/desactivar o eliminar el
@@ -605,7 +612,7 @@ dispositivos.
 
 - El alta y la consulta de puntos siguen el contrato nombre+ID y ficha de solo
   lectura; el editor de flujos y el motor único ya están implementados por las
-  migraciones `202611270005` a `202611270009` y el código web correspondiente.
+  migraciones `202611270005` a `202611270010` y el código web correspondiente.
 - Falta completar la salida manual desde el navegador: renderizar el formato
   elegido y abrir/imprimir la vista adecuada desde el dispositivo.
 - En una etapa posterior, mover la captura de cada evento dentro de la misma
