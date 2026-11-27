@@ -43,7 +43,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       supabase.from("roles").select("id,key,name,permissions,sort_order").order("sort_order"),
       supabase.from("restaurant_payment_methods").select("method_key,enabled,manual_enabled,automatic_enabled").eq("restaurant_id", state.restaurantId),
       supabase.from("restaurant_role_settings").select("*").eq("restaurant_id", state.restaurantId),
-      supabase.from("printing_points").select("*,device:printing_devices(id,hardware_key,model,display_name,serial_number,network_name,ip_address,tcp_port,connection_type,last_seen_at,operation_mode)").eq("restaurant_id", state.restaurantId).order("created_at"),
+      supabase.from("printing_points").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
       supabase.from("printing_flows").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
       supabase.from("printing_flow_routes").select("*").eq("restaurant_id", state.restaurantId).order("sort_order"),
       supabase.from("printing_ticket_templates").select("*").eq("restaurant_id", state.restaurantId).order("created_at"),
@@ -71,11 +71,17 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       method_key: "cash", enabled: true, manual_enabled: true, automatic_enabled: false,
     };
     state.roleSettings = Object.fromEntries((roleSettings.data || []).map((row) => [row.role_id, row]));
-    state.printingPoints = points.error ? [] : (points.data || []);
+    const devicesById = new Map((devices.data || []).map((device) => [device.id, device]));
+    state.printingPoints = points.error ? [] : (points.data || []).map((point) => ({
+      ...point,
+      device: devicesById.get(point.device_id) || null,
+      device_deprecated: !devices.error && Boolean(point.device_id) && !devicesById.has(point.device_id),
+    }));
     state.printingFlows = flows.error ? [] : (flows.data || []);
     state.printingFlowRoutes = routes.error ? [] : (routes.data || []);
     state.printingTicketTemplates = templates.error ? [] : (templates.data || []);
     state.printingDevices = devices.error ? [] : (devices.data || []);
+    state.printingDevicesLoaded = !devices.error;
     state.printingSettingsError = points.error || flows.error || routes.error || templates.error || devices.error
       ? "No se pudieron cargar los ajustes de impresión. Aplica la migración de impresión y vuelve a cargar."
       : "";
@@ -309,10 +315,27 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     ["manual_reprint", "Reimpresión manual"],
   ];
   const printEventLabel = (key) => PRINT_EVENTS.find(([eventKey]) => eventKey === key)?.[1] || key;
+  function printingPointIsDeprecated(point) {
+    if (!point?.device_id) return false;
+    if (point.device_deprecated === true) return true;
+    if (state.printingDevicesLoaded === true)
+      return !(state.printingDevices || []).some((device) => device.id === point.device_id);
+    if (state.printingDeviceStatusesLoaded === true)
+      return !(state.printingDeviceStatuses || []).some((device) => device.id === point.device_id);
+    return false;
+  }
+  function printingFlowNeedsUpdate(flowId) {
+    const routes = (state.printingFlowRoutes || []).filter((route) => route.flow_id === flowId && route.event_keys?.length);
+    return routes.some((route) => {
+      const point = (state.printingPoints || []).find((item) => item.id === route.point_id);
+      return !point || !point.device_id || printingPointIsDeprecated(point);
+    });
+  }
   function printingArea(title, description, cards, actionId, actionLabel) {
     return `<section class="printing-config-area"><div class="printing-config-area-head"><div><h3>${title}</h3><p class="meta">${description}</p></div></div><div class="printing-config-grid">${cards}<button type="button" class="printing-create-card" id="${actionId}"><span aria-hidden="true">＋</span><strong>${actionLabel}</strong></button></div></section>`;
   }
   function printingPointIsActive(point) {
+    if (printingPointIsDeprecated(point)) return false;
     const device = point?.device;
     if (!device) return false;
     const runtime = (state.printingDeviceStatuses || []).find((item) => item.id === device.id);
@@ -334,19 +357,48 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
   }
   function openPrintPointDetails(point) {
     const device = point?.device;
+    const deprecated = printingPointIsDeprecated(point);
     const online = printingPointIsActive(point);
-    const connectionType = device?.connection_type || "No informada por BPrint";
-    const networkDetails = device?.connection_type === "Red"
+    const connectionType = deprecated ? "Dispositivo eliminado" : device?.connection_type || "No informada por BPrint";
+    const networkDetails = !deprecated && device?.connection_type === "Red"
       ? `<div class="printing-point-detail"><span>Red</span><strong>${esc(device?.network_name || "No informada")}</strong></div><div class="printing-point-detail"><span>IP actual</span><strong>${esc(device?.ip_address || "No informada")}</strong></div>`
       : "";
     const dialog = document.createElement("dialog");
     dialog.className = "password-dialog printing-point-details-dialog";
-    dialog.innerHTML = `<div class="color-scheme-editor-head"><div><div class="panel-title">Información del punto</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div><div class="printing-point-detail-list"><div class="printing-point-detail"><span>Nombre del punto</span><strong>${esc(point?.name || "")}</strong></div><div class="printing-point-detail"><span>ID del dispositivo</span><code>${esc(device?.id || point?.device_id || "No enlazado")}</code></div><div class="printing-point-detail"><span>Conexión</span><strong>${esc(connectionType)}</strong></div>${networkDetails}<div class="printing-point-detail"><span>Estado</span><strong class="printing-device-state ${online ? "is-online" : "is-offline"}"><span class="printing-device-dot"></span>${online ? "Activa" : "Inactiva"}</strong></div></div><div class="dialog-actions"><button type="button" class="btn primary" data-detail-accept>Aceptar</button></div>`;
+    dialog.innerHTML = `<div class="color-scheme-editor-head"><div><div class="panel-title">Información del punto</div></div><button type="button" class="dialog-close" aria-label="Cerrar">×</button></div><div class="printing-point-detail-list"><div class="printing-point-detail"><span>Nombre del punto</span><strong>${esc(point?.name || "")}</strong></div><div class="printing-point-detail"><span>ID del dispositivo</span><code>${esc(device?.id || point?.device_id || "No enlazado")}</code></div><div class="printing-point-detail"><span>Conexión</span><strong>${esc(connectionType)}</strong></div>${networkDetails}<div class="printing-point-detail"><span>Estado</span><strong class="printing-device-state ${deprecated ? "is-deprecated" : online ? "is-online" : "is-offline"}"><span class="printing-device-dot"></span>${deprecated ? "Deprecated" : online ? "Activa" : "Inactiva"}</strong></div></div><div class="dialog-actions">${deprecated ? '<button type="button" class="btn primary" data-repair-point>Actualizar impresora</button>' : ""}<button type="button" class="btn secondary" data-detail-accept>Aceptar</button></div>`;
     document.body.appendChild(dialog);
     dialog.querySelector(".dialog-close").addEventListener("click", () => dialog.close());
     dialog.querySelector("[data-detail-accept]").addEventListener("click", () => dialog.close());
+    dialog.querySelector("[data-repair-point]")?.addEventListener("click", () => { dialog.close(); openPrintPointDeviceRepair(point); });
     dialog.addEventListener("close", () => dialog.remove(), { once: true });
     dialog.showModal();
+  }
+  function openPrintPointDeviceRepair(point) {
+    const devices = (state.printingDevices || []).filter((device) =>
+      !(state.printingPoints || []).some((other) => other.id !== point.id && other.device_id === device.id));
+    if (!devices.length) {
+      showPrintingMessage("No hay impresoras para enlazar", "Registra otra impresora en BPrint y vuelve a intentarlo.");
+      return;
+    }
+    const options = devices.map((device) => {
+      const label = device.display_name || device.model || "Impresora";
+      const connection = [device.connection_type, device.network_name, device.ip_address].filter(Boolean).join(" · ");
+      return `<option value="${esc(device.id)}">${esc(label)} · ${esc(device.id)}${connection ? ` · ${esc(connection)}` : ""}</option>`;
+    }).join("");
+    const body = `<p class="meta">El punto conservará su nombre y sus destinos. Solo cambiará el dispositivo enlazado.</p><label class="settings-field">Impresora registrada<select name="device_id" required>${options}</select></label>`;
+    openPrintDialog("Actualizar impresora del punto", body, async (form) => {
+      const { error } = await supabase.rpc("replace_printing_point_device", {
+        p_point_id: point.id,
+        p_device_id: new FormData(form).get("device_id"),
+      });
+      if (error) {
+        if (error.message?.includes("printing_flow_needs_update"))
+          throw new Error("Este flujo necesita actualizarse: reemplaza o quita el punto de impresión que perdió su impresora.");
+        if (error.message?.includes("printing_device_already_linked")) throw new Error("Esa impresora ya está enlazada a otro punto.");
+        if (error.message?.includes("printing_device_not_in_restaurant")) throw new Error("Esa impresora ya no pertenece a este restaurante.");
+        throw new Error(error.message || "No se pudo actualizar la impresora del punto.");
+      }
+    });
   }
   function renderPrintingSettings() {
     const points = state.printingPoints || [];
@@ -355,14 +407,16 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const templates = state.printingTicketTemplates || [];
     const pointCards = points.map((point) => {
       const device = point.device;
+      const deprecated = printingPointIsDeprecated(point);
       const online = printingPointIsActive(point);
-      const connectionType = device?.connection_type || "Conexión no informada";
-      return `<button type="button" class="printing-config-card printing-point-card" data-print-view-point="${esc(point.id)}"><span class="printing-config-card-head"><strong>${esc(point.name)}</strong><span class="printing-status ${online ? "is-on" : ""}">${online ? "Activa" : "Inactiva"}</span></span><span class="printing-point-card-id">ID <code>${esc(device?.id || point.device_id || "Sin dispositivo")}</code></span><span class="meta">${esc(connectionType)} · Ver información</span></button>`;
+      const connectionType = deprecated ? "Impresora eliminada · necesita actualizarse" : device?.connection_type || "Conexión no informada";
+      return `<button type="button" class="printing-config-card printing-point-card" data-print-view-point="${esc(point.id)}" data-print-point-card="${esc(point.id)}"><span class="printing-config-card-head"><strong>${esc(point.name)}</strong><span class="printing-status ${deprecated ? "is-deprecated" : online ? "is-on" : ""}" data-print-point-status>${deprecated ? "Deprecated" : online ? "Activa" : "Inactiva"}</span></span><span class="printing-point-card-id">ID <code>${esc(device?.id || point.device_id || "Sin dispositivo")}</code></span><span class="meta" data-print-point-meta>${esc(connectionType)} · Ver información</span></button>`;
     }).join("");
     const flowCards = flows.map((flow) => {
+      const needsUpdate = printingFlowNeedsUpdate(flow.id);
       const flowRoutes = routes.filter((route) => route.flow_id === flow.id && route.event_keys?.length);
       const events = (flow.captured_events || []).map(printEventLabel).join(" · ") || "Sin eventos";
-      return `<article class="printing-config-card"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${flow.is_active ? "is-on" : ""}">${flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} destino${flowRoutes.length === 1 ? "" : "s"} configurado${flowRoutes.length === 1 ? "" : "s"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar flujo</button><button type="button" class="rowaction" data-print-toggle-flow="${esc(flow.id)}">${flow.is_active ? "Pausar" : "Activar"}</button></div></article>`;
+      return `<article class="printing-config-card" data-print-flow-card="${esc(flow.id)}"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${needsUpdate ? "is-deprecated" : flow.is_active ? "is-on" : ""}" data-print-flow-status>${needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} destino${flowRoutes.length === 1 ? "" : "s"} configurado${flowRoutes.length === 1 ? "" : "s"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar flujo</button><button type="button" class="rowaction" data-print-toggle-flow="${esc(flow.id)}" ${needsUpdate ? "disabled title=\"Primero actualiza los puntos de impresión\"" : ""}>${flow.is_active ? "Pausar" : "Activar"}</button></div></article>`;
     }).join("");
     const templateCards = templates.map((template) => {
       const linked = routes.some((route) => route.template_id === template.id && route.event_keys?.length);
@@ -844,10 +898,11 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     const currentRoutes = flow ? (state.printingFlowRoutes || []).filter((route) => route.flow_id === flow.id && route.event_keys?.length) : [];
     const eventChecks = PRINT_EVENTS.map(([key, label]) => `<label class="settings-check"><input type="checkbox" name="flow_event" value="${key}" ${(flow?.captured_events || []).includes(key) ? "checked" : ""}><span>${label}</span></label>`).join("");
     const pointOptions = (state.printingPoints || []).map((point) => {
+      const deprecated = printingPointIsDeprecated(point);
       const device = (state.printingDeviceStatuses || []).find((item) => item.id === point.device_id) || point.device;
       const automaticCapable = (point.supported_output_modes || [point.output_mode]).includes("automatic");
-      const unavailable = automaticCapable && (!point.device_id || device?.available === false || device?.operation_mode === "offline");
-      const modeLabel = device ? (unavailable ? " · impresora inactiva" : " · impresora enlazada") : " · sin impresora";
+      const unavailable = automaticCapable && (deprecated || !point.device_id || device?.available === false || device?.operation_mode === "offline");
+      const modeLabel = deprecated ? " · Deprecated — necesita actualizarse" : device ? (unavailable ? " · impresora inactiva" : " · impresora enlazada") : " · sin impresora";
       return `<option value="${esc(point.id)}">${esc(point.name)}${modeLabel}${point.is_active ? "" : " · pausado"}</option>`;
     }).join("");
     const templateOptions = (state.printingTicketTemplates || []).map((template) => `<option value="${esc(template.id)}">${esc(template.name)}</option>`).join("");
@@ -858,6 +913,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       const form = new FormData(d);
       const name = String(form.get("name") || "").trim();
       const events = [...d.querySelectorAll('[name="flow_event"]:checked')].map((input) => input.value);
+      const flowIsActive = d.querySelector('[name="is_active"]').checked;
       if (!name) throw new Error("Escribe un nombre para el flujo.");
       if (!events.length) throw new Error("Selecciona al menos un evento.");
       const routeRows = [...d.querySelectorAll("[data-print-route]")];
@@ -867,6 +923,8 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         const selectedEvents = [...row.querySelectorAll("[data-route-event]:checked")].map((input) => input.value).filter((key) => events.includes(key));
         if (!pointId || !selectedEvents.length) throw new Error("Cada destino debe tener un punto y al menos un evento capturado por el flujo.");
         const point = (state.printingPoints || []).find((item) => item.id === pointId);
+        if (flowIsActive && (!point?.device_id || printingPointIsDeprecated(point)))
+          throw new Error("Este flujo necesita actualizarse: reemplaza la impresora eliminada antes de activarlo.");
         const mode = row.querySelector("[data-route-mode]").value;
         const templateId = row.querySelector("[data-route-template]").value || null;
         const supportedModes = point?.supported_output_modes || [point?.output_mode || "manual"];
@@ -954,11 +1012,17 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
     });
   }
   async function togglePrintingRow(table, row) {
+    if (table === "printing_flows" && !row.is_active && printingFlowNeedsUpdate(row.id)) {
+      toast("Necesita actualizarse: reemplaza primero la impresora del punto.");
+      return;
+    }
     const result = table === "printing_points"
       ? await supabase.rpc("set_printing_point_active", { p_point_id: row.id, p_is_active: !row.is_active })
-      : await supabase.from(table).update({ is_active: !row.is_active }).eq("id", row.id).eq("restaurant_id", state.restaurantId);
+      : table === "printing_flows"
+        ? await supabase.rpc("set_printing_flow_active", { p_flow_id: row.id, p_is_active: !row.is_active })
+        : await supabase.from(table).update({ is_active: !row.is_active }).eq("id", row.id).eq("restaurant_id", state.restaurantId);
     const { error } = result;
-    if (error) { toast(error.message || "No se pudo actualizar el estado."); return; }
+    if (error) { toast(error.message?.includes("printing_flow_needs_update") ? "Necesita actualizarse: reemplaza primero la impresora del punto." : error.message || "No se pudo actualizar el estado."); return; }
     await load(); render();
   }
   function bindPrintingSettings() {

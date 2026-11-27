@@ -9,6 +9,7 @@ export default function createPrintingRuntime({ supabase, state, esc }) {
 
   const errorLabel = (value) => ({
     printer_heartbeat_timeout: "La impresora dejó de responder.",
+    printing_device_removed: "La impresora de este punto fue eliminada. Actualiza el punto y el flujo.",
     printing_device_inactive: "La impresora estaba inactiva.",
     printing_device_not_linked: "El punto no tiene una impresora enlazada.",
     printing_point_inactive: "El punto de impresión está pausado.",
@@ -18,6 +19,42 @@ export default function createPrintingRuntime({ supabase, state, esc }) {
 
   function syncDeviceLabels(devices) {
     state.printingDeviceStatuses = devices || [];
+    state.printingDeviceStatusesLoaded = true;
+    const registeredIds = new Set((devices || []).map((device) => device.id));
+    const pointsById = new Map((state.printingPoints || []).map((point) => [point.id, point]));
+    const deprecatedPointIds = new Set();
+    for (const point of state.printingPoints || []) {
+      const deprecated = Boolean(point.device_id) && !registeredIds.has(point.device_id);
+      point.device_deprecated = deprecated;
+      if (deprecated) deprecatedPointIds.add(point.id);
+      const card = document.querySelector(`[data-print-point-card="${CSS.escape(point.id)}"]`);
+      if (card) {
+        const status = card.querySelector("[data-print-point-status]");
+        const meta = card.querySelector("[data-print-point-meta]");
+        status?.classList.toggle("is-deprecated", deprecated);
+        status?.classList.toggle("is-on", !deprecated && Boolean(devices?.find((device) => device.id === point.device_id)?.available));
+        if (status) status.textContent = deprecated ? "Deprecated" : devices?.find((device) => device.id === point.device_id)?.available ? "Activa" : "Inactiva";
+        if (meta && deprecated) meta.textContent = "Impresora eliminada · necesita actualizarse · Ver información";
+      }
+    }
+    for (const flow of state.printingFlows || []) {
+      const needsUpdate = (state.printingFlowRoutes || []).some((route) => route.flow_id === flow.id && route.event_keys?.length
+        && (!pointsById.has(route.point_id) || !pointsById.get(route.point_id)?.device_id || deprecatedPointIds.has(route.point_id)));
+      if (needsUpdate) flow.is_active = false;
+      const card = document.querySelector(`[data-print-flow-card="${CSS.escape(flow.id)}"]`);
+      const status = card?.querySelector("[data-print-flow-status]");
+      if (status) {
+        status.textContent = needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Activo" : "Pausado";
+        status.classList.toggle("is-deprecated", needsUpdate);
+        status.classList.toggle("is-on", !needsUpdate && flow.is_active);
+      }
+      const toggle = card?.querySelector("[data-print-toggle-flow]");
+      if (toggle) {
+        toggle.disabled = needsUpdate;
+        toggle.textContent = needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Pausar" : "Activar";
+        toggle.title = needsUpdate ? "Primero actualiza los puntos de impresión" : "";
+      }
+    }
     for (const device of devices || []) {
       document.querySelectorAll(`[data-print-device-status="${CSS.escape(device.id)}"]`).forEach((element) => {
         element.classList.toggle("is-online", device.available);
@@ -124,6 +161,7 @@ export default function createPrintingRuntime({ supabase, state, esc }) {
     seenRunIds.clear();
     queuedRuns.clear();
     state.printingDeviceStatuses = [];
+    state.printingDeviceStatusesLoaded = false;
     state.printingRuntimeError = "";
     document.querySelectorAll("dialog[data-print-run-report]").forEach((dialog) => dialog.close());
   }

@@ -6,7 +6,7 @@ La necesidad opcional se llama **Sistemas de Impresión** en toda interfaz nueva
 
 ## Tres áreas de configuración
 
-1. **Puntos de Impresión:** varios destinos por restaurante. En la web, el alta solo pide nombre e ID del dispositivo. El ID debe pertenecer ya al restaurante y el dispositivo solo puede enlazarse a un punto. Al abrir un punto se muestran nombre, ID, conexión USB/red, nombre de red e IP cuando correspondan, y estado activo/inactivo calculado a partir del heartbeat de BPrint. Estos datos son informativos y no se editan en la web.
+1. **Puntos de Impresión:** varios destinos por restaurante. En la web, el alta solo pide nombre e ID del dispositivo. El ID debe pertenecer ya al restaurante y el dispositivo solo puede enlazarse a un punto. Al abrir un punto se muestran nombre, ID, conexión USB/red, nombre de red e IP cuando correspondan, y estado activo/inactivo calculado a partir del heartbeat de BPrint. Si la fila del dispositivo se elimina, el punto conserva ese UUID y muestra **Deprecated**; su ficha permite enlazar otro dispositivo registrado sin perder las rutas.
 2. **Flujos de impresión:** el administrador elige los eventos observados y una o más rutas por evento. Una ruta puede mandar el mismo pedido a cocina, barra, caja u otro punto, con formato y copias propios.
 3. **Formatos de ticket:** colección de formatos del restaurante. Un flujo selecciona el formato aplicable para cada punto/ruta. La migración convierte el formato único anterior a `Formato predeterminado`.
 
@@ -89,6 +89,9 @@ La tabla aún conserva columnas históricas `sunat_enabled` y `sunat_config`, y 
 
 - La tarjeta de punto abre una ficha informativa; no permite editar, pausar ni activar el punto.
 - El alta verifica el UUID exacto en `printing_devices` bajo el restaurante activo y el RPC repite esa validación con bloqueo de fila para evitar carreras y enlaces cruzados.
+- Cuando Setter elimina un dispositivo inactivo, los puntos conservan el UUID anterior y los flujos que los usan se guardan inactivos. POS muestra el punto como **Deprecated** y el flujo como **Necesita actualizarse**; no permite reactivar o guardar activo ese flujo hasta sustituir/eliminar sus destinos. Al reemplazar la impresora del punto, las rutas y formatos se conservan y el admin puede reactivar el flujo.
+- `printing_points.device_id` ya no tiene una clave foránea hacia `printing_devices`: se conserva como referencia para reconocer una impresora eliminada. El alta y el RPC `replace_printing_point_device` verifican que el dispositivo exista y pertenezca al mismo restaurante; un índice único sigue impidiendo enlazarlo a más de un punto.
+- POS consulta puntos y dispositivos por separado y los relaciona por UUID; no depende de una unión PostgREST respaldada por la clave foránea retirada.
 - El RPC nuevo asigna valores internos compatibles para salida BPrint automática. El usuario no configura modo, transporte ni SUNAT desde el alta.
 - Configuración SUNAT solo muestra **Próximamente**. No se ha implementado la emisión ni su arquitectura.
 - `cpe_accepted` sigue siendo un evento propuesto; no está conectado a la cola.
