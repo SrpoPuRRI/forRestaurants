@@ -6,12 +6,12 @@ import {
   SUPABASE_ANON_KEY,
   AUTH_EMAIL_BASE,
 } from "./supabase-config.js";
-import createOrderFlow from "./order-flow.js?v=20261127-flow-editor-v4";
+import createOrderFlow from "./order-flow.js?v=20261127-flow-editor-v5";
 import createStatistics from "./statistics.js?v=20261113-statistics-order-extremes";
-import createRestaurantSettings from "./restaurant-settings.js?v=20261127-flow-editor-v4";
+import createRestaurantSettings from "./restaurant-settings.js?v=20261127-flow-editor-v5";
 import createRestaurantWorkspaces from "./restaurant-workspaces.js";
 import createAppearance from "./appearance.js?v=20261113-appearance-builder";
-import createPrintingRuntime from "./printing-runtime.js?v=20261127-flow-editor-v4";
+import createPrintingRuntime from "./printing-runtime.js?v=20261127-flow-editor-v5";
 
 //Sección de inicialización de las cuentas, función propuesta por la documentación que leí en Supabase
 const supabase =

@@ -98,7 +98,8 @@ export default function createPrintingRuntime({ supabase, state, esc }) {
       const element = document.querySelector(`[data-print-flow-runtime="${CSS.escape(flow.id)}"]`);
       if (!element) continue;
       const runtime = byFlow.get(flow.id);
-      if (!runtime || runtime.state === "inactive") element.textContent = "Motor inactivo";
+      if (!flow.is_active) element.textContent = "Flujo pausado · motor detenido";
+      else if (!runtime || runtime.state === "inactive") element.textContent = "Esperando una cuenta POS activa";
       else if (runtime.state === "searching") element.textContent = `Buscando cuenta: ${runtime.target_account_name || "siguiente respaldo"}`;
       else if (runtime.state === "waitingForAccount") element.textContent = "En espera de una cuenta activa";
       else if (runtime.state === "Running") element.textContent = `Motor ejecutando: ${runtime.motor_account_name || "cuenta asignada"}`;

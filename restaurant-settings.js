@@ -464,7 +464,8 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
           ? `${queuedRuns.length} ${queuedRuns.length === 1 ? "ejecución" : "ejecuciones"} · ${queuedJobs} en cola · ${takenJobs} en impresión`
           : "Sin ejecuciones pendientes"
         : "Consultando estado de la cola…";
-      return `<article class="printing-config-card" data-print-flow-card="${esc(flow.id)}"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${needsUpdate ? "is-deprecated" : flow.is_active ? "is-on" : ""}" data-print-flow-status>${needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} tarea${flowRoutes.length === 1 ? "" : "s"} secuencial${flowRoutes.length === 1 ? "" : "es"}</p><p class="meta" data-print-flow-queue="${esc(flow.id)}">${esc(queueStatus)}</p><p class="meta" data-print-flow-runtime="${esc(flow.id)}">${state.printingFlowRuntimeLoaded ? "Motor inactivo" : "Consultando motor…"}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar flujo</button></div></article>`;
+      const runtimeStatus = needsUpdate ? "Flujo necesita actualizarse" : !flow.is_active ? "Flujo pausado · motor detenido" : state.printingFlowRuntimeLoaded ? "Esperando cuenta motor…" : "Consultando motor…";
+      return `<article class="printing-config-card" data-print-flow-card="${esc(flow.id)}"><div class="printing-config-card-head"><strong>${esc(flow.name)}</strong><span class="printing-status ${needsUpdate ? "is-deprecated" : flow.is_active ? "is-on" : ""}" data-print-flow-status>${needsUpdate ? "Necesita actualizarse" : flow.is_active ? "Activo" : "Pausado"}</span></div><p>${esc(events)}</p><p>${flowRoutes.length} tarea${flowRoutes.length === 1 ? "" : "s"} secuencial${flowRoutes.length === 1 ? "" : "es"}</p><p class="meta" data-print-flow-queue="${esc(flow.id)}">${esc(queueStatus)}</p><p class="meta" data-print-flow-runtime="${esc(flow.id)}">${runtimeStatus}</p><div class="printing-card-actions"><button type="button" class="rowaction" data-print-edit-flow="${esc(flow.id)}">Editar flujo</button></div></article>`;
     }).join("");
     const templateCards = templates.map((template) => {
       const linked = routes.some((route) => route.template_id === template.id && route.event_keys?.length);
@@ -1149,7 +1150,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
         const tasks = routes.filter((r) => r.event_keys.includes(key)).sort((a,b) => a.sort_order-b.sort_order);
         return { node_id:crypto.randomUUID(),key,point:tasks[0]?.point_id||"",mode:tasks[0]?.output_mode||"",tasks:tasks.map((task)=>({...task,data_object_key:normalizeFlowDataObject(key,task.data_object_key||"")})),position:{x:100+index*280,y:80} };
       });
-    let currentActive = Boolean(flow?.is_active);
+    let currentActive = flow ? Boolean(flow.is_active) : accountOrder.length > 0;
     let flowEditorDialog = null;
     let flowWasDeleted = false;
     let selectedGroup = groups.length ? 0 : -1;

@@ -56,9 +56,9 @@ begin
   end loop;
 
   if exists (
-    select v_node->>'event_key'
-    from jsonb_array_elements(coalesce(p_editor_nodes, '[]'::jsonb)) as nodes(v_node)
-    group by v_node->>'event_key' having count(*) > 1
+    select node_row.value->>'event_key'
+    from jsonb_array_elements(coalesce(p_editor_nodes, '[]'::jsonb)) as node_row(value)
+    group by node_row.value->>'event_key' having count(*) > 1
   ) then raise exception 'duplicate_printing_flow_event_node'; end if;
 
   for v_route in select value from jsonb_array_elements(coalesce(p_routes, '[]'::jsonb)) as routes(value)

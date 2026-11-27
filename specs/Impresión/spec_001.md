@@ -51,6 +51,9 @@ Las imágenes de referencia del lienzo están en `Diseño Editor Flujos/1.png` a
   `open_order_created` solo ofrece `open_order`, mientras `paid_order_created`
   ofrece `paid_order` y, cuando el pago procede de una orden abierta,
   `open_order`.
+- Los flujos nuevos se crean activos cuando ya existe al menos una cuenta
+  elegible en la lista global. Sin una cuenta elegible, quedan pausados hasta
+  que se configure y active un motor desde **Editar lista**.
 - Después de crear un nodo, se puede editar o eliminar. Editarlo permite dejar
   campos o tareas incompletos; esos nodos se conservan en `printing_flows.editor_nodes`,
   aparecen atenuados como inactivos y no generan rutas ni trabajos. El botón
@@ -154,6 +157,13 @@ esa cuenta debe procesar o los reportes que debe mostrar. El navegador publica
 los runs devueltos llamando a `publish_printing_flow_run`, que los reclama y
 materializa de forma idempotente. No se añade otro `setInterval` ni RPC
 periódico para mirar la cola.
+
+El indicador **Pausado** pertenece a `printing_flows.is_active`: no se activa ni
+se corrige con el heartbeat de una impresora. Un flujo pausado detiene su motor.
+Una impresora sin heartbeat aparece como inactiva y hace que una tarea falle al
+publicarse si el evento ocurre en ese momento, pero no explica por sí sola que el
+flujo esté pausado. El motor web es la sesión autenticada del POS de una cuenta
+elegible; BPrint solo informa y atiende las impresoras.
 
 El sondeo web conserva su cadencia actual de 5 segundos y se ejecuta solo
 mientras la sesión POS está activa y la necesidad de impresión está habilitada.
@@ -634,8 +644,9 @@ dispositivos.
 
 - El alta y la consulta de puntos siguen el contrato nombre+ID y ficha de solo
   lectura. El editor visual de flujos persiste borradores de nodos separados de
-  sus rutas ejecutables; requiere la migración `202611270011` además del motor
-  implementado en las migraciones `202611270005` a `202611270010`.
+  sus rutas ejecutables; requiere las migraciones `202611270011` y
+  `202611270012` además del motor implementado en `202611270005` a
+  `202611270010`. La `012` corrige una ambigüedad PL/pgSQL de la RPC del editor.
 - Falta completar la salida manual desde el navegador: renderizar el formato
   elegido y abrir/imprimir la vista adecuada desde el dispositivo.
 - En una etapa posterior, mover la captura de cada evento dentro de la misma
