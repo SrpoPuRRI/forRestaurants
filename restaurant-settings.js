@@ -96,7 +96,11 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       ["puntos", points.error], ["flujos", flows.error], ["rutas", routes.error],
       ["formatos", templates.error], ["dispositivos", devices.error],
     ].filter(([, queryError]) => queryError)
-      .map(([section, queryError]) => `${section}: ${queryError.message || "error desconocido"}`);
+      .map(([section, queryError]) => {
+        const detail = [queryError.message, queryError.code && `código ${queryError.code}`, queryError.details, queryError.hint && `sugerencia: ${queryError.hint}`]
+          .filter(Boolean).join(" · ");
+        return `${section}: ${detail || "error desconocido"}`;
+      });
     state.printingSettingsError = printingLoadErrors.length
       ? `No se pudieron cargar los ajustes de impresión (${printingLoadErrors.join("; ")}).`
       : "";
@@ -437,7 +441,7 @@ export default function createRestaurantSettings({ supabase, state, esc, toast, 
       const linked = routes.some((route) => route.template_id === template.id && route.event_keys?.length);
       return `<button type="button" class="printing-config-card printing-template-card" data-print-open-template="${esc(template.id)}"><span class="printing-config-card-head"><strong>${esc(template.name)}</strong>${linked ? '<span class="printing-status is-on">Enlazado</span>' : ""}</span><span class="meta">${esc(`${template.format?.paper_width_mm || 80} mm · ${template.format?.header?.lines?.length || 0} líneas de encabezado`)}</span></button>`;
     }).join("");
-    return `<section class="panel settings-panel printing-settings-panel"><div class="panel-head"><div><div class="panel-title">Sistemas de Impresión</div><div class="meta">Asigna impresoras a puntos, define flujos y guarda formatos de ticket.</div></div></div>${state.printingSettingsError ? `<p class="inline-error" role="alert">${esc(state.printingSettingsError)}</p>` : ""}${printingArea("Puntos de Impresión", "Agrega dispositivos BPrint registrados en tu restaurante.", pointCards, "create-print-point", "Crear punto de Impresión")}${printingArea("Flujos de impresión", "Elige qué eventos se capturan y a qué destinos se envían.", flowCards, "create-print-flow", "Crear flujo de impresión")}${printingArea("Formatos de ticket", "Guarda varios formatos y selecciona uno distinto en cada ruta.", templateCards, "create-print-template", "Crear formato de ticket")}</section>`;
+    return `<section class="panel settings-panel printing-settings-panel"><div class="panel-head"><div><div class="panel-title">Sistemas de Impresión</div><div class="meta">Asigna impresoras a puntos, define flujos y guarda formatos de ticket.</div></div></div>${state.printingSettingsError ? `<p class="inline-error printing-settings-error" role="alert">${esc(state.printingSettingsError)}</p>` : ""}${printingArea("Puntos de Impresión", "Agrega dispositivos BPrint registrados en tu restaurante.", pointCards, "create-print-point", "Crear punto de Impresión")}${printingArea("Flujos de impresión", "Elige qué eventos se capturan y a qué destinos se envían.", flowCards, "create-print-flow", "Crear flujo de impresión")}${printingArea("Formatos de ticket", "Guarda varios formatos y selecciona uno distinto en cada ruta.", templateCards, "create-print-template", "Crear formato de ticket")}</section>`;
   }
   function openPrintDialog(title, body, onSave, options = {}) {
     const { submitLabel = "Guardar", errorMode = "inline", onDelete = null, dialogClass = "", disableSaveInitially = false } = options;
